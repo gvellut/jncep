@@ -1,0 +1,7 @@
+/test/
+/test.*
+.vscode
+.python-version
+cover.jpg
+__pycache__
+*.pickle

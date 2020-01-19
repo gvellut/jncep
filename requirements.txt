@@ -1,0 +1,4 @@
+requests==2.*
+requests-toolbelt>=0.9
+ebooklib>=0.17
+addict==2.*
