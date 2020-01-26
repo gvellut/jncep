@@ -1,7 +1,9 @@
 /test/
 /test.*
+/*.epub
 .vscode
 .python-version
 cover.jpg
 __pycache__
 *.pickle
+.pytest_cache
