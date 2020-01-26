@@ -14,7 +14,7 @@ RANGE_SEP = ":"
 
 
 @click.command(help="Generate EPUB files for J-Novel Club pre-pub novels")
-@click.argument("url_or_slug", metavar="JNOVEL_CLUB_URL")
+@click.argument("url_or_slug", metavar="JNOVEL_CLUB_URL", required=True)
 @click.option(
     "-l", "--email", required=True, help="Login email for J-Novel Club account",
 )
@@ -26,7 +26,7 @@ RANGE_SEP = ":"
     "--output",
     "output_filepath",
     type=click.Path(),
-    help="Output EPUB file or folder (must exist)",
+    help="Output EPUB file or existing folder [default: The current directory]",
 )
 @click.option(
     "-s",
@@ -34,7 +34,9 @@ RANGE_SEP = ":"
     "part_specs",
     help=(
         "Specification of a range of parts to download in the form of "
-        "<vol>[.part]:<vol>[.part]"
+        "<vol>[.part]:<vol>[.part] [default: All the content linked by "
+        "the JNOVEL_CLUB_URL argument, either a single part, a whole volume "
+        "or the whole series]"
     ),
 )
 @click.option(
@@ -44,8 +46,8 @@ RANGE_SEP = ":"
     is_flag=True,
     help=(
         (
-            "Indicates that the --parts option specifies part numbers globally, "
-            "instead of relative to a volume i.e. <part>:<part>"
+            "Flag to indicate that the --parts option specifies part numbers "
+            "globally, instead of relative to a volume i.e. <part>:<part>"
         )
     ),
 )
@@ -221,7 +223,6 @@ def _get_book_details(novel, parts_to_download):
 
             # use the first part of the series
             # has cvr_860.jpg which is bigger than the cover_400 in novel
-            # weird
             cover_url = _cover_url(novel.parts[0].raw_part)
         else:
             title_base = volumes[0].raw_volume.title
