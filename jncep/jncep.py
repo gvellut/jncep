@@ -13,7 +13,7 @@ from . import jncapi
 RANGE_SEP = ":"
 
 
-@click.command(help="Generate EPUB files for the J-Novel Club pre-pubs")
+@click.command(help="Generate EPUB files for J-Novel Club pre-pub novels")
 @click.argument("url_or_slug", metavar="JNOVEL_CLUB_URL")
 @click.option(
     "-l", "--email", required=True, help="Login email for J-Novel Club account",

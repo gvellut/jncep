@@ -1,6 +1,6 @@
 # jncep
 
-Simple tool to generate EPUB files for the [J-Novel Club](https://j-novel.club/) pre-pub novels
+Simple tool to generate EPUB files for [J-Novel Club](https://j-novel.club/) pre-pub novels
 
 # Install
 
