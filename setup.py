@@ -48,7 +48,7 @@ setup_args = dict(
         "Bug Reports": "https://github.com/gvellut/jncep/issues",
         "Source": "https://github.com/gvellut/jncep",
     },
-    entry_points={"console_scripts": ["jncep=jncep.jncep:generate_epub"]},
+    entry_points={"console_scripts": ["jncep=jncep.jncep:main"]},
 )
 
 setup(**setup_args)

@@ -1,19 +1,14 @@
 from html.parser import HTMLParser
-from io import BytesIO
-import json
 import os
 import re
 import time
-from urllib.parse import urlparse
 
-from addict import Dict as Addict
 import attr
 import click
 from ebooklib import epub
-import requests
-import requests_toolbelt.utils.dump
+from termcolor import colored
 
-IMG_BASE_URL = "https://d2dq7ifhe7bu0f.cloudfront.net/"
+from . import jncapi
 
 RANGE_SEP = ":"
 
@@ -54,7 +49,7 @@ RANGE_SEP = ":"
         )
     ),
 )
-def generate_epub(  # noqa: C901
+def generate_epub(
     url_or_slug,
     email,
     password,
@@ -62,20 +57,15 @@ def generate_epub(  # noqa: C901
     is_absolute=False,
     output_filepath=None,
 ):
-
-    try:
-        slug = _slug_from_url(url_or_slug)
-    except ValueError:
-        # assume this is already a slug
-        slug = url_or_slug
+    slug = jncapi.slug_from_url(url_or_slug)
 
     print(f"Login with email '{email}'...")
-    token = _login(email, password)
+    token = jncapi.login(email, password)
 
-    print(f"Fetching metadata for '{slug}'...")
-    metadata = _fetch_metadata(token, slug)
+    print(f"Fetching metadata for '{slug[0]}'...")
+    metadata = jncapi.fetch_metadata(token, slug)
 
-    novel = _analyze_novel_metadata(metadata)
+    novel = _analyze_novel_metadata(slug[1], metadata)
     if part_specs:
         print(
             f"Using part specification '{part_specs}' "
@@ -98,83 +88,29 @@ def generate_epub(  # noqa: C901
             "None of the requested parts are available for reading"
         )
 
-    # TODO Color for warning
     if len(available_parts_to_download) != len(parts_to_download):
-        print("Some of the requested parts are not available for reading !")
+        print(
+            colored(
+                "Some of the requested parts are not available for reading !", "yellow"
+            )
+        )
 
-    downloaded_img_urls = {}
-    contents = []
-    for part in available_parts_to_download:
-        print(f"Fetching part '{part.raw_part.title}'...")
-        content = _fetch_content(token, part.raw_part.id)
+    contents, downloaded_img_urls = _get_book_content_and_images(
+        token, novel, available_parts_to_download
+    )
 
-        img_urls = _img_urls(content)
-        if len(img_urls) > 0:
-            print("Fetching images found in part content...")
-            for i, img_url in enumerate(img_urls):
-                print(f"Image {i + 1}...")
-                img_bytes = _fetch_image_from_cdn(img_url)
-                # the filename relative to the epub content root
-                # file will be added to the Epub archive
-                # safe_filename on the base name (without the extension)
-                new_local_filename = _to_safe_filename(img_url[:-4]) + img_url[-4:]
-                downloaded_img_urls[img_url] = (img_bytes, new_local_filename)
-                content = content.replace(img_url, new_local_filename)
-
-        contents.append(content)
-
-    # shouldn't change between parts
-    author = novel.raw_metadata.author
-    if len(available_parts_to_download) == 1:
-        # single part
-        part = available_parts_to_download[0]
-        titleslug_base = part.raw_part.titleslug
-        title = part.raw_part.title
-        cover_url = _cover_url(part.raw_part)
-    else:
-        volume_index = set()
-        volumes = []
-        for part in available_parts_to_download:
-            if part.volume.volume_id in volume_index:
-                continue
-            volume_index.add(part.volume.volume_id)
-            volumes.append(part.volume)
-
-        part_nums = [
-            str(part.raw_part.partNumber) for part in available_parts_to_download
-        ]
-        part_nums = f"Parts {part_nums[0]} to {part_nums[-1]}"
-
-        if len(volumes) > 1:
-            volume_nums = [str(volume.raw_volume.volume_number) for volume in volumes]
-            volume_nums = ",".join(volume_nums[:-1]) + "&" + volume_nums[-1]
-            title_base = f"{novel.raw_serie.title}: Volumes {volume_nums}"
-
-            # TODO use cover of the first volume in current parts instead of volume 1
-
-            # use the first part of the series
-            # has cvr_860.jpg which is bigger than the cover_400 in novel
-            # weird
-            cover_url = _cover_url(novel.parts[0].raw_part)
-        else:
-            title_base = volumes[0].raw_volume.title
-            # same : use first part in volume which has cvr_860
-            cover_url = _cover_url(volumes[0].parts[0].raw_part)
-
-        titleslug_base = novel.raw_serie.titleslug
-        title = f"{title_base} [{part_nums}]"
+    identifier, title, author, cover_url = _get_book_details(
+        novel, available_parts_to_download
+    )
 
     if cover_url in downloaded_img_urls:
         # no need to redownload
         # tuple : index 0 => bytes content
+        # TODO do not add same file (same content, different name) in EPUB
         cover_bytes = downloaded_img_urls[cover_url][0]
     else:
         print("Fetching cover image...")
-        cover_bytes = _fetch_image_from_cdn(cover_url)
-
-    identifier = titleslug_base + str(int(time.time()))
-    title = title
-    author = author
+        cover_bytes = jncapi.fetch_image_from_cdn(cover_url)
 
     if not output_filepath:
         output_folder = os.getcwd()
@@ -197,6 +133,7 @@ def generate_epub(  # noqa: C901
         contents,
         downloaded_img_urls,
     )
+    print(colored(f"Success! EPUB generated in '{output_filepath}'!", "green"))
 
 
 @attr.s
@@ -228,57 +165,77 @@ class NoRequestedPartAvailableError(Exception):
         super().__init__(self, msg)
 
 
-def _login(email, password):
-    url = "https://api.j-novel.club/api/users/login?include=user"
-    headers = {"accept": "application/json", "content-type": "application/json"}
-    payload = {"email": email, "password": password}
+def _get_book_content_and_images(token, novel, parts_to_download):
+    downloaded_img_urls = {}
+    contents = []
+    for part in parts_to_download:
+        print(f"Fetching part '{part.raw_part.title}'...")
+        content = jncapi.fetch_content(token, part.raw_part.id)
 
-    r = requests.post(url, data=json.dumps(payload), headers=headers)
-    r.raise_for_status()
+        img_urls = _img_urls(content)
+        if len(img_urls) > 0:
+            print("Fetching images found in part content...")
+            for i, img_url in enumerate(img_urls):
+                print(f"Image {i + 1}...")
+                # TODO catch, log  and ignore if error ?
+                img_bytes = jncapi.fetch_image_from_cdn(img_url)
+                # the filename relative to the epub content root
+                # file will be added to the Epub archive
+                # safe_filename on the base name (without the extension)
+                new_local_filename = _to_safe_filename(img_url[:-4]) + img_url[-4:]
+                downloaded_img_urls[img_url] = (img_bytes, new_local_filename)
+                content = content.replace(img_url, new_local_filename)
 
-    access_token_cookie = r.cookies["access_token"]
-    access_token = access_token_cookie[4 : access_token_cookie.index(".")]
+        contents.append(content)
 
-    return access_token
-
-
-def _fetch_metadata(token, slug):
-    url = "https://api.j-novel.club/api/parts/findOne"
-    headers = {
-        "authorization": token,
-        "accept": "application/json",
-        "content-type": "application/json",
-    }
-    qfilter = {
-        "where": {"titleslug": slug},
-        "include": [{"serie": ["volumes", "parts"]}, "volume"],
-    }
-    payload = {"filter": json.dumps(qfilter)}
-
-    r = requests.get(url, headers=headers, params=payload)
-    r.raise_for_status()
-
-    return Addict(r.json())
+    return contents, downloaded_img_urls
 
 
-def _fetch_content(token, part_id):
-    url = f"https://api.j-novel.club/api/parts/{part_id}/partData"
-    headers = {
-        "authorization": token,
-        "accept": "application/json",
-        "content-type": "application/json",
-    }
-    r = requests.get(url, headers=headers)
-    r.raise_for_status()
+def _get_book_details(novel, parts_to_download):
+    # shouldn't change between parts
+    author = novel.raw_metadata.author
+    if len(parts_to_download) == 1:
+        # single part
+        part = parts_to_download[0]
+        titleslug_base = part.raw_part.titleslug
+        title = part.raw_part.title
+        cover_url = _cover_url(part.raw_part)
+    else:
+        volume_index = set()
+        volumes = []
+        for part in parts_to_download:
+            if part.volume.volume_id in volume_index:
+                continue
+            volume_index.add(part.volume.volume_id)
+            volumes.append(part.volume)
 
-    return r.json()["dataHTML"]
+        part_nums = [str(part.raw_part.partNumber) for part in parts_to_download]
+        part_nums = f"Parts {part_nums[0]} to {part_nums[-1]}"
 
+        if len(volumes) > 1:
+            volume_nums = [str(volume.raw_volume.volume_number) for volume in volumes]
+            volume_nums = ",".join(volume_nums[:-1]) + "&" + volume_nums[-1]
+            title_base = f"{novel.raw_serie.title}: Volumes {volume_nums}"
 
-def _fetch_image_from_cdn(url):
-    r = requests.get(url)
-    r.raise_for_status()
-    # should be JPEG
-    return BytesIO(r.content).read()
+            # TODO use cover of the first volume in current parts instead of volume 1
+
+            # use the first part of the series
+            # has cvr_860.jpg which is bigger than the cover_400 in novel
+            # weird
+            cover_url = _cover_url(novel.parts[0].raw_part)
+        else:
+            title_base = volumes[0].raw_volume.title
+            # same : use first part in volume which has cvr_860
+            cover_url = _cover_url(volumes[0].parts[0].raw_part)
+
+        titleslug_base = novel.raw_serie.titleslug
+        title = f"{title_base} [{part_nums}]"
+
+    identifier = titleslug_base + str(int(time.time()))
+    title = title
+    author = author
+
+    return identifier, title, author, cover_url
 
 
 def _create_epub(
@@ -335,23 +292,6 @@ img {width: 100%; page-break-after: always;page-break-before: always;}"""
     epub.write_epub(output_filepath, book, {})
 
 
-def _slug_from_url(url):
-    pu = urlparse(url)
-
-    if pu.scheme == "":
-        raise ValueError(f"Not a URL: {url}")
-    # normally /c/<slug>/... or /s/<slug>/... or /v/<slug>
-    if len(pu.path) <= 1 or pu.path[2] != "/":
-        raise ValueError(f"Invalid slug for URL: {url}")
-
-    slug_index = 3
-    slug_rindex = pu.path.find("/", slug_index)
-    if slug_rindex == -1:
-        return pu.path[slug_index:]
-    else:
-        return pu.path[slug_index:slug_rindex]
-
-
 def _cover_url(raw_metadata):
     covers = list(
         filter(
@@ -360,7 +300,7 @@ def _cover_url(raw_metadata):
         )
     )
     cover = max(covers, key=lambda c: c.size)
-    return f"{IMG_BASE_URL}{cover.fullpath}"
+    return f"{jncapi.IMG_BASE_URL}{cover.fullpath}"
 
 
 class ImgUrlParser(HTMLParser):
@@ -389,15 +329,13 @@ def _to_safe_filename(name):
     return s
 
 
-def _analyze_novel_metadata(metadata):
+def _analyze_novel_metadata(req_type, metadata):
     """ Assumes the JSON returned from the API has all the parts and
     that they are ordered """
     # TODO don't trust and reorder no matter what ?
 
-    if "partNumber" in metadata:
-        novel = Novel(metadata.serie, metadata, "PART")
-    elif "volumeNumber" in metadata:
-        novel = Novel(metadata.serie, metadata, "VOLUME")
+    if req_type in ("PART", "VOLUME"):
+        novel = Novel(metadata.serie, metadata, req_type)
     else:
         novel = Novel(metadata, metadata, "NOVEL")
 
@@ -627,16 +565,19 @@ def _to_absolute_part_number(novel, iv, ip):
     return volume.parts[ip].raw_part.partNumber - 1
 
 
-def _dump(response):
-    data = requests_toolbelt.utils.dump.dump_response(response)
-    print(data.decode("utf-8"))
-
-
 def _to_yn(b):
     if b:
         return "yes"
     return "no"
 
 
+def main():
+    try:
+        generate_epub(auto_envvar_prefix="JNCEP")
+    except Exception as ex:
+        print(colored("*** An unrecoverable error occured ***", "red"))
+        print(colored(str(ex), "red"))
+
+
 if __name__ == "__main__":
-    generate_epub(auto_envvar_prefix="JNCEP")
+    main()

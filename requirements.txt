@@ -1,6 +1,8 @@
-requests==2.*
-requests-toolbelt>=0.9
-ebooklib>=0.17
-addict==2.*
-attrs==19.*
-click==7*
+requests==2.22.0
+requests-toolbelt==0.9.1
+ebooklib==0.17.1
+addict==2.2.1
+attrs==19.3.0
+click==7.0
+colorama==0.4.3
+termcolor==1.1.0
