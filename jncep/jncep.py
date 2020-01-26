@@ -213,8 +213,8 @@ def _get_book_details(novel, parts_to_download):
         part_nums = f"Parts {part_nums[0]} to {part_nums[-1]}"
 
         if len(volumes) > 1:
-            volume_nums = [str(volume.raw_volume.volume_number) for volume in volumes]
-            volume_nums = ",".join(volume_nums[:-1]) + "&" + volume_nums[-1]
+            volume_nums = [str(volume.raw_volume.volumeNumber) for volume in volumes]
+            volume_nums = ", ".join(volume_nums[:-1]) + " & " + volume_nums[-1]
             title_base = f"{novel.raw_serie.title}: Volumes {volume_nums}"
 
             # TODO use cover of the first volume in current parts instead of volume 1
