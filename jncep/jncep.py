@@ -18,7 +18,12 @@ RANGE_SEP = ":"
 DEBUG = False
 
 
-@click.command(help="Generate EPUB files for J-Novel Club pre-pub novels")
+@click.group()
+def cli():
+    pass
+
+
+@cli.command(name="epub", help="Generate EPUB files for J-Novel Club pre-pub novels")
 @click.argument("url_or_slug", metavar="JNOVEL_CLUB_URL", required=True)
 @click.option(
     "-l", "--email", required=True, help="Login email for J-Novel Club account",
@@ -50,10 +55,8 @@ DEBUG = False
     "is_absolute",
     is_flag=True,
     help=(
-        (
-            "Flag to indicate that the --parts option specifies part numbers "
-            "globally, instead of relative to a volume i.e. <part>:<part>"
-        )
+        "Flag to indicate that the --parts option specifies part numbers "
+        "globally, instead of relative to a volume i.e. <part>:<part>"
     ),
 )
 @click.option(
@@ -62,7 +65,7 @@ DEBUG = False
     "is_by_volume",
     is_flag=True,
     help=(
-        "Flag to indicate to separate the parts of different volumes in "
+        "Flag to indicate that the parts of different volumes shoud be output in "
         "separate EPUBs"
     ),
 )
@@ -71,7 +74,10 @@ DEBUG = False
     "--images",
     "is_extract_images",
     is_flag=True,
-    help=("Flag to indicate to extract the images of the novel into the output folder"),
+    help=(
+        "Flag to indicate that the images of the novel should be extracted into "
+        "the output folder"
+    ),
 )
 def generate_epub(
     url_or_slug,
@@ -642,7 +648,7 @@ def _to_yn(b):
 
 def main():
     try:
-        generate_epub(auto_envvar_prefix="JNCEP")
+        cli(auto_envvar_prefix="JNCEP")
     except Exception as ex:
         print(colored("*** An unrecoverable error occured ***", "red"))
         print(colored(str(ex), "red"))
