@@ -62,11 +62,16 @@ DEBUG = False
     "is_by_volume",
     is_flag=True,
     help=(
-        (
-            "Flag to indicate to separate the parts of different volumes in "
-            "separate EPUBs"
-        )
+        "Flag to indicate to separate the parts of different volumes in "
+        "separate EPUBs"
     ),
+)
+@click.option(
+    "-i",
+    "--images",
+    "is_extract_images",
+    is_flag=True,
+    help=("Flag to indicate to extract the images of the novel into the output folder"),
 )
 def generate_epub(
     url_or_slug,
@@ -76,6 +81,7 @@ def generate_epub(
     is_absolute=False,
     output_dirpath=None,
     is_by_volume=False,
+    is_extract_images=False,
 ):
     slug = jncapi.slug_from_url(url_or_slug)
 
@@ -115,19 +121,23 @@ def generate_epub(
             )
         )
 
+    if not output_dirpath:
+        output_dirpath = os.getcwd()
+
     if is_by_volume:
         for _, g in itertools.groupby(
             available_parts_to_download, lambda p: p.volume.volume_id
         ):
             parts = list(g)
-            _create_epub(token, novel, parts, output_dirpath)
+            _create_epub(token, novel, parts, output_dirpath, is_extract_images)
     else:
-        _create_epub(token, novel, available_parts_to_download, output_dirpath)
+        _create_epub(
+            token, novel, available_parts_to_download, output_dirpath, is_extract_images
+        )
 
 
-def _create_epub(token, novel, parts, output_dirpath):
+def _create_epub(token, novel, parts, output_dirpath, is_extract_images):
     contents, downloaded_img_urls = _get_book_content_and_images(token, novel, parts)
-
     identifier, title, author, cover_url, toc = _get_book_details(novel, parts)
 
     if cover_url in downloaded_img_urls:
@@ -139,10 +149,16 @@ def _create_epub(token, novel, parts, output_dirpath):
         print("Fetching cover image...")
         cover_bytes = jncapi.fetch_image_from_cdn(cover_url)
 
-    if not output_dirpath:
-        output_dirpath = os.getcwd()
     output_filename = _to_safe_filename(title) + ".epub"
     output_filepath = os.path.join(output_dirpath, output_filename)
+
+    if is_extract_images:
+        print("Extracting images...")
+        # TODO better name than cloudfront URL
+        for img_bytes, img_filename in downloaded_img_urls.values():
+            img_filepath = os.path.join(output_dirpath, img_filename)
+            with open(img_filepath, "wb") as img_f:
+                img_f.write(img_bytes)
 
     _create_epub_file(
         output_filepath,
