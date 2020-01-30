@@ -2,6 +2,7 @@ from html.parser import HTMLParser
 import os
 import re
 import time
+import traceback
 
 import attr
 import click
@@ -11,6 +12,9 @@ from termcolor import colored
 from . import jncapi
 
 RANGE_SEP = ":"
+
+
+DEBUG = False
 
 
 @click.command(help="Generate EPUB files for J-Novel Club pre-pub novels")
@@ -101,7 +105,7 @@ def generate_epub(
         token, novel, available_parts_to_download
     )
 
-    identifier, title, author, cover_url = _get_book_details(
+    identifier, title, author, cover_url, toc = _get_book_details(
         novel, available_parts_to_download
     )
 
@@ -132,6 +136,7 @@ def generate_epub(
         author,
         cover_bytes,
         available_parts_to_download,
+        toc,
         contents,
         downloaded_img_urls,
     )
@@ -199,9 +204,15 @@ def _get_book_details(novel, parts_to_download):
     if len(parts_to_download) == 1:
         # single part
         part = parts_to_download[0]
-        titleslug_base = part.raw_part.titleslug
+        identifier_base = part.raw_part.titleslug
         title = part.raw_part.title
-        cover_url = _cover_url(part.raw_part)
+        # use the first part of the volume: it contains a link to
+        # a good resolution image
+        cover_url = _cover_url(part.volume.parts[0].raw_part)
+        # single part => single volume: part numbers relative to
+        # that volume
+        # TODO no TOC for single part ?
+        toc = [f"Part {part.num_in_volume}"]
     else:
         volume_index = set()
         volumes = []
@@ -211,36 +222,65 @@ def _get_book_details(novel, parts_to_download):
             volume_index.add(part.volume.volume_id)
             volumes.append(part.volume)
 
-        part_nums = [str(part.raw_part.partNumber) for part in parts_to_download]
-        part_nums = f"Parts {part_nums[0]} to {part_nums[-1]}"
-
         if len(volumes) > 1:
             volume_nums = [str(volume.raw_volume.volumeNumber) for volume in volumes]
             volume_nums = ", ".join(volume_nums[:-1]) + " & " + volume_nums[-1]
             title_base = f"{novel.raw_serie.title}: Volumes {volume_nums}"
 
-            # TODO use cover of the first volume in current parts instead of volume 1
+            part1 = (
+                f"{parts_to_download[0].volume.raw_volume.volumeNumber}."
+                f"{parts_to_download[0].num_in_volume}"
+            )
+            part2 = (
+                f"{parts_to_download[-1].volume.raw_volume.volumeNumber}."
+                f"{parts_to_download[-1].num_in_volume}"
+            )
+            part_nums = f"Parts {part1} to {part2}"
+            # TODO simplify instead ?
+            toc = [part.raw_part.title for part in parts_to_download]
 
-            # use the first part of the series
-            # has cvr_860.jpg which is bigger than the cover_400 in novel
-            cover_url = _cover_url(novel.parts[0].raw_part)
-        else:
-            title_base = volumes[0].raw_volume.title
-            # same : use first part in volume which has cvr_860
+            # use the first part of the first volume in the requested content:
+            # first part of a volume has cvr_860.jpg which is bigger than the cover_400
+            # in volume or novel
             cover_url = _cover_url(volumes[0].parts[0].raw_part)
+            title = f"{title_base} [{part_nums}]"
+        else:
+            volume = volumes[0]
+            title_base = volume.raw_volume.title
+            # same : use first part in volume which has cvr_860
+            cover_url = _cover_url(volume.parts[0].raw_part)
+            # relative to volume
+            toc = [f"Part {part.num_in_volume}" for part in parts_to_download]
 
-        titleslug_base = novel.raw_serie.titleslug
-        title = f"{title_base} [{part_nums}]"
+            # totalPartNumber comes from the API and is set only for the unfinished
+            # volumes; If not set => volume has all its parts
+            if not volume.raw_volume.totalPartNumber and len(parts_to_download) == len(
+                volume.parts
+            ):
+                title = f"{title_base} [Complete]"
+            else:
+                title = (
+                    f"{title_base} [Parts {parts_to_download[0].num_in_volume} to "
+                    f"{parts_to_download[-1].num_in_volume}]"
+                )
 
-    identifier = titleslug_base + str(int(time.time()))
-    title = title
-    author = author
+        identifier_base = novel.raw_serie.titleslug
 
-    return identifier, title, author, cover_url
+    identifier = identifier_base + str(int(time.time()))
+
+    return identifier, title, author, cover_url, toc
 
 
 def _create_epub(
-    output_filepath, identifier, title, author, cover_bytes, parts, contents, img_urls
+    output_filepath,
+    identifier,
+    title,
+    author,
+    cover_bytes,
+    parts,
+    toc,
+    contents,
+    img_urls,
 ):
     lang = "en"
     book = epub.EpubBook()
@@ -272,12 +312,9 @@ img {width: 100%; page-break-after: always;page-break-before: always;}"""
         img.content = img_bytes
         book.add_item(img)
 
-    # TODO cover images between volumes if multiple
     chapters = []
     for i, content in enumerate(contents):
-        c = epub.EpubHtml(
-            title=parts[i].raw_part.title, file_name=f"chap_{i +1}.xhtml", lang=lang
-        )
+        c = epub.EpubHtml(title=toc[i], file_name=f"chap_{i +1}.xhtml", lang=lang)
         c.content = content
         c.add_item(css)
         book.add_item(c)
@@ -578,6 +615,8 @@ def main():
     except Exception as ex:
         print(colored("*** An unrecoverable error occured ***", "red"))
         print(colored(str(ex), "red"))
+        if DEBUG:
+            traceback.print_exc()
 
 
 if __name__ == "__main__":
