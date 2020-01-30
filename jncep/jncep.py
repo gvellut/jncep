@@ -1,4 +1,5 @@
 from html.parser import HTMLParser
+import itertools
 import os
 import re
 import time
@@ -28,9 +29,9 @@ DEBUG = False
 @click.option(
     "-o",
     "--output",
-    "output_filepath",
-    type=click.Path(),
-    help="Output EPUB file or existing folder [default: The current directory]",
+    "output_dirpath",
+    type=click.Path(exists=True, resolve_path=True, file_okay=False, writable=True),
+    help="Existing folder to write the output [default: The current directory]",
 )
 @click.option(
     "-s",
@@ -55,13 +56,26 @@ DEBUG = False
         )
     ),
 )
+@click.option(
+    "-v",
+    "--byvolume",
+    "is_by_volume",
+    is_flag=True,
+    help=(
+        (
+            "Flag to indicate to separate the parts of different volumes in "
+            "separate EPUBs"
+        )
+    ),
+)
 def generate_epub(
     url_or_slug,
     email,
     password,
     part_specs=None,
     is_absolute=False,
-    output_filepath=None,
+    output_dirpath=None,
+    is_by_volume=False,
 ):
     slug = jncapi.slug_from_url(url_or_slug)
 
@@ -101,13 +115,20 @@ def generate_epub(
             )
         )
 
-    contents, downloaded_img_urls = _get_book_content_and_images(
-        token, novel, available_parts_to_download
-    )
+    if is_by_volume:
+        for _, g in itertools.groupby(
+            available_parts_to_download, lambda p: p.volume.volume_id
+        ):
+            parts = list(g)
+            _create_epub(token, novel, parts, output_dirpath)
+    else:
+        _create_epub(token, novel, available_parts_to_download, output_dirpath)
 
-    identifier, title, author, cover_url, toc = _get_book_details(
-        novel, available_parts_to_download
-    )
+
+def _create_epub(token, novel, parts, output_dirpath):
+    contents, downloaded_img_urls = _get_book_content_and_images(token, novel, parts)
+
+    identifier, title, author, cover_url, toc = _get_book_details(novel, parts)
 
     if cover_url in downloaded_img_urls:
         # no need to redownload
@@ -118,24 +139,18 @@ def generate_epub(
         print("Fetching cover image...")
         cover_bytes = jncapi.fetch_image_from_cdn(cover_url)
 
-    if not output_filepath:
-        output_folder = os.getcwd()
-        output_filename = _to_safe_filename(title) + ".epub"
-        output_filepath = os.path.join(output_folder, output_filename)
-    else:
-        if not output_filepath.lower().endswith(".epub"):
-            # assumes it is folder : must exist or error later
-            output_folder = output_filepath
-            output_filename = _to_safe_filename(title) + ".epub"
-            output_filepath = os.path.join(output_folder, output_filename)
+    if not output_dirpath:
+        output_dirpath = os.getcwd()
+    output_filename = _to_safe_filename(title) + ".epub"
+    output_filepath = os.path.join(output_dirpath, output_filename)
 
-    _create_epub(
+    _create_epub_file(
         output_filepath,
         identifier,
         title,
         author,
         cover_bytes,
-        available_parts_to_download,
+        parts,
         toc,
         contents,
         downloaded_img_urls,
@@ -271,7 +286,7 @@ def _get_book_details(novel, parts_to_download):
     return identifier, title, author, cover_url, toc
 
 
-def _create_epub(
+def _create_epub_file(
     output_filepath,
     identifier,
     title,
