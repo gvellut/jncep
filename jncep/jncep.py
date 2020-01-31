@@ -26,10 +26,18 @@ def cli():
 @cli.command(name="epub", help="Generate EPUB files for J-Novel Club pre-pub novels")
 @click.argument("url_or_slug", metavar="JNOVEL_CLUB_URL", required=True)
 @click.option(
-    "-l", "--email", required=True, help="Login email for J-Novel Club account",
+    "-l",
+    "--email",
+    required=True,
+    envvar="JNCEP_EMAIL",
+    help="Login email for J-Novel Club account",
 )
 @click.option(
-    "-p", "--password", required=True, help="Login password for J-Novel Club account",
+    "-p",
+    "--password",
+    required=True,
+    envvar="JNCEP_PASSWORD",
+    help="Login password for J-Novel Club account",
 )
 @click.option(
     "-o",
@@ -289,11 +297,12 @@ def _get_book_details(novel, parts_to_download):
             # relative to volume
             toc = [f"Part {part.num_in_volume}" for part in parts_to_download]
 
-            # totalPartNumber comes from the API and is set only for the unfinished
-            # volumes; If not set => volume has all its parts
-            if not volume.raw_volume.totalPartNumber and len(parts_to_download) == len(
-                volume.parts
-            ):
+            # TODO totalPartNumber comes from the API and is set only for some unfinished
+            # volumes; If not set => maybe volume has all its parts ? if totalNumber
+            # is there, not complete for sure but some unfinished volumes do not have it
+            # either way
+            # the volumes before the last are complete for sure
+            if volume is not volumes[-1]:
                 title = f"{title_base} [Complete]"
             else:
                 title = (
@@ -648,7 +657,7 @@ def _to_yn(b):
 
 def main():
     try:
-        cli(auto_envvar_prefix="JNCEP")
+        cli()
     except Exception as ex:
         print(colored("*** An unrecoverable error occured ***", "red"))
         print(colored(str(ex), "red"))
