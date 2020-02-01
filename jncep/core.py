@@ -1,8 +1,12 @@
 from html.parser import HTMLParser
+import json
 import os
+from pathlib import Path
 import re
 import time
 
+from addict import Dict as Addict
+from atomicwrites import atomic_write
 import attr
 from ebooklib import epub
 from termcolor import colored
@@ -11,6 +15,7 @@ from . import jncapi
 
 RANGE_SEP = ":"
 
+CONFIG_DIRPATH = Path.home() / ".jncep"
 
 DEBUG = False
 
@@ -37,6 +42,12 @@ class Part:
     num_in_volume = attr.ib()
     volume = attr.ib()
     content = attr.ib(default=None)
+
+
+def to_relative_part_string(novel, part):
+    volume_number = part.volume.raw_volume.volumeNumber
+    part_number = part.num_in_volume
+    return f"{volume_number}.{part_number}"
 
 
 def create_epub(token, novel, parts, output_dirpath, is_extract_images):
@@ -132,15 +143,10 @@ def get_book_details(novel, parts_to_download):
             volume_nums = ", ".join(volume_nums[:-1]) + " & " + volume_nums[-1]
             title_base = f"{novel.raw_serie.title}: Volumes {volume_nums}"
 
-            part1 = (
-                f"{parts_to_download[0].volume.raw_volume.volumeNumber}."
-                f"{parts_to_download[0].num_in_volume}"
-            )
-            part2 = (
-                f"{parts_to_download[-1].volume.raw_volume.volumeNumber}."
-                f"{parts_to_download[-1].num_in_volume}"
-            )
+            part1 = to_relative_part_string(novel, parts_to_download[0])
+            part2 = to_relative_part_string(novel, parts_to_download[-1])
             part_nums = f"Parts {part1} to {part2}"
+
             # TODO simplify instead ?
             toc = [part.raw_part.title for part in parts_to_download]
 
@@ -444,7 +450,7 @@ def _analyze_volume_part_specs(novel, part_specs):  # noqa: C901
             ifv = _validate_volume_part_number(novel, fv)
             # beginning of the volume
             ifp = 0
-        ifp = _to_absolute_part_number(novel, ifv, ifp)
+        ifp = _to_absolute_part_index(novel, ifv, ifp)
 
     if m2:
         lv = int(m2.group(1))
@@ -456,7 +462,7 @@ def _analyze_volume_part_specs(novel, part_specs):  # noqa: C901
             # end of the volume
             ilp = -1
         # this works too if ilp == -1
-        ilp = _to_absolute_part_number(novel, ilv, ilp)
+        ilp = _to_absolute_part_index(novel, ilv, ilp)
 
     # same as for absolute part spec
 
@@ -504,6 +510,30 @@ def _validate_volume_part_number(novel, v, p=None):
     return iv, ip
 
 
-def _to_absolute_part_number(novel, iv, ip):
+def _to_absolute_part_index(novel, iv, ip):
     volume = novel.volumes[iv]
     return volume.parts[ip].raw_part.partNumber - 1
+
+
+def read_tracked_series():
+    try:
+        with _tracked_series_filepath().open() as json_file:
+            data = json.load(json_file)
+            return Addict(data)
+    except FileNotFoundError:
+        # first run ?
+        return Addict({})
+
+
+def write_tracked_series(tracked):
+    _ensure_config_dirpath_exists()
+    with atomic_write(_tracked_series_filepath().resolve(), overwrite=True) as f:
+        f.write(json.dumps(tracked))
+
+
+def _tracked_series_filepath():
+    return CONFIG_DIRPATH / "tracked.json"
+
+
+def _ensure_config_dirpath_exists():
+    CONFIG_DIRPATH.mkdir(parents=False, exist_ok=True)

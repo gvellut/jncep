@@ -4,11 +4,8 @@ import re
 from urllib.parse import urlparse
 
 from addict import Dict as Addict
-import colorama
 import requests
 import requests_toolbelt.utils.dump
-
-colorama.init()
 
 IMG_BASE_URL = "https://d2dq7ifhe7bu0f.cloudfront.net/"
 
