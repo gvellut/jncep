@@ -8,7 +8,7 @@ from termcolor import colored
 
 from . import core, jncapi
 
-DEBUG = True
+DEBUG = False
 
 
 def login_option(f):
@@ -37,6 +37,7 @@ def output_option(f):
         "--output",
         "output_dirpath",
         type=click.Path(exists=True, resolve_path=True, file_okay=False, writable=True),
+        default=os.getcwd(),
         help="Existing folder to write the output [default: The current directory]",
     )(f)
 
@@ -104,11 +105,11 @@ def generate_epub(
     jnc_url,
     email,
     password,
-    part_specs=None,
-    is_absolute=False,
-    output_dirpath=None,
-    is_by_volume=False,
-    is_extract_images=False,
+    part_specs,
+    is_absolute,
+    output_dirpath,
+    is_by_volume,
+    is_extract_images,
 ):
     slug = jncapi.slug_from_url(jnc_url)
 
@@ -128,39 +129,9 @@ def generate_epub(
     else:
         parts_to_download = core.analyze_requested(novel)
 
-    # preview => parts 1 of each volume, always available
-    # not expired => prepub
-    available_parts_to_download = list(
-        filter(
-            lambda p: p.raw_part.preview or not p.raw_part.expired, parts_to_download
-        )
+    _create_epub_with_parts(
+        token, novel, parts_to_download, is_by_volume, output_dirpath, is_extract_images
     )
-
-    if len(available_parts_to_download) == 0:
-        raise NoRequestedPartAvailableError(
-            "None of the requested parts are available for reading"
-        )
-
-    if len(available_parts_to_download) != len(parts_to_download):
-        print(
-            colored(
-                "Some of the requested parts are not available for reading !", "yellow"
-            )
-        )
-
-    if not output_dirpath:
-        output_dirpath = os.getcwd()
-
-    if is_by_volume:
-        for _, g in itertools.groupby(
-            available_parts_to_download, lambda p: p.volume.volume_id
-        ):
-            parts = list(g)
-            core.create_epub(token, novel, parts, output_dirpath, is_extract_images)
-    else:
-        core.create_epub(
-            token, novel, available_parts_to_download, output_dirpath, is_extract_images
-        )
 
 
 @cli.command(name="track", help="Track updates to a series")
@@ -171,7 +142,8 @@ def generate_epub(
     "--rm",
     "is_rm",
     is_flag=True,
-    help="Flag to indicate that the argument URL should be untracked",
+    help="Flag to indicate that the series identified by the JNOVEL_CLUB_URL argument "
+    "should be untracked",
 )
 def track_series(jnc_url, email, password, is_rm):
     slug = jncapi.slug_from_url(jnc_url)
@@ -231,14 +203,164 @@ def track_series(jnc_url, email, password, is_rm):
         )
 
 
-@cli.command(name="update", help="Generate EPUB files for new parts of tracked series")
-@click.argument("jnc_url", metavar="JNOVEL_CLUB_URL")
-def update_tracked(jnc_url):
-    pass
+@cli.command(
+    name="update",
+    help="Generate EPUB files for new parts of all tracked series (or specific "
+    "series if a URL argument is passed)",
+)
+@click.argument("jnc_url", metavar="(JNOVEL_CLUB_URL?)", required=False)
+@login_option
+@password_option
+@output_option
+@byvolume_option
+@images_option
+def update_tracked(
+    jnc_url, email, password, output_dirpath, is_by_volume, is_extract_images,
+):
+
+    tracked_series = core.read_tracked_series()
+    if len(tracked_series) == 0:
+        print(
+            colored(
+                "There are no tracked series! Use the 'jncep track' command first.",
+                "yellow",
+            )
+        )
+        return
+
+    print(f"Login with email '{email}'...")
+    token = jncapi.login(email, password)
+
+    updated_series = []
+    if jnc_url:
+        slug = jncapi.slug_from_url(jnc_url)
+
+        print(f"Fetching metadata for '{slug[0]}'...")
+        metadata = jncapi.fetch_metadata(token, slug)
+
+        novel = core.analyze_novel_metadata(slug[1], metadata)
+        titleslug = novel.raw_serie.titleslug
+
+        if titleslug not in tracked_series:
+            print(
+                colored(
+                    f"The series '{novel.raw_serie.title}' is not tracked! "
+                    f"Use the 'jncep track' command first.",
+                    "yellow",
+                )
+            )
+            return
+
+        last_pn = tracked_series[titleslug]
+        is_updated = _create_updated_epub(
+            token, novel, last_pn, is_by_volume, output_dirpath, is_extract_images,
+        )
+        if is_updated:
+            print(
+                colored(
+                    f"The series '{novel.raw_serie.title}' has been updated!", "green"
+                )
+            )
+            updated_series.append(novel)
+    else:
+        for titleslug, last_pn in tracked_series.items():
+            # see track command: always record the Novel slug
+            slug = (titleslug, "NOVEL")
+            print(f"Fetching metadata for '{slug[0]}'...")
+            metadata = jncapi.fetch_metadata(token, slug)
+            novel = core.analyze_novel_metadata(slug[1], metadata)
+
+            is_updated = _create_updated_epub(
+                token, novel, last_pn, is_by_volume, output_dirpath, is_extract_images,
+            )
+            if is_updated:
+                print(
+                    colored(
+                        f"The series '{novel.raw_serie.title}' has been updated!",
+                        f"green",
+                    )
+                )
+                updated_series.append(novel)
+
+    if len(updated_series) > 0:
+        # update tracking config JSON => to last part in series
+        # TODO do that in the loop instead of the end ?
+        for novel in updated_series:
+            pn = novel.parts[-1].raw_part.partNumber
+            tracked_series[novel.raw_serie.titleslug] = pn
+        core.write_tracked_series(tracked_series)
+
+        print(colored(f"{len(updated_series)} series sucessfully updated!", "green"))
+    else:
+        print(colored(f"All series are already up to date!", "green"))
 
 
 def _to_yn(b):
     return "yes" if b else "no"
+
+
+def _create_updated_epub(
+    token, novel, last_pn, is_by_volume, output_dirpath, is_extract_images,
+):
+    if not novel.parts[-1].raw_part.partNumber > last_pn:
+        # no new part
+        print(
+            colored(
+                f"The series '{novel.raw_serie.title}' has not been updated!", "yellow",
+            )
+        )
+        return False
+
+    # create string part specs based on the next abs part number
+    part_specs = f"{last_pn + 1}:"
+    is_absolute = True
+    parts_to_download = core.analyze_part_specs(novel, part_specs, is_absolute)
+
+    _create_epub_with_parts(
+        token,
+        novel,
+        parts_to_download,
+        is_by_volume,
+        output_dirpath,
+        is_extract_images,
+    )
+
+    return True
+
+
+def _create_epub_with_parts(
+    token, novel, parts_to_download, is_by_volume, output_dirpath, is_extract_images
+):
+    # preview => parts 1 of each volume, always available
+    # not expired => prepub
+    available_parts_to_download = list(
+        filter(
+            lambda p: p.raw_part.preview or not p.raw_part.expired, parts_to_download
+        )
+    )
+
+    if len(available_parts_to_download) == 0:
+        raise NoRequestedPartAvailableError(
+            "None of the requested parts are available for reading"
+        )
+
+    if len(available_parts_to_download) != len(parts_to_download):
+        print(
+            colored(
+                "Some of the requested parts are not available for reading !", "yellow"
+            )
+        )
+
+    if is_by_volume:
+        for _, g in itertools.groupby(
+            available_parts_to_download, lambda p: p.volume.volume_id
+        ):
+            parts = list(g)
+            core.create_epub(token, novel, parts, output_dirpath, is_extract_images)
+    else:
+        core.create_epub(
+            token, novel, available_parts_to_download, output_dirpath, is_extract_images
+        )
 
 
 class NoRequestedPartAvailableError(Exception):
