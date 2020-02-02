@@ -12,6 +12,8 @@ To install, launch :
 pip install jncep
 ```
 
+The command above will install the `jncep` Python library and its dependencies. The library includes a command-line script, also named `jncep`, whose functionality is described below.
+
 # Limitations
 
 This tool only works with J-Novel __novels__, not manga.
@@ -65,7 +67,7 @@ Options:
 The following command will create a single EPUB file of part 1 of Volume 1 of the 'Tearmoon Empire' novel in the specified `.../jncbooks` directory:
 
 ```console
-jncep epub --email "user@example.com" --password "foo%bar666!" -o /Users/guilhem/Documents/jncbooks https://j-novel.club/c/tearmoon-empire-volume-1-part-1
+jncep epub --email user@example.com --password "foo%bar666!" -o /Users/guilhem/Documents/jncbooks https://j-novel.club/c/tearmoon-empire-volume-1-part-1
 ```
 
 Account credentials must be passed, as well as a URL link to a part or volume or series on the J-Novel Club website. Whatever the URL links to is downloaded (single part or whole volume or whole series).
