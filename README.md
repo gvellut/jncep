@@ -90,7 +90,7 @@ The specified range is in the shape of `<volume>[.part]:<volume>[.part]`. The sp
 
 Any of the 2 sides of the `:` range separator is optional, like `<volume>[.part]:`, which means 'every part starting with the specified part until the last in the series', or even `:`, which means 'every part in the series'. 
 
-If the flag `--absolute` is passed, the range must be of the form `<part>:<part>` where each part number refers to the part number from the beginning of the series i.e. if the first volume series has 11 parts, then `12` is the same as `2.1` without the `--absolute` flag.
+If the flag `--absolute` is passed, the range must be of the form `<part>:<part>` where each part number refers to the part number from the beginning of the series i.e. if the first volume in the series has 11 parts, then `12` is the same as `2.1` without the `--absolute` flag.
 
 ## track
 
@@ -211,4 +211,4 @@ Report issues at https://github.com/gvellut/jncep/issues
 
 - self-contained executable for macOS and Windows with PyInstaller
 - config file for account
-- Async IO
+- Async IO for faster downloads
