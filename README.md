@@ -92,6 +92,10 @@ Any of the 2 sides of the `:` range separator is optional, like `<volume>[.part]
 
 If the flag `--absolute` is passed, the range must be of the form `<part>:<part>` where each part number refers to the part number from the beginning of the series i.e. if the first volume in the series has 11 parts, then `12` is the same as `2.1` without the `--absolute` flag.
 
+### Font
+
+The tool copies into the epub the text obtained from J-Novel Club as is, simply adding a bit of styling. Depending on the font used by the ePub reader, some characters may not display. I have noticed it in a series where the string used as the scene separator is __♱__: My Kobo eBook reader would not show it with any of the fonts present on the device. In that case, it is possible to copy [Crimson Text](https://www.typewolf.com/site-of-the-day/fonts/crimson-text), the font used by J-Novel Club for its online reader, into the device. Then, selecting that font should result in all characters being visible.
+
 ## track
 
 This command is used to tell the tool that it should track updates for a series. A flag `--rm` can be used to untrack a series. In both cases, a URL link to a part or volume or series on the J-Novel Club website must be passed and is used to specify the series.
@@ -100,7 +104,7 @@ This command is used to tell the tool that it should track updates for a series.
 
 The tracking is performed by updating the local config file `<home>/.jncep/tracked.json` (where `<home>` is either `/Users/<user>` on macOS, `C:\Users\<user>` on Windows or `/home/<user>` on Linux). That file will be created by the tool if it doesn't exist.
 
-The `tracked.json` file can be updated manually with a text editor if needed. The keys must be __series__ slugs (e.g. `"can-someone-please-explain-what-s-going-on"`), not URLs.
+The `tracked.json` file can be updated manually with a text editor if needed. It is a JSON dictionary with keys the canonical URLs of the series and values another dictionary with keys "name" and "part". The value for "part" is a string in relative format ("<volume>.<part>").
 
 ### Options
 
@@ -108,7 +112,7 @@ To get some help about the arguments to the `track` command, just launch with th
 
 ```console
 ~$ jncep track --help
-Usage: jncep track [OPTIONS] JNOVEL_CLUB_URL
+Usage: jncep track [OPTIONS] (JNOVEL_CLUB_URL?)
 
   Track updates to a series
 
@@ -141,6 +145,22 @@ jncep track --email user@example.com --password "foo%bar666!" --rm https://j-nov
 ```
 
 Note that the URL is different from the first example: It doesn't matter since it resolves to the same series.
+
+#### List tracked series
+
+Without any argument the command will list the tracked series:
+
+```console
+jncep track --email user@example.com --password "foo%bar666!"
+```
+
+This will display something like:
+
+```console
+2 series are tracked:
+'Kobold King' (https://j-novel.club/s/kobold-king): 2.2
+'The Tales of Marielle Clarac' (https://j-novel.club/s/the-tales-of-marielle-clarac): 1.4
+```
 
 ## update
 

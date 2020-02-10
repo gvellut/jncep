@@ -135,7 +135,7 @@ def generate_epub(
 
 
 @cli.command(name="track", help="Track updates to a series")
-@click.argument("jnc_url", metavar="JNOVEL_CLUB_URL", required=True)
+@click.argument("jnc_url", metavar="(JNOVEL_CLUB_URL?)", required=False)
 @login_option
 @password_option
 @click.option(
@@ -146,6 +146,25 @@ def generate_epub(
     "should be untracked",
 )
 def track_series(jnc_url, email, password, is_rm):
+    if is_rm and not jnc_url:
+        raise ValueError("A JNOVEL_CLUB_URL must be passed")
+
+    if not jnc_url:
+        # list
+        tracked_series = core.read_tracked_series()
+        if len(tracked_series) > 0:
+            print(f"{len(tracked_series)} series are tracked:")
+            for ser_url, ser_details in tracked_series.items():
+                if isinstance(ser_details, dict):
+                    print(f"'{ser_details.name}' ({ser_url}): {ser_details.part}")
+                else:
+                    # keep compat with old version for now
+                    print(f"'{ser_url}': {ser_details}")
+        else:
+            print(f"No series is tracked.")
+
+        return
+
     slug = jncapi.slug_from_url(jnc_url)
 
     print(f"Login with email '{email}'...")
@@ -157,23 +176,25 @@ def track_series(jnc_url, email, password, is_rm):
     novel = core.analyze_novel_metadata(slug[1], metadata)
     # standardize on the series slug for the config (even though URLs
     # for volumes or parts are accepted)
-    titleslug = novel.raw_serie.titleslug
+    series_slug = novel.raw_serie.titleslug
+    series_url = jncapi.url_from_slug(series_slug)
 
     tracked_series = core.read_tracked_series()
 
     if not is_rm:
-        if titleslug in tracked_series:
+        # keep compatibility for now
+        if series_slug in tracked_series or series_url in tracked_series:
             print(
                 colored(
-                    f"The series '{novel.raw_serie.title}'' is already tracked!",
+                    f"The series '{novel.raw_serie.title}' is already tracked!",
                     "yellow",
                 )
             )
             return
 
-        # record current last part
-        pn = novel.parts[-1].raw_part.partNumber
-        tracked_series[titleslug] = pn
+        # record current last part + name
+        pn = core.to_relative_part_string(novel, novel.parts[-1])
+        tracked_series[series_url] = {"part": pn, "name": novel.raw_serie.title}
         core.write_tracked_series(tracked_series)
 
         relative_part = core.to_relative_part_string(novel, novel.parts[-1])
@@ -185,7 +206,7 @@ def track_series(jnc_url, email, password, is_rm):
             )
         )
     else:
-        if titleslug not in tracked_series:
+        if series_slug not in tracked_series and series_url not in tracked_series:
             print(
                 colored(
                     f"The series '{novel.raw_serie.title}' is not tracked!", "yellow"
@@ -193,7 +214,12 @@ def track_series(jnc_url, email, password, is_rm):
             )
             return
 
-        del tracked_series[titleslug]
+        # try both old and new form
+        try:
+            del tracked_series[series_slug]
+        except Exception:
+            del tracked_series[series_url]
+
         core.write_tracked_series(tracked_series)
 
         print(
@@ -239,9 +265,10 @@ def update_tracked(
         metadata = jncapi.fetch_metadata(token, slug)
 
         novel = core.analyze_novel_metadata(slug[1], metadata)
-        titleslug = novel.raw_serie.titleslug
+        series_slug = novel.raw_serie.titleslug
+        series_url = jncapi.url_from_slug(series_slug)
 
-        if titleslug not in tracked_series:
+        if series_slug not in tracked_series and series_url not in tracked_series:
             print(
                 colored(
                     f"The series '{novel.raw_serie.title}' is not tracked! "
@@ -251,10 +278,17 @@ def update_tracked(
             )
             return
 
-        last_pn = tracked_series[titleslug]
+        series_details = tracked_series[series_slug]
+        # keep compatibility for now
+        if isinstance(series_details, dict):
+            last_pn = core.to_part(novel, series_details.part).raw_part.partNumber
+        else:
+            last_pn = series_details
+
         is_updated = _create_updated_epub(
             token, novel, last_pn, is_by_volume, output_dirpath, is_extract_images,
         )
+
         if is_updated:
             print(
                 colored(
@@ -263,12 +297,23 @@ def update_tracked(
             )
             updated_series.append(novel)
     else:
-        for titleslug, last_pn in tracked_series.items():
+        # keep compatibility
+        for series_slug_or_url, series_details in tracked_series.items():
             # see track command: always record the Novel slug
-            slug = (titleslug, "NOVEL")
+            try:
+                slug = jncapi.slug_from_url(series_slug_or_url)
+            except Exception:
+                # not a URL. It is probably a slug from an older version
+                slug = (series_slug_or_url, "NOVEL")
             print(f"Fetching metadata for '{slug[0]}'...")
             metadata = jncapi.fetch_metadata(token, slug)
             novel = core.analyze_novel_metadata(slug[1], metadata)
+
+            # keep compatibility for now
+            if isinstance(series_details, dict):
+                last_pn = core.to_part(novel, series_details.part).raw_part.partNumber
+            else:
+                last_pn = series_details
 
             is_updated = _create_updated_epub(
                 token, novel, last_pn, is_by_volume, output_dirpath, is_extract_images,
@@ -286,8 +331,12 @@ def update_tracked(
         # update tracking config JSON => to last part in series
         # TODO do that in the loop instead of the end ?
         for novel in updated_series:
-            pn = novel.parts[-1].raw_part.partNumber
-            tracked_series[novel.raw_serie.titleslug] = pn
+            pn = core.to_relative_part_string(novel, novel.parts[-1])
+            # write part + name in case old version with just the part number
+            tracked_series[jncapi.url_from_slug(novel.raw_serie.titleslug)] = {
+                "part": pn,
+                "name": novel.raw_serie.title,
+            }
         core.write_tracked_series(tracked_series)
 
         print(colored(f"{len(updated_series)} series sucessfully updated!", "green"))

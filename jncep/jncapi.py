@@ -8,6 +8,7 @@ import requests
 import requests_toolbelt.utils.dump
 
 IMG_BASE_URL = "https://d2dq7ifhe7bu0f.cloudfront.net/"
+JNC_URL_BASE = "https://j-novel.club"
 
 
 def login(email, password):
@@ -88,6 +89,10 @@ def slug_from_url(url):
         raise ValueError(f"Invalid path for URL: {url}")
 
     return m.group(2), _to_const(m.group(1))
+
+
+def url_from_slug(series_slug):
+    return f"{JNC_URL_BASE}/s/{series_slug}"
 
 
 def _to_const(req_type):

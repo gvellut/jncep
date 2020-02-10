@@ -48,6 +48,12 @@ def to_relative_part_string(novel, part):
     return f"{volume_number}.{part_number}"
 
 
+def to_part(novel, relpart_str):
+    # there will be an error if the relpart does not not existe
+    parts = _analyze_volume_part_specs(novel, relpart_str)
+    return parts[0]
+
+
 def create_epub(token, novel, parts, output_dirpath, is_extract_images):
     contents, downloaded_img_urls = get_book_content_and_images(token, novel, parts)
     identifier, title, author, cover_url, toc = get_book_details(novel, parts)
