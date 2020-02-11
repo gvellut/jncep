@@ -94,7 +94,7 @@ If the flag `--absolute` is passed, the range must be of the form `<part>:<part>
 
 ### Font
 
-The tool copies into the epub the text obtained from J-Novel Club as is, simply adding a bit of styling. Depending on the font used by the ePub reader, some characters may not display. I have noticed it in a series where the string used as the scene separator is __♱__: My Kobo eBook reader would not show it with any of the fonts present on the device. In that case, it is possible to copy [Crimson Text](https://www.typewolf.com/site-of-the-day/fonts/crimson-text), the font used by J-Novel Club for its online reader, into the device. Then, selecting that font should result in all characters being visible.
+The tool copies into the EPUB the text obtained from J-Novel Club as is, simply adding a bit of styling. Depending on the font used by the ePub reader, some characters may not display. I have noticed it in a series where the string used as the scene separator is [♱](https://emojipedia.org/emoji/%E2%99%B1/) (East Syriac Cross): My Kobo eBook reader would not show it with any of the fonts present on the device. Using [Crimson Text](https://www.typewolf.com/site-of-the-day/fonts/crimson-text), the font used by J-Novel Club for its web reader, gave the same result. It turns out it was only rendered in the web reader by a fallback font, which on my Mac is Menlo (a monospace font by Apple). A next version of the tool will try to provide a solution for this (without having to copy fonts to the eBook reader or embed fonts in the EPUB).
 
 ## track
 
@@ -231,4 +231,5 @@ Report issues at https://github.com/gvellut/jncep/issues
 
 - self-contained executable for macOS and Windows with PyInstaller
 - config file for account
-- Async IO for faster downloads
+- async IO for faster downloads
+- solution for rare characters used as scene separator
