@@ -193,18 +193,31 @@ def track_series(jnc_url, email, password, is_rm):
             return
 
         # record current last part + name
-        pn = core.to_relative_part_string(novel, novel.parts[-1])
+        if len(novel.parts) == 0:
+            # no parts yet
+            pn = 0
+        else:
+            pn = core.to_relative_part_string(novel, novel.parts[-1])
         tracked_series[series_url] = {"part": pn, "name": novel.raw_serie.title}
         core.write_tracked_series(tracked_series)
 
-        relative_part = core.to_relative_part_string(novel, novel.parts[-1])
-        print(
-            colored(
-                f"The series '{novel.raw_serie.title}' is now tracked, starting after "
-                f"part {relative_part}",
-                "green",
+        if len(novel.parts) == 0:
+            print(
+                colored(
+                    f"The series '{novel.raw_serie.title}' is now tracked, starting "
+                    f"from the beginning",
+                    "green",
+                )
             )
-        )
+        else:
+            relative_part = core.to_relative_part_string(novel, novel.parts[-1])
+            print(
+                colored(
+                    f"The series '{novel.raw_serie.title}' is now tracked, starting "
+                    f"after part {relative_part}",
+                    "green",
+                )
+            )
     else:
         if series_slug not in tracked_series and series_url not in tracked_series:
             print(
@@ -278,10 +291,16 @@ def update_tracked(  # noqa: C901
             )
             return
 
+        # TODO merge with case no URL
         series_details = tracked_series[series_slug]
         # keep compatibility for now
         if isinstance(series_details, dict):
-            last_pn = core.to_part(novel, series_details.part).raw_part.partNumber
+            # special processing : cond means there was no part available when the
+            # series was started tracking
+            if series_details.part == 0:
+                last_pn = 0
+            else:
+                last_pn = core.to_part(novel, series_details.part).raw_part.partNumber
         else:
             last_pn = series_details
 
@@ -311,7 +330,12 @@ def update_tracked(  # noqa: C901
 
             # keep compatibility for now
             if isinstance(series_details, dict):
-                last_pn = core.to_part(novel, series_details.part).raw_part.partNumber
+                if series_details.part == 0:
+                    last_pn = 0
+                else:
+                    last_pn = core.to_part(
+                        novel, series_details.part
+                    ).raw_part.partNumber
             else:
                 last_pn = series_details
 
@@ -357,7 +381,7 @@ def _to_yn(b):
 def _create_updated_epub(
     token, novel, last_pn, is_by_volume, output_dirpath, is_extract_images,
 ):
-    if not novel.parts[-1].raw_part.partNumber > last_pn:
+    if len(novel.parts) == 0 or novel.parts[-1].raw_part.partNumber <= last_pn:
         # no new part
         print(
             colored(
@@ -420,7 +444,7 @@ def _create_epub_with_parts(
 
 class NoRequestedPartAvailableError(Exception):
     def __init__(self, msg):
-        super().__init__(self, msg)
+        super().__init__(msg)
 
 
 def main():
