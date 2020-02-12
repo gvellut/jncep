@@ -240,7 +240,7 @@ def track_series(jnc_url, email, password, is_rm):
 @output_option
 @byvolume_option
 @images_option
-def update_tracked(
+def update_tracked(  # noqa: C901
     jnc_url, email, password, output_dirpath, is_by_volume, is_extract_images,
 ):
 
