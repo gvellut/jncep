@@ -337,6 +337,12 @@ def update_tracked(  # noqa: C901
                 "part": pn,
                 "name": novel.raw_serie.title,
             }
+            # wipeout old format if exists
+            # TODO do that for all ?
+            try:
+                del tracked_series[novel.raw_serie.titleslug]
+            except Exception:
+                pass
         core.write_tracked_series(tracked_series)
 
         print(colored(f"{len(updated_series)} series sucessfully updated!", "green"))
