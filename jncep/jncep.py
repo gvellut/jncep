@@ -292,7 +292,10 @@ def update_tracked(  # noqa: C901
             return
 
         # TODO merge with case no URL
-        series_details = tracked_series[series_slug]
+        if series_slug in tracked_series:
+            series_details = tracked_series[series_slug]
+        else:
+            series_details = tracked_series[series_url]
         # keep compatibility for now
         if isinstance(series_details, dict):
             # special processing : cond means there was no part available when the
