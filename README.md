@@ -16,7 +16,7 @@ The command above will install the `jncep` Python library and its dependencies. 
 
 # Limitations
 
-This tool only works with J-Novel __novels__, not manga.
+This tool only works with J-Novel Club __novels__, not manga.
 
 # Usage
 
@@ -25,6 +25,31 @@ The `jncep` tool must be launched on the command-line. It has 3 commands:
 - `epub`: To simply generate an EPUB file
 - `track`: To tell the tool that a series is of interest
 - `update`: To generate EPUB files for newly updated series of interest
+
+## J-Novel Club account credentials
+
+All the commands need some user credentials (email and password) in order to communicate with the J-Novel Club API. They are the same values as the ones used to log in to the J-Novel Club website with a browser.
+
+Those credentials can be passed directly on the command line using the `--email` and `--password` arguments to the __command__ (not the `jncep` tool directly). For example, using the `epub` command:
+
+```console
+jncep epub --email user@example.com --password "foo%bar666!" https://j-novel.club/c/tearmoon-empire-volume-1-part-1
+```
+
+Optionally, the JNCEP_EMAIL and JNCEP_PASSWORD env vars can be set instead of passing the `--email` and `--password` arguments when launching the commands. For example, if they are set in the .bashrc in the following way:
+
+```console
+export JNCEP_EMAIL=user@example.com
+export JNCEP_PASSWORD="foo%bar666!"
+```
+
+Then, the same command as above can be simply launched as follows:
+
+```console
+jncep epub https://j-novel.club/c/tearmoon-empire-volume-1-part-1
+```
+
+In order make them more readable, all the examples in the rest of this documentation will assume that the env vars are set.
 
 ## epub
 
@@ -67,21 +92,19 @@ Options:
 The following command will create a single EPUB file of part 1 of Volume 1 of the 'Tearmoon Empire' novel in the specified `.../jncbooks` directory:
 
 ```console
-jncep epub --email user@example.com --password "foo%bar666!" -o /Users/guilhem/Documents/jncbooks https://j-novel.club/c/tearmoon-empire-volume-1-part-1
+jncep epub -o /Users/guilhem/Documents/jncbooks https://j-novel.club/c/tearmoon-empire-volume-1-part-1
 ```
 
-Account credentials must be passed, as well as a URL link to a part or volume or series on the J-Novel Club website. Whatever the URL links to is downloaded (single part or whole volume or whole series).
+Account credentials must be passed (in this case, by using the env vars, as explained above), as well as a URL link to a part or volume or series on the J-Novel Club website. Whatever the URL links to is downloaded (single part or whole volume or whole series).
 
-The tool will then communicate with the J-Novel Club API using the specified account and download the necessary parts (texts and images), as well as a book cover. The EPUB file will be created inside the specified (optional) output directory, `/Users/guilhem/Documents/jncbooks`, which must exist (not created by the tool). If the output option is not present, the EPUB is output in the current directory.
-
-Optionnally, the JNCEP_EMAIL and JNCEP_PASSWORD env vars can be set instead of passing the --email and --password arguments when launching the tool.
+The tool will then communicate with the J-Novel Club API using the specified credentials and download the necessary parts (texts and images), as well as a book cover. The EPUB file will be created inside the specified (optional) output directory, `/Users/guilhem/Documents/jncbooks`, which must exist (not created by the tool). If the output option is not present, the EPUB is output in the current directory.
 
 #### Range of parts
 
 The following command will create a single EPUB file with Parts 5 to 10 of Volume 1 of the 'Tearmoon Empire' novel (as long as the pre-pubs have not expired) in the current directory:
 
 ```console
-jncep epub --email user@example.com --password "foo%bar666!" --parts 1.5:1.10 https://j-novel.club/c/tearmoon-empire-volume-1-part-1
+jncep epub --parts 1.5:1.10 https://j-novel.club/c/tearmoon-empire-volume-1-part-1
 ```
 
 Compared to the previous example, a range of parts / volumes has been specified, in which case the URL is simply used to indicate the series (even if it is a link to just a part or volume of a series).
@@ -131,7 +154,7 @@ Options:
 The following command will set up tracking for the "Tearmoon Empire" series:
 
 ```console
-jncep track --email user@example.com --password "foo%bar666!" https://j-novel.club/c/tearmoon-empire-volume-1-part-1
+jncep track https://j-novel.club/c/tearmoon-empire-volume-1-part-1
 ```
 
 Currently the last part is Volume 1 Part 14, so an entry "tearmoon-empire" with volume 14 will be added to the `tracked.json` file.
@@ -141,7 +164,7 @@ Currently the last part is Volume 1 Part 14, so an entry "tearmoon-empire" with 
 The following command will disable tracking for the "Tearmoon Empire" series, using the `--rm` flag:
 
 ```console
-jncep track --email user@example.com --password "foo%bar666!" --rm https://j-novel.club/c/tearmoon-empire-volume-1-part-14
+jncep track --rm https://j-novel.club/c/tearmoon-empire-volume-1-part-14
 ```
 
 Note that the URL is different from the first example: It doesn't matter since it resolves to the same series.
@@ -151,7 +174,7 @@ Note that the URL is different from the first example: It doesn't matter since i
 Without any argument the command will list the tracked series:
 
 ```console
-jncep track --email user@example.com --password "foo%bar666!"
+jncep track
 ```
 
 This will display something like:
@@ -196,7 +219,7 @@ Most of the arguments to the `epub` command are also found here.
 The following command will update all the series:
 
 ```console
-jncep update --email user@example.com --password "foo%bar666!"
+jncep update
 ```
 
 Depending on which series were configured, something like the following should be displayed on the last line:
@@ -218,7 +241,7 @@ The `update` command can be called in the background from launchd (on macOS) or 
 There is no notification built in the `jncep update` command but the text output can be combined with other tools to make something suitable. For example, on __macOS__:
 
 ```console
-jncep update --email user@example.com --password "foo%bar666!" | tail -n 1 | sed -En '/^[[:digit:]]+ series/p' | (grep -q ^ && osascript -e 'display notification "New J-Novel Club EPUBs available!" with title "JNCEP" sound name "Glass"')
+jncep update | tail -n 1 | sed -En '/^[[:digit:]]+ series/p' | (grep -q ^ && osascript -e 'display notification "New J-Novel Club EPUBs available!" with title "JNCEP" sound name "Glass"')
 ```
 
 If there are updates, the last line output by `jncep update` is something like `2 series sucessfully updated!`, in which case some AppleScript sends a notification message with a sound. It pops up and is kept in the macOS Notification Center.
