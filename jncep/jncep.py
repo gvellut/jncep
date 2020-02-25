@@ -145,7 +145,7 @@ def generate_epub(
     help="Flag to indicate that the series identified by the JNOVEL_CLUB_URL argument "
     "should be untracked",
 )
-def track_series(jnc_url, email, password, is_rm):
+def track_series(jnc_url, email, password, is_rm):  # noqa: C901
     if is_rm and not jnc_url:
         raise ValueError("A JNOVEL_CLUB_URL must be passed")
 
@@ -303,7 +303,7 @@ def update_tracked(  # noqa: C901
             if series_details.part == 0:
                 last_pn = 0
             else:
-                last_pn = core.to_part(novel, series_details.part).raw_part.partNumber
+                last_pn = core.to_part(novel, series_details.part).absolute_num
         else:
             last_pn = series_details
 
@@ -336,9 +336,7 @@ def update_tracked(  # noqa: C901
                 if series_details.part == 0:
                     last_pn = 0
                 else:
-                    last_pn = core.to_part(
-                        novel, series_details.part
-                    ).raw_part.partNumber
+                    last_pn = core.to_part(novel, series_details.part).absolute_num
             else:
                 last_pn = series_details
 
@@ -384,7 +382,7 @@ def _to_yn(b):
 def _create_updated_epub(
     token, novel, last_pn, is_by_volume, output_dirpath, is_extract_images,
 ):
-    if len(novel.parts) == 0 or novel.parts[-1].raw_part.partNumber <= last_pn:
+    if len(novel.parts) == 0 or novel.parts[-1].absolute_num <= last_pn:
         # no new part
         print(
             colored(

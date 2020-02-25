@@ -233,3 +233,4 @@ Report issues at https://github.com/gvellut/jncep/issues
 - config file for account
 - async IO for faster downloads
 - solution for rare characters used as scene separator
+- replace prints with logging

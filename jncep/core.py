@@ -38,6 +38,7 @@ class Volume:
 class Part:
     raw_part = attr.ib()
     num_in_volume = attr.ib()
+    absolute_num = attr.ib()
     volume = attr.ib()
     content = attr.ib(default=None)
 
@@ -48,7 +49,7 @@ def to_relative_part_string(novel, part):
     return f"{volume_number}.{part_number}"
 
 
-def to_part(novel, relpart_str):
+def to_part(novel, relpart_str) -> Part:
     # there will be an error if the relpart does not not existe
     parts = _analyze_volume_part_specs(novel, relpart_str)
     return parts[0]
@@ -303,12 +304,28 @@ def analyze_novel_metadata(req_type, metadata):
         volume_index[volume.volume_id] = volume
 
     parts = []
-    for raw_part in novel.raw_serie.parts:
+    is_warned = False
+    for i, raw_part in enumerate(novel.raw_serie.parts):
         volume_id = raw_part.volumeId
         volume = volume_index[volume_id]
-        part = Part(raw_part, len(volume.parts) + 1, volume)
+        num_in_volume = len(volume.parts) + 1
+        absolute_num = i + 1
+        part = Part(raw_part, num_in_volume, absolute_num, volume)
         volume.parts.append(part)
         parts.append(part)
+
+        # some novels have a gap in the part number ie index does not correspond
+        # to field partNumber e.g. economics of prophecy starting at part 10
+        # print warning
+        if absolute_num != raw_part.partNumber and not is_warned:
+            print(
+                colored(
+                    f"Absolute part number returned by API has a gap "
+                    f"(corrected, starting at part {part.absolute_num})",
+                    "yellow",
+                )
+            )
+            is_warned = True
 
     novel.volumes = volumes
     novel.parts = parts
@@ -518,7 +535,7 @@ def _validate_volume_part_number(novel, v, p=None):
 
 def _to_absolute_part_index(novel, iv, ip):
     volume = novel.volumes[iv]
-    return volume.parts[ip].raw_part.partNumber - 1
+    return volume.parts[ip].absolute_num - 1
 
 
 def read_tracked_series():
