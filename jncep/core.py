@@ -73,8 +73,22 @@ def create_epub(token, novel, parts, output_dirpath, is_extract_images):
 
     if is_extract_images:
         print("Extracting images...")
-        # TODO better name than cloudfront URL
-        for img_bytes, img_filename in downloaded_img_urls.values():
+        current_part = None
+        img_index = -1
+        for img_bytes, img_filename, part in downloaded_img_urls.values():
+            if part is not current_part:
+                img_index = 1
+                current_part = part
+            else:
+                img_index += 1
+            part_str = to_relative_part_string(novel, part)
+            # change filename to something more readable since visible to
+            # user
+            img_filename = (
+                f"{_to_safe_filename(novel.raw_serie.titleslug)}_part{part_str}"
+                # extension at the end
+                f"_image{img_index}{img_filename[-4:]}"
+            )
             img_filepath = os.path.join(output_dirpath, img_filename)
             with open(img_filepath, "wb") as img_f:
                 img_f.write(img_bytes)
@@ -111,7 +125,7 @@ def get_book_content_and_images(token, novel, parts_to_download):
                 # file will be added to the Epub archive
                 # safe_filename on the base name (without the extension)
                 new_local_filename = _to_safe_filename(img_url[:-4]) + img_url[-4:]
-                downloaded_img_urls[img_url] = (img_bytes, new_local_filename)
+                downloaded_img_urls[img_url] = (img_bytes, new_local_filename, part)
                 content = content.replace(img_url, new_local_filename)
 
         contents.append(content)
@@ -224,7 +238,7 @@ img {width: 100%; page-break-after:always;page-break-before:always;}
     book.add_item(cover_page)
 
     for img_url, img_content in img_urls.items():
-        img_bytes, local_filename = img_content
+        img_bytes, local_filename, _ = img_content
         img = epub.EpubImage()
         img.file_name = local_filename
         img.media_type = "image/jpeg"
