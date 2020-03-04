@@ -236,7 +236,8 @@ def create_epub_file(
 h1 {page-break-before:always;}
 img {width: 100%; page-break-after:always;page-break-before:always;}
 .centerp {text-align: center;}
-.noindent {text-indent: 0em;}"""
+.noindent {text-indent: 0em;}
+p {text-indent: 1.667em;}"""
     css = epub.EpubItem(
         uid="style", file_name="book.css", media_type="text/css", content=style
     )
