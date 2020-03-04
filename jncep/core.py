@@ -1,6 +1,7 @@
 from html.parser import HTMLParser
 import json
 import os
+import os.path
 from pathlib import Path
 import re
 import time
@@ -84,10 +85,11 @@ def create_epub(token, novel, parts, output_dirpath, is_extract_images):
             part_str = to_relative_part_string(novel, part)
             # change filename to something more readable since visible to
             # user
+            _, ext = os.path.splitext(img_filename)
             img_filename = (
                 f"{_to_safe_filename(novel.raw_serie.titleslug)}_part{part_str}"
                 # extension at the end
-                f"_image{img_index}{img_filename[-4:]}"
+                f"_image{img_index}{ext}"
             )
             img_filepath = os.path.join(output_dirpath, img_filename)
             with open(img_filepath, "wb") as img_f:
@@ -123,8 +125,10 @@ def get_book_content_and_images(token, novel, parts_to_download):
                 img_bytes = jncapi.fetch_image_from_cdn(img_url)
                 # the filename relative to the epub content root
                 # file will be added to the Epub archive
-                # safe_filename on the base name (without the extension)
-                new_local_filename = _to_safe_filename(img_url[:-4]) + img_url[-4:]
+                # ext is almost always .jpg but sometimes it is .jpeg
+                # splitext  works fine with a url
+                root, ext = os.path.splitext(img_url)
+                new_local_filename = _to_safe_filename(root) + ext
                 downloaded_img_urls[img_url] = (img_bytes, new_local_filename, part)
                 content = content.replace(img_url, new_local_filename)
 
