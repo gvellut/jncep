@@ -190,14 +190,20 @@ def get_book_details(novel, parts_to_download):
             # volumes; If not set => maybe volume has all its parts ? if totalNumber
             # is there, not complete for sure but some unfinished volumes do not have it
             # either way
-            # the volumes before the last are complete for sure
-            if volume is not volumes[-1]:
-                title = f"{title_base} [Complete]"
+            # the volumes before the last have all the parts available for sure
+            # only add the complete suffix if all the parts of those volumes are in
+            # parts_to_download
+            if volume is not novel.volumes[-1] and len(parts_to_download) == len(
+                volume.parts
+            ):
+                complete_suffix = " - Complete"
             else:
-                title = (
-                    f"{title_base} [Parts {parts_to_download[0].num_in_volume} to "
-                    f"{parts_to_download[-1].num_in_volume}]"
-                )
+                complete_suffix = ""
+
+            title = (
+                f"{title_base} [Parts {parts_to_download[0].num_in_volume} to "
+                f"{parts_to_download[-1].num_in_volume}{complete_suffix}]"
+            )
 
         identifier_base = novel.raw_serie.titleslug
 
