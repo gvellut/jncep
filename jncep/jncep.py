@@ -68,6 +68,19 @@ def images_option(f):
     )(f)
 
 
+def no_replace_chars_option(f):
+    return click.option(
+        "-n",
+        "--no-replace",
+        "is_not_replace_chars",
+        is_flag=True,
+        help=(
+            "Flag to indicate that some unicode characters unlikely to be in an EPUB "
+            "reader font should NOT be replaced and instead kept as is"
+        ),
+    )(f)
+
+
 @click.group()
 def cli():
     pass
@@ -101,6 +114,7 @@ def cli():
 )
 @byvolume_option
 @images_option
+@no_replace_chars_option
 def generate_epub(
     jnc_url,
     email,
@@ -110,6 +124,7 @@ def generate_epub(
     output_dirpath,
     is_by_volume,
     is_extract_images,
+    is_not_replace_chars,
 ):
     slug = jncapi.slug_from_url(jnc_url)
 
@@ -130,7 +145,13 @@ def generate_epub(
         parts_to_download = core.analyze_requested(novel)
 
     _create_epub_with_parts(
-        token, novel, parts_to_download, is_by_volume, output_dirpath, is_extract_images
+        token,
+        novel,
+        parts_to_download,
+        is_by_volume,
+        output_dirpath,
+        is_extract_images,
+        is_not_replace_chars,
     )
 
 
@@ -253,8 +274,15 @@ def track_series(jnc_url, email, password, is_rm):  # noqa: C901
 @output_option
 @byvolume_option
 @images_option
+@no_replace_chars_option
 def update_tracked(  # noqa: C901
-    jnc_url, email, password, output_dirpath, is_by_volume, is_extract_images,
+    jnc_url,
+    email,
+    password,
+    output_dirpath,
+    is_by_volume,
+    is_extract_images,
+    is_not_replace_chars,
 ):
 
     tracked_series = core.read_tracked_series()
@@ -308,7 +336,13 @@ def update_tracked(  # noqa: C901
             last_pn = series_details
 
         is_updated = _create_updated_epub(
-            token, novel, last_pn, is_by_volume, output_dirpath, is_extract_images,
+            token,
+            novel,
+            last_pn,
+            is_by_volume,
+            output_dirpath,
+            is_extract_images,
+            is_not_replace_chars,
         )
 
         if is_updated:
@@ -341,7 +375,13 @@ def update_tracked(  # noqa: C901
                 last_pn = series_details
 
             is_updated = _create_updated_epub(
-                token, novel, last_pn, is_by_volume, output_dirpath, is_extract_images,
+                token,
+                novel,
+                last_pn,
+                is_by_volume,
+                output_dirpath,
+                is_extract_images,
+                is_not_replace_chars,
             )
             if is_updated:
                 print(
@@ -380,7 +420,13 @@ def _to_yn(b):
 
 
 def _create_updated_epub(
-    token, novel, last_pn, is_by_volume, output_dirpath, is_extract_images,
+    token,
+    novel,
+    last_pn,
+    is_by_volume,
+    output_dirpath,
+    is_extract_images,
+    is_not_replace_chars,
 ):
     if len(novel.parts) == 0 or novel.parts[-1].absolute_num <= last_pn:
         # no new part
@@ -396,6 +442,7 @@ def _create_updated_epub(
     is_absolute = True
     parts_to_download = core.analyze_part_specs(novel, part_specs, is_absolute)
 
+    # TODO create options object
     _create_epub_with_parts(
         token,
         novel,
@@ -403,13 +450,20 @@ def _create_updated_epub(
         is_by_volume,
         output_dirpath,
         is_extract_images,
+        is_not_replace_chars,
     )
 
     return True
 
 
 def _create_epub_with_parts(
-    token, novel, parts_to_download, is_by_volume, output_dirpath, is_extract_images
+    token,
+    novel,
+    parts_to_download,
+    is_by_volume,
+    output_dirpath,
+    is_extract_images,
+    is_not_replace_chars,
 ):
     # preview => parts 1 of each volume, always available
     # not expired => prepub
@@ -436,10 +490,22 @@ def _create_epub_with_parts(
             available_parts_to_download, lambda p: p.volume.volume_id
         ):
             parts = list(g)
-            core.create_epub(token, novel, parts, output_dirpath, is_extract_images)
+            core.create_epub(
+                token,
+                novel,
+                parts,
+                output_dirpath,
+                is_extract_images,
+                is_not_replace_chars,
+            )
     else:
         core.create_epub(
-            token, novel, available_parts_to_download, output_dirpath, is_extract_images
+            token,
+            novel,
+            available_parts_to_download,
+            output_dirpath,
+            is_extract_images,
+            is_not_replace_chars,
         )
 
 

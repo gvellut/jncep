@@ -82,6 +82,9 @@ Options:
                           shoud be output in separate EPUBs
   -i, --images            Flag to indicate that the images of the novel should
                           be extracted into the output folder
+  -n, --no-replace        Flag to indicate that some unicode characters
+                          unlikely to be in an EPUB reader font should NOT be
+                          replaced and instead kept as is
   --help                  Show this message and exit.
 ```
 
@@ -115,9 +118,11 @@ Any of the 2 sides of the `:` range separator is optional, like `<volume>[.part]
 
 If the flag `--absolute` is passed, the range must be of the form `<part>:<part>` where each part number refers to the part number from the beginning of the series i.e. if the first volume in the series has 11 parts, then `12` is the same as `2.1` without the `--absolute` flag.
 
-### Font
+### Rare Unicode characters
 
-The tool copies into the EPUB the text obtained from J-Novel Club as is, simply adding a bit of styling. Depending on the font used by the ePub reader, some characters may not display. I have noticed it in a series where the string used as the scene separator is [♱](https://emojipedia.org/emoji/%E2%99%B1/) (East Syriac Cross): My Kobo eBook reader would not show it with any of the fonts present on the device. Using [Crimson Text](https://www.typewolf.com/site-of-the-day/fonts/crimson-text), the font used by J-Novel Club for its web reader, gave the same result. It turns out it was only rendered in the web reader by a fallback font, which on my Mac is Menlo (a monospace font by Apple). A next version of the tool will try to provide a solution for this (without having to copy fonts to the eBook reader or embed fonts in the EPUB).
+The tool copies into the EPUB the text obtained from J-Novel Club as is, simply adding a bit of styling. Depending on the font used by the ePub reader, some rare Unicode characters may not display. I have noticed it in a series where the string used as the scene separator is [♱](https://emojipedia.org/emoji/%E2%99%B1/) (East Syriac Cross): My Kobo eBook reader would not show it with any of the fonts present on the device. Using [Crimson Text](https://www.typewolf.com/site-of-the-day/fonts/crimson-text), the font used by J-Novel Club for its web reader, gave the same result. It turns out it was only rendered in the web reader by a fallback font, which on my Mac is Menlo (a monospace font by Apple). This also happens with the Calibre EPUB reader. However, the iBooks reader app on macOS displays it.
+
+To solve this (without having to mess with fonts), by default, this character is replaced with "**". This behaviour can be overridden with the `-n` switch. Both the characters to replace and the replacement string are hardcoded. If another character is unable to display properly, [an issue can be filed](https://github.com/gvellut/jncep/issues) and it will be processed by the tool in a later version.
 
 ## track
 
@@ -209,6 +214,9 @@ Options:
                           shoud be output in separate EPUBs
   -i, --images            Flag to indicate that the images of the novel should
                           be extracted into the output folder
+  -n, --no-replace        Flag to indicate that some unicode characters
+                          unlikely to be in an EPUB reader font should NOT be
+                          replaced and instead kept as is
   --help                  Show this message and exit.
 ```
 
@@ -255,5 +263,4 @@ Report issues at https://github.com/gvellut/jncep/issues
 - self-contained executable for macOS and Windows with PyInstaller
 - config file for account
 - async IO for faster downloads
-- solution for rare characters used as scene separator
 - replace prints with logging

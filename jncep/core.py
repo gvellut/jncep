@@ -56,8 +56,12 @@ def to_part(novel, relpart_str) -> Part:
     return parts[0]
 
 
-def create_epub(token, novel, parts, output_dirpath, is_extract_images):
-    contents, downloaded_img_urls = get_book_content_and_images(token, novel, parts)
+def create_epub(
+    token, novel, parts, output_dirpath, is_extract_images, is_not_replace_chars
+):
+    contents, downloaded_img_urls = get_book_content_and_images(
+        token, novel, parts, is_not_replace_chars
+    )
     identifier, title, author, cover_url, toc = get_book_details(novel, parts)
 
     if cover_url in downloaded_img_urls:
@@ -109,12 +113,29 @@ def create_epub(token, novel, parts, output_dirpath, is_extract_images):
     print(colored(f"Success! EPUB generated in '{output_filepath}'!", "green"))
 
 
-def get_book_content_and_images(token, novel, parts_to_download):
+def get_book_content_and_images(token, novel, parts_to_download, is_not_replace_chars):
     downloaded_img_urls = {}
     contents = []
     for part in parts_to_download:
         print(f"Fetching part '{part.raw_part.title}'...")
         content = jncapi.fetch_content(token, part.raw_part.id)
+
+        if not is_not_replace_chars:
+            # both the chars to replace and replacement are hardcoded
+            # U+2671 => East Syriac Cross (used in Her Majesty's Swarm)
+            chars_to_replace = ["\u2671"]
+            replacement_char = "**"
+            regex = "|".join(chars_to_replace)
+            content_b = re.sub(regex, replacement_char, content)
+            if content != content_b:
+                print(
+                    colored(
+                        "Some Unicode characters unlikely to be readable with "
+                        "the base fonts of an EPUB reader have been replaced ",
+                        "yellow",
+                    )
+                )
+            content = content_b
 
         img_urls = _img_urls(content)
         if len(img_urls) > 0:
@@ -233,11 +254,11 @@ def create_epub_file(
     book.set_cover("cover.jpg", cover_bytes, False)
 
     style = """body {color: black;}
-h1 {page-break-before:always;}
-img {width: 100%; page-break-after:always;page-break-before:always;}
-.centerp {text-align: center;}
-.noindent {text-indent: 0em;}
-p {text-indent: 1.667em;}"""
+h1 {page-break-before: always;}
+img {width: 100%; page-break-after: always; page-break-before: always;}
+p {text-indent: 1.3em;}
+.centerp {text-align: center; text-indent: 0em;}
+.noindent {text-indent: 0em;}"""
     css = epub.EpubItem(
         uid="style", file_name="book.css", media_type="text/css", content=style
     )
