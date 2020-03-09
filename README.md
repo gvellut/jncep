@@ -49,7 +49,7 @@ Then, the same command as above can be simply launched as follows:
 jncep epub https://j-novel.club/c/tearmoon-empire-volume-1-part-1
 ```
 
-In order make them more readable, all the examples in the rest of this documentation will assume that the env vars are set.
+In order to make them more readable, all the examples in the rest of this documentation will assume that the env vars are set.
 
 ## epub
 
@@ -122,7 +122,7 @@ If the flag `--absolute` is passed, the range must be of the form `<part>:<part>
 
 The tool copies into the EPUB the text obtained from J-Novel Club as is, simply adding a bit of styling. Depending on the font used by the ePub reader, some rare Unicode characters may not display. I have noticed it in a series where the string used as the scene separator is [♱](https://emojipedia.org/emoji/%E2%99%B1/) (East Syriac Cross): My Kobo eBook reader would not show it with any of the fonts present on the device. Using [Crimson Text](https://www.typewolf.com/site-of-the-day/fonts/crimson-text), the font used by J-Novel Club for its web reader, gave the same result. It turns out it was only rendered in the web reader by a fallback font, which on my Mac is Menlo (a monospace font by Apple). This also happens with the Calibre EPUB reader. However, the iBooks reader app on macOS displays it.
 
-To solve this (without having to mess with fonts), by default, this character is replaced with "**". This behaviour can be overridden with the `-n` switch. Both the characters to replace and the replacement string are hardcoded. If another character is unable to display properly, [an issue can be filed](https://github.com/gvellut/jncep/issues) and it will be processed by the tool in a later version.
+To solve this (without having to mess with fonts), by default, this character is replaced with "\*\*". This behaviour can be overridden with the `-n` switch. Both the characters to replace and the replacement string are hardcoded. If another character is unable to display properly, [an issue can be filed](https://github.com/gvellut/jncep/issues) and it will be processed by the tool in a later version.
 
 ## track
 
