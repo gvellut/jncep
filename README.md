@@ -100,7 +100,7 @@ jncep epub -o /Users/guilhem/Documents/jncbooks https://j-novel.club/c/tearmoon-
 
 Account credentials must be passed (in this case, by using the env vars, as explained above), as well as a URL link to a part or volume or series on the J-Novel Club website. Whatever the URL links to is downloaded (single part or whole volume or whole series).
 
-The tool will then communicate with the J-Novel Club API using the specified credentials and download the necessary parts (texts and images), as well as a book cover. The EPUB file will be created inside the specified (optional) output directory, `/Users/guilhem/Documents/jncbooks`, which must exist (not created by the tool). If the output option is not present, the EPUB is output in the current directory.
+The tool will then communicate with the J-Novel Club API using the specified credentials and download the necessary parts (texts and images), as well as a book cover. The EPUB file will be created inside the specified (optional) output directory, `/Users/guilhem/Documents/jncbooks`, which must exist (not created by the tool). If the `--output` switch is not present, the EPUB is output in the current directory.
 
 #### Range of parts
 
@@ -114,9 +114,11 @@ Compared to the previous example, a range of parts / volumes has been specified,
 
 The specified range is in the shape of `<volume>[.part]:<volume>[.part]`. The specific part numbers are optional and are relative to the volume. If the part number is not specified, it is equivalent to `<volume>.1` if on the left and, if on the right, until the last part of the volume.
 
-Any of the 2 sides of the `:` range separator is optional, like `<volume>[.part]:`, which means 'every part starting with the specified part until the last in the series', or even `:`, which means 'every part in the series'. 
+Any of the 2 sides of the `:` range separator is optional, like `<volume>[.part]:`, which means 'every part starting with the specified part until the last in the series', or even `:`, which means 'every part in the series'.
 
 If the flag `--absolute` is passed, the range must be of the form `<part>:<part>` where each part number refers to the part number from the beginning of the series i.e. if the first volume in the series has 11 parts, then `12` is the same as `2.1` without the `--absolute` flag.
+
+Moreover, the `:` itself is also optional: It is possible to specify just `<volume>[.part]` (or `<part>` with the `--absolute` flag), in which case it is not interpreted as a range. If only the volume is specified (e.g. `2`), then all the parts of the volume will be downloaded and if there is also a part (e.g. `2.1`), only that part will be downloaded.
 
 ### Rare Unicode characters
 
