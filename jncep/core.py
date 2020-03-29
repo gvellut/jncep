@@ -165,7 +165,11 @@ def get_book_details(novel, parts_to_download):
         # single part
         part = parts_to_download[0]
         identifier_base = part.raw_part.titleslug
-        title = part.raw_part.title
+        if _is_final(novel, parts_to_download[-1]):
+            complete_suffix = " - Final"
+        else:
+            complete_suffix = ""
+        title = f"{part.raw_part.title}{complete_suffix}"
         # use the first part of the volume: it contains a link to
         # a good resolution image
         cover_url = _cover_url(part.volume.parts[0].raw_part)
@@ -207,17 +211,10 @@ def get_book_details(novel, parts_to_download):
             # relative to volume
             toc = [f"Part {part.num_in_volume}" for part in parts_to_download]
 
-            # TODO totalPartNumber comes from the API and set only for some unfinished
-            # volumes; If not set => maybe volume has all its parts ? if totalNumber
-            # is there, not complete for sure but some unfinished volumes do not have it
-            # either way
-            # the volumes before the last have all the parts available for sure
-            # only add the complete suffix if all the parts of those volumes are in
-            # parts_to_download
-            if volume is not novel.volumes[-1] and len(parts_to_download) == len(
-                volume.parts
-            ):
+            if _is_complete(novel, volume, parts_to_download):
                 complete_suffix = " - Complete"
+            elif _is_final(novel, parts_to_download[-1]):
+                complete_suffix = " - Final"
             else:
                 complete_suffix = ""
 
@@ -231,6 +228,36 @@ def get_book_details(novel, parts_to_download):
     identifier = identifier_base + str(int(time.time()))
 
     return identifier, title, author, cover_url, toc
+
+
+def _is_final(novel, part):
+    """
+    Tells if the part is the last one of the volume it belongs to
+    """
+    for volume in novel.volumes[:-1]:
+        if part == volume.parts[-1]:
+            return True
+
+    # TODO totalPartNumber comes from the API and is set only for some
+    # series; Sometimes set on unfinished volumes but not present once the
+    # volume is complete... (in this case return alse: not possible to tell)
+    last_volume = novel.volumes[-1]
+    if "totalPartNumber" in last_volume.raw_volume:
+        total_pn_in_volume = last_volume.raw_volume["totalPartNumber"]
+        return part.num_in_volume == total_pn_in_volume
+    else:
+        # we can't tell
+        return False
+
+
+def _is_complete(novel, volume, parts_in_volume_to_dl):
+    last_volume = novel.volumes[-1]
+    if volume is not last_volume:
+        return len(parts_in_volume_to_dl) == len(volume.parts)
+    else:
+        return len(parts_in_volume_to_dl) == len(volume.parts) and _is_final(
+            novel, parts_in_volume_to_dl[-1]
+        )
 
 
 def create_epub_file(
