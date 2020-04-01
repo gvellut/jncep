@@ -123,7 +123,8 @@ def get_book_content_and_images(token, novel, parts_to_download, is_not_replace_
         if not is_not_replace_chars:
             # both the chars to replace and replacement are hardcoded
             # U+2671 => East Syriac Cross (used in Her Majesty's Swarm)
-            chars_to_replace = ["\u2671"]
+            # U+25C6 => Black Diamond (used in SOAP)
+            chars_to_replace = ["\u2671", "\u25C6"]
             replacement_char = "**"
             regex = "|".join(chars_to_replace)
             content_b = re.sub(regex, replacement_char, content)
