@@ -235,16 +235,16 @@ def _is_final(novel, part):
     """
     Tells if the part is the last one of the volume it belongs to
     """
-    for volume in novel.volumes[:-1]:
-        if part == volume.parts[-1]:
-            return True
+    # if not last volume, can tell for sure
+    if part.volume != novel.volumes[-1]:
+        return part == part.volume.parts[-1]
 
+    # last volume
     # TODO totalPartNumber comes from the API and is set only for some
     # series; Sometimes set on unfinished volumes but not present once the
-    # volume is complete... (in this case return alse: not possible to tell)
-    last_volume = novel.volumes[-1]
-    if "totalPartNumber" in last_volume.raw_volume:
-        total_pn_in_volume = last_volume.raw_volume["totalPartNumber"]
+    # volume is complete... (in this case return false: not possible to tell)
+    total_pn_in_volume = part.volume.raw_volume.totalPartNumber
+    if total_pn_in_volume:
         return part.num_in_volume == total_pn_in_volume
     else:
         # we can't tell
