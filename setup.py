@@ -29,12 +29,11 @@ setup_args = dict(
     url="https://github.com/gvellut/jncep",
     author="Guilhem Vellut",
     author_email="g@vellut.com",
-    license="Apache License 2.0",
     classifiers=[
         "Development Status :: 4 - Beta",
         "Environment :: Console",
         "Intended Audience :: Other Audience",
-        "License :: OSI Approved :: Apache Software License",
+        "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
         "Natural Language :: English",
         "Programming Language :: Python :: 3",
         "Operating System :: OS Independent",
