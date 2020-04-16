@@ -112,7 +112,7 @@ jncep epub --parts 1.5:1.10 https://j-novel.club/c/tearmoon-empire-volume-1-part
 
 Compared to the previous example, a range of parts / volumes has been specified, in which case the URL is simply used to indicate the series (even if it is a link to just a part or volume of a series).
 
-The specified range is in the shape of `<volume>[.part]:<volume>[.part]`. The specific part numbers are optional and are relative to the volume. If the part number is not specified, it is equivalent to `<volume>.1` if on the left and, if on the right, until the last part of the volume.
+The specified range is in the shape of `<volume>[.part]:<volume>[.part]`. The specific part numbers are optional and are relative to the volume. If the part number is not specified, it is equivalent to `<volume>.1` if on the left and, if on the right, until the last part of the volume. Both sides of the range are inclusive.
 
 Any of the 2 sides of the `:` range separator is optional, like `<volume>[.part]:`, which means 'every part starting with the specified part until the last in the series', or even `:`, which means 'every part in the series'.
 
