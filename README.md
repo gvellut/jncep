@@ -134,7 +134,7 @@ This command is used to tell the tool that it should track updates for a series.
 
 The tracking is performed by updating the local config file `<home>/.jncep/tracked.json` (where `<home>` is either `/Users/<user>` on macOS, `C:\Users\<user>` on Windows or `/home/<user>` on Linux). That file will be created by the tool if it doesn't exist.
 
-The `tracked.json` file can be updated manually with a text editor if needed. It is a JSON dictionary with keys the canonical URLs of the series and values another dictionary with keys "name" and "part". The value for "part" is a string in relative format ("<volume>.<part>").
+The `tracked.json` file can be updated manually with a text editor if needed. It is a JSON dictionary with keys the canonical URLs of the series and values another dictionary with keys "name" and "part". The value for "part" is a string in relative format (`<volume>.<part>`).
 
 ### Options
 
@@ -164,7 +164,7 @@ The following command will set up tracking for the "Tearmoon Empire" series:
 jncep track https://j-novel.club/c/tearmoon-empire-volume-1-part-1
 ```
 
-Currently the last part is Volume 1 Part 14, so an entry "tearmoon-empire" with volume 14 will be added to the `tracked.json` file.
+Currently the last part is Volume 1 Part 14, so an entry "tearmoon-empire" with part `1.14` will be added to the `tracked.json` file.
 
 #### Untracking
 

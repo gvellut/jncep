@@ -21,6 +21,7 @@ CONFIG_DIRPATH = Path.home() / ".jncep"
 
 @attr.s
 class Novel:
+    # TODO separate req data raw_metadata and reqed_type from Novel struct
     raw_serie = attr.ib()
     raw_metadata = attr.ib()
     requested_type = attr.ib()
