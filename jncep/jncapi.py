@@ -7,7 +7,7 @@ from addict import Dict as Addict
 import requests
 import requests_toolbelt.utils.dump
 
-IMG_BASE_URL = "https://d2dq7ifhe7bu0f.cloudfront.net/"
+IMG_URL_BASE = "https://d2dq7ifhe7bu0f.cloudfront.net"
 JNC_URL_BASE = "https://j-novel.club"
 
 

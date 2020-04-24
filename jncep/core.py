@@ -332,7 +332,7 @@ def _cover_url(raw_metadata):
         )
     )
     cover = max(covers, key=lambda c: c.size)
-    return f"{jncapi.IMG_BASE_URL}{cover.fullpath}"
+    return f"{jncapi.IMG_URL_BASE}/{cover.fullpath}"
 
 
 class ImgUrlParser(HTMLParser):
