@@ -410,8 +410,11 @@ def analyze_novel_metadata(req_type, metadata):
 
 def analyze_requested(novel):
     if novel.requested_type == "PART":
-        ip = novel.raw_metadata.partNumber - 1
-        return [novel.parts[ip]]
+        # because partNumber sometimes has a gap => loop through all parts
+        # to find the actual object (instead of using [partNumber] directly)
+        for part in novel.parts:
+            if part.raw_part.partNumber == novel.raw_metadata.partNumber:
+                return [part]
 
     if novel.requested_type == "VOLUME":
         iv = novel.raw_metadata.volumeNumber - 1
