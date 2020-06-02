@@ -144,8 +144,17 @@ def get_book_content_and_images(token, novel, parts_to_download, is_not_replace_
             print("Fetching images found in part content...")
             for i, img_url in enumerate(img_urls):
                 print(f"Image {i + 1}...")
-                # TODO catch, log  and ignore if error ?
-                img_bytes = jncapi.fetch_image_from_cdn(img_url)
+                try:
+                    img_bytes = jncapi.fetch_image_from_cdn(img_url)
+                except Exception:
+                    print(
+                        colored(
+                            f"Unable to download img with URL: '{img_url}'. Ignoring...",
+                            "red",
+                        )
+                    )
+                    continue
+
                 # the filename relative to the epub content root
                 # file will be added to the Epub archive
                 # ext is almost always .jpg but sometimes it is .jpeg
