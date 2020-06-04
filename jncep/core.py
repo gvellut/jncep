@@ -149,7 +149,8 @@ def get_book_content_and_images(token, novel, parts_to_download, is_not_replace_
                 except Exception:
                     print(
                         colored(
-                            f"Unable to download img with URL: '{img_url}'. Ignoring...",
+                            f"Unable to download image with URL: '{img_url}'. "
+                            "Ignoring...",
                             "red",
                         )
                     )
