@@ -1,4 +1,3 @@
-from io import BytesIO
 import json
 import re
 from urllib.parse import urlparse
@@ -74,7 +73,7 @@ def fetch_image_from_cdn(url):
     r = requests.get(url)
     r.raise_for_status()
     # should be JPEG
-    return BytesIO(r.content).read()
+    return r.content
 
 
 def slug_from_url(url):
