@@ -112,13 +112,22 @@ jncep epub --parts 1.5:1.10 https://j-novel.club/c/tearmoon-empire-volume-1-part
 
 Compared to the previous example, a range of parts / volumes has been specified, in which case the URL is simply used to indicate the series (even if it is a link to just a part or volume of a series).
 
-The specified range is in the shape of `<volume>[.part]:<volume>[.part]`. The specific part numbers are optional and are relative to the volume. If the part number is not specified, it is equivalent to `<volume>.1` if on the left and, if on the right, until the last part of the volume. Both sides of the range are inclusive.
+The specified range is in the shape of `<volume>[.<part>]:<volume>[.<part>]` where `<volume>` and `<part>` are numbers (e.g. `1.5:3`). The specific part numbers are optional (as indicated by `[` and `]`, which should not be present in the actual argument value) and are relative to the volume. If the part number is not specified, it is equivalent to `<volume>.1` if on the left and, if on the right, until the last part of the volume. Both sides of the range are inclusive.
 
-Any of the 2 sides of the `:` range separator is optional, like `<volume>[.part]:`, which means 'every part starting with the specified part until the last in the series', or even `:`, which means 'every part in the series'.
+Any of the 2 sides of the `:` range separator is optional, like `<volume>[.<part>]:`, which means 'every part starting with the specified part until the last in the series', or even `:`, which means 'every part in the series'.
 
 If the flag `--absolute` is passed, the range must be of the form `<part>:<part>` where each part number refers to the part number from the beginning of the series i.e. if the first volume in the series has 11 parts, then `12` is the same as `2.1` without the `--absolute` flag.
 
-Moreover, the `:` itself is also optional: It is possible to specify just `<volume>[.part]` (or `<part>` with the `--absolute` flag), in which case it is not interpreted as a range. If only the volume is specified (e.g. `2`), then all the parts of the volume will be downloaded and if there is also a part (e.g. `2.1`), only that part will be downloaded.
+Moreover, the `:` itself is also optional: It is possible to specify just `<volume>[.<part>]` (or `<part>` with the `--absolute` flag), in which case it is not interpreted as a range. If only the volume is specified (e.g. `2`), then all the parts of the volume will be downloaded and if there is also a part (e.g. `2.1`), only that part will be downloaded.
+
+Here are examples of valid values for the argument:
+- `1.5:2.8` => Part 5 of volume 1 to part 8 of volume 2
+- `1:2.8` => Part 1 of volume 1 to part 8 of volume 2
+- `1:3` => If not absolute, part 1 of volume 1 to the last part of volume 3; If absolute, parts 1 to 3 (from the beginning of the series) 
+- `2.7:` => Part 7 of volume 2 until the last part in the series 
+- `:3.5` => From the first part in the series until part 5 of volume 3
+- `:` => The whole series
+- `2` => If not absolute, all the parts of volume 2; If absolute, part 2 (from the beginning of the series) 
 
 ### Rare Unicode characters
 
