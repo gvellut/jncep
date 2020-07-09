@@ -38,6 +38,7 @@ def output_option(f):
         "output_dirpath",
         type=click.Path(exists=True, resolve_path=True, file_okay=False, writable=True),
         default=os.getcwd(),
+        envvar="JNCEP_OUTPUT",
         help="Existing folder to write the output [default: The current directory]",
     )(f)
 
