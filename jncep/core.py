@@ -638,7 +638,7 @@ def read_tracked_series():
 
 def write_tracked_series(tracked):
     _ensure_config_dirpath_exists()
-    with atomic_write(_tracked_series_filepath().resolve(), overwrite=True) as f:
+    with atomic_write(str(_tracked_series_filepath().resolve()), overwrite=True) as f:
         f.write(json.dumps(tracked, sort_keys=True, indent=2))
 
 
