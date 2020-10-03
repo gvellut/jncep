@@ -355,46 +355,57 @@ def update_tracked(  # noqa: C901
             updated_series.append(novel)
     else:
         # keep compatibility
+        has_error = False
         for series_slug_or_url, series_details in tracked_series.items():
-            # see track command: always record the Novel slug
             try:
-                slug = jncapi.slug_from_url(series_slug_or_url)
-            except Exception:
-                # not a URL. It is probably a slug from an older version
-                slug = (series_slug_or_url, "NOVEL")
-            print(f"Fetching metadata for '{slug[0]}'...")
-            metadata = jncapi.fetch_metadata(token, slug)
-            novel = core.analyze_novel_metadata(slug[1], metadata)
+                # see track command: always record the Novel slug
+                try:
+                    slug = jncapi.slug_from_url(series_slug_or_url)
+                except Exception:
+                    # not a URL. It is probably a slug from an older version
+                    slug = (series_slug_or_url, "NOVEL")
+                print(f"Fetching metadata for '{slug[0]}'...")
+                metadata = jncapi.fetch_metadata(token, slug)
+                novel = core.analyze_novel_metadata(slug[1], metadata)
 
-            # keep compatibility for now
-            if isinstance(series_details, dict):
-                if series_details.part == 0:
-                    last_pn = 0
+                # keep compatibility for now
+                if isinstance(series_details, dict):
+                    if series_details.part == 0:
+                        last_pn = 0
+                    else:
+                        last_pn = core.to_part(novel, series_details.part).absolute_num
                 else:
-                    last_pn = core.to_part(novel, series_details.part).absolute_num
-            else:
-                last_pn = series_details
+                    last_pn = series_details
 
-            is_updated = _create_updated_epub(
-                token,
-                novel,
-                last_pn,
-                is_by_volume,
-                output_dirpath,
-                is_extract_images,
-                is_not_replace_chars,
-            )
-            if is_updated:
-                print(
-                    colored(
-                        f"The series '{novel.raw_serie.title}' has been updated!",
-                        f"green",
-                    )
+                is_updated = _create_updated_epub(
+                    token,
+                    novel,
+                    last_pn,
+                    is_by_volume,
+                    output_dirpath,
+                    is_extract_images,
+                    is_not_replace_chars,
                 )
-                updated_series.append(novel)
+                if is_updated:
+                    print(
+                        colored(
+                            f"The series '{novel.raw_serie.title}' has been updated!",
+                            f"green",
+                        )
+                    )
+                    updated_series.append(novel)
+            except Exception as ex:
+                has_error = True
+                print(colored("An error occured while updating the series:", "red"))
+                print(colored(str(ex), "red"))
+                if DEBUG:
+                    traceback.print_exc()
 
     print("Logout...")
     jncapi.logout(token)
+
+    if has_error:
+        print(colored("Some series could not be updated!", "red"))
 
     if len(updated_series) > 0:
         # update tracking config JSON => to last part in series
