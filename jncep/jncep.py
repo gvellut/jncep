@@ -155,6 +155,9 @@ def generate_epub(
         is_not_replace_chars,
     )
 
+    print("Logout...")
+    jncapi.logout(token)
+
 
 @cli.command(name="track", help="Track updates to a series")
 @click.argument("jnc_url", metavar="(JNOVEL_CLUB_URL?)", required=False)
@@ -194,6 +197,9 @@ def track_series(jnc_url, email, password, is_rm):  # noqa: C901
 
     print(f"Fetching metadata for '{slug[0]}'...")
     metadata = jncapi.fetch_metadata(token, slug)
+
+    print("Logout...")
+    jncapi.logout(token)
 
     novel = core.analyze_novel_metadata(slug[1], metadata)
     # standardize on the series slug for the config (even though URLs
@@ -392,6 +398,9 @@ def update_tracked(  # noqa: C901
                     )
                 )
                 updated_series.append(novel)
+
+    print("Logout...")
+    jncapi.logout(token)
 
     if len(updated_series) > 0:
         # update tracking config JSON => to last part in series

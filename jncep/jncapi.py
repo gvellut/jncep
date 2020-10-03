@@ -8,11 +8,14 @@ import requests_toolbelt.utils.dump
 
 IMG_URL_BASE = "https://d2dq7ifhe7bu0f.cloudfront.net"
 JNC_URL_BASE = "https://j-novel.club"
+API_JNC_URL_BASE = "https://api.j-novel.club"
+
+COMMON_API_HEADERS = {"accept": "application/json", "content-type": "application/json"}
 
 
 def login(email, password):
-    url = "https://api.j-novel.club/api/users/login?include=user"
-    headers = {"accept": "application/json", "content-type": "application/json"}
+    url = f"{API_JNC_URL_BASE}/api/users/login?include=user"
+    headers = COMMON_API_HEADERS
     payload = {"email": email, "password": password}
 
     r = requests.post(url, data=json.dumps(payload), headers=headers)
@@ -24,12 +27,15 @@ def login(email, password):
     return access_token
 
 
+def logout(token):
+    url = f"{API_JNC_URL_BASE}/api/users/logout"
+    headers = {"authorization": token, **COMMON_API_HEADERS}
+    r = requests.post(url, headers=headers)
+    r.raise_for_status()
+
+
 def fetch_metadata(token, slug):
-    headers = {
-        "authorization": token,
-        "accept": "application/json",
-        "content-type": "application/json",
-    }
+    headers = {"authorization": token, **COMMON_API_HEADERS}
 
     where, req_type = slug
     if req_type == "PART":
@@ -42,7 +48,7 @@ def fetch_metadata(token, slug):
         res_type = "series"
         include = ["volumes", "parts"]
 
-    url = f"https://api.j-novel.club/api/{res_type}/findOne"
+    url = f"{API_JNC_URL_BASE}/api/{res_type}/findOne"
 
     qfilter = {
         "where": {"titleslug": where},
@@ -57,12 +63,8 @@ def fetch_metadata(token, slug):
 
 
 def fetch_content(token, part_id):
-    url = f"https://api.j-novel.club/api/parts/{part_id}/partData"
-    headers = {
-        "authorization": token,
-        "accept": "application/json",
-        "content-type": "application/json",
-    }
+    url = f"{API_JNC_URL_BASE}/api/parts/{part_id}/partData"
+    headers = {"authorization": token, **COMMON_API_HEADERS}
     r = requests.get(url, headers=headers)
     r.raise_for_status()
 
