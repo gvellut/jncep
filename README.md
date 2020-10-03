@@ -14,9 +14,11 @@ pip install jncep
 
 The command above will install the `jncep` Python library and its dependencies. The library includes a command-line script, also named `jncep`, whose functionality is described below.
 
-# Limitations
+# Limitations & disclaimer
 
 This tool only works with J-Novel Club __novels__, not manga.
+
+`jncep` is completely unaffiliated with J-Novel Club (it just uses their API) so do not expect support from them (but you may file an issue on the [bug tracker](https://github.com/gvellut/jncep/issues) of this project on Github).
 
 # Usage
 
@@ -28,9 +30,9 @@ The `jncep` tool must be launched on the command-line. It has 3 commands:
 
 ## J-Novel Club account credentials
 
-All the commands need some user credentials (email and password) in order to communicate with the J-Novel Club API. They are the same values as the ones used to log in to the J-Novel Club website with a browser.
+All the commands need some user credentials (email and password) in order to communicate with the J-Novel Club API. They are the same values as the ones used to log in to the J-Novel Club website with a browser (unless you used _Sign in with Google_ or _Sign in with Facebook_: In that case, see the section below).
 
-Those credentials can be passed directly on the command line using the `--email` and `--password` arguments to the __command__ (not the `jncep` tool directly). For example, using the `epub` command:
+Those credentials can be passed directly on the command line using the `--email` and `--password` arguments to the __command__ (or subcommand for `track`), not the `jncep` tool directly. For example, using the `epub` command:
 
 ```console
 jncep epub --email user@example.com --password "foo%bar666!" https://j-novel.club/c/tearmoon-empire-volume-1-part-1
@@ -51,13 +53,23 @@ jncep epub https://j-novel.club/c/tearmoon-empire-volume-1-part-1
 
 In order to make them more readable, all the examples in the rest of this documentation will assume that the env vars are set.
 
+### Credentials if you signed up at J-Novel Club with Google or Facebook
+
+It is not possible to directly use the Google credentials (if _Sign in with Google_ is used on the J-Novel Club website) or Facebook credentials (with _Sign in with Facebook_). Instead, it is the same process as the one you need to perform in order to log in to the official J-Novel Club mobile app, in case you originally signed up with Google or Facebook:
+- Log in to the J-Novel Club website with Facebook or Google
+- Go to the __Account__ page from the link at the top.
+- Click on the __Password__ section on the left hand side.
+- You can set a password there.
+
+Then you can use the login email of your Facebook or Google account, together with that new password, as credentials for the `jncep` tool.
+
 ## epub
 
 The `epub` command is used for simple EPUB generation, based on a URL link to a part or volume or series on the J-Novel Club website.
 
 ### Options
 
-To get some help about the arguments to the `epub` command, just launch with the --help option:
+To get some help about the arguments to the `epub` command, just launch with the `--help` option:
 
 ```console
 ~$ jncep epub --help
@@ -139,7 +151,12 @@ To solve this issue (without having to mess with fonts), by default, this specif
 
 ## track
 
-This command is used to tell the tool that it should track updates for a series. A flag `--rm` can be used to untrack a series. In both cases, a URL link to a part or volume or series on the J-Novel Club website must be passed and is used to specify the series.
+This command is used to maange series to track. It has 3 subcommands:
+- `add`: Add a new series for tracking. After a series has been added, it can be updated using the `update` command.
+- `rm`: Remove a series from tracking
+- `list`: List tracked serie
+
+In the cases of `add` and `rm`, a URL link to a part or volume or series on the J-Novel Club website must be passed and is used to specify the series. Credentials are also needed (but not for `list` though, which doesnt^communicate with th J-Novel Club API).
 
 ### Tracking configuration
 
@@ -149,50 +166,53 @@ The `tracked.json` file can be updated manually with a text editor if needed. It
 
 ### Options
 
-To get some help about the arguments to the `track` command, just launch with the --help option:
+To get some help about the arguments to the `track` command, just launch with the `--help` option:
 
 ```console
 ~$ jncep track --help
-Usage: jncep track [OPTIONS] (JNOVEL_CLUB_URL?)
+Usage: jncep.py track [OPTIONS] COMMAND [ARGS]...
 
   Track updates to a series
 
 Options:
-  -l, --email TEXT     Login email for J-Novel Club account  [required]
-  -p, --password TEXT  Login password for J-Novel Club account  [required]
-  --rm                 Flag to indicate that the series identified by the
-                       JNOVEL_CLUB_URL argument should be untracked
-  --help               Show this message and exit.
+  --help  Show this message and exit.
+
+Commands:
+  add   Add a new series for tracking
+  list  List tracked series
+  rm    Remove a series from tracking
 ```
+
+In turn, the `add`, `rm` and `list` commands can be called with `--help`.
 
 ### Examples
 
 #### Tracking
 
-The following command will set up tracking for the "Tearmoon Empire" series:
+The following command will set up tracking for the "Tearmoon Empire" series, using the `add` subcommand:
 
 ```console
-jncep track https://j-novel.club/c/tearmoon-empire-volume-1-part-1
+jncep track add https://j-novel.club/c/tearmoon-empire-volume-1-part-1
 ```
 
-Currently the last part is Volume 1 Part 14, so an entry "tearmoon-empire" with part `1.14` will be added to the `tracked.json` file.
+Currently the last part is Volume 1 Part 14, so an entry "tearmoon-empire" with part `1.14` will be added to the `tracked.json` file (note: If the series has been updated since writing this, it will be a different part number).
 
 #### Untracking
 
-The following command will disable tracking for the "Tearmoon Empire" series, using the `--rm` flag:
+The following command will disable tracking for the "Tearmoon Empire" series, using the `rm` subcommand:
 
 ```console
-jncep track --rm https://j-novel.club/c/tearmoon-empire-volume-1-part-14
+jncep track rm https://j-novel.club/c/tearmoon-empire-volume-1-part-14
 ```
 
 Note that the URL is different from the first example: It doesn't matter since it resolves to the same series.
 
 #### List tracked series
 
-Without any argument the command will list the tracked series:
+Using the `list`subcommand, `track` will list the tracked series:
 
 ```console
-jncep track
+jncep track list
 ```
 
 This will display something like:
@@ -209,7 +229,7 @@ This command is used to generate EPUB files for newly updated series that were p
 
 ### Options
 
-To get some help about the arguments to the `update` command, just launch with the --help option:
+To get some help about the arguments to the `update` command, just launch with the `--help` option:
 
 ```console
 ~$ jncep update --help

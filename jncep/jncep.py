@@ -153,37 +153,100 @@ def generate_epub(
     jncapi.logout(token)
 
 
-@cli.command(name="track", help="Track updates to a series")
-@click.argument("jnc_url", metavar="(JNOVEL_CLUB_URL?)", required=False)
+@cli.group(name="track", help="Track updates to a series")
+def track_series():
+    pass
+
+
+@track_series.command(name="add", help="Add a new series for tracking")
+@click.argument("jnc_url", metavar="JNOVEL_CLUB_URL", required=True)
 @login_option
 @password_option
-@click.option(
-    "--rm",
-    "is_rm",
-    is_flag=True,
-    help="Flag to indicate that the series identified by the JNOVEL_CLUB_URL argument "
-    "should be untracked",
-)
-def track_series(jnc_url, email, password, is_rm):  # noqa: C901
-    if is_rm and not jnc_url:
-        raise ValueError("A JNOVEL_CLUB_URL must be passed")
+def add_track_series(jnc_url, email, password):
+    novel, series_url, series_slug = _canonical_series(jnc_url, email, password)
+    tracked_series = core.read_tracked_series()
 
-    if not jnc_url:
-        # list
-        tracked_series = core.read_tracked_series()
-        if len(tracked_series) > 0:
-            print(f"{len(tracked_series)} series are tracked:")
-            for ser_url, ser_details in tracked_series.items():
-                if isinstance(ser_details, dict):
-                    print(f"'{ser_details.name}' ({ser_url}): {ser_details.part}")
-                else:
-                    # keep compat with old version for now
-                    print(f"'{ser_url}': {ser_details}")
-        else:
-            print(f"No series is tracked.")
-
+    # keep compatibility for now
+    # TODO remove compat for 1.0
+    if series_slug in tracked_series or series_url in tracked_series:
+        print(
+            colored(
+                f"The series '{novel.raw_serie.title}' is already tracked!", "yellow",
+            )
+        )
         return
 
+    # record current last part + name
+    if len(novel.parts) == 0:
+        # no parts yet
+        pn = 0
+    else:
+        pn = core.to_relative_part_string(novel, novel.parts[-1])
+    tracked_series[series_url] = {"part": pn, "name": novel.raw_serie.title}
+    core.write_tracked_series(tracked_series)
+
+    if len(novel.parts) == 0:
+        print(
+            colored(
+                f"The series '{novel.raw_serie.title}' is now tracked, starting "
+                f"from the beginning",
+                "green",
+            )
+        )
+    else:
+        relative_part = core.to_relative_part_string(novel, novel.parts[-1])
+        print(
+            colored(
+                f"The series '{novel.raw_serie.title}' is now tracked, starting "
+                f"after part {relative_part}",
+                "green",
+            )
+        )
+
+
+@track_series.command(name="rm", help="Remove a series from tracking")
+@click.argument("jnc_url", metavar="JNOVEL_CLUB_URL", required=True)
+@login_option
+@password_option
+def remove_track_series(jnc_url, email, password):
+    novel, series_url, series_slug = _canonical_series(jnc_url, email, password)
+    tracked_series = core.read_tracked_series()
+
+    if series_slug not in tracked_series and series_url not in tracked_series:
+        print(
+            colored(f"The series '{novel.raw_serie.title}' is not tracked!", "yellow")
+        )
+        return
+
+    # try both old and new form
+    try:
+        del tracked_series[series_slug]
+    except Exception:
+        del tracked_series[series_url]
+
+    core.write_tracked_series(tracked_series)
+
+    print(
+        colored(f"The series '{novel.raw_serie.title}' is no longer tracked", "green")
+    )
+
+
+@track_series.command(name="list", help="List tracked series")
+def list_track_series():
+    tracked_series = core.read_tracked_series()
+    if len(tracked_series) > 0:
+        print(f"{len(tracked_series)} series are tracked:")
+        for ser_url, ser_details in tracked_series.items():
+            if isinstance(ser_details, dict):
+                print(f"'{ser_details.name}' ({ser_url}): {ser_details.part}")
+            else:
+                # keep compat with old version for now
+                print(f"'{ser_url}': {ser_details}")
+    else:
+        print(f"No series is tracked.")
+
+
+def _canonical_series(jnc_url, email, password):
     slug = jncapi.slug_from_url(jnc_url)
 
     print(f"Login with email '{email}'...")
@@ -196,72 +259,11 @@ def track_series(jnc_url, email, password, is_rm):  # noqa: C901
     jncapi.logout(token)
 
     novel = core.analyze_novel_metadata(slug[1], metadata)
-    # standardize on the series slug for the config (even though URLs
-    # for volumes or parts are accepted)
+    # series slug for the compat with old format
     series_slug = novel.raw_serie.titleslug
     series_url = jncapi.url_from_slug(series_slug)
 
-    tracked_series = core.read_tracked_series()
-
-    if not is_rm:
-        # keep compatibility for now
-        if series_slug in tracked_series or series_url in tracked_series:
-            print(
-                colored(
-                    f"The series '{novel.raw_serie.title}' is already tracked!",
-                    "yellow",
-                )
-            )
-            return
-
-        # record current last part + name
-        if len(novel.parts) == 0:
-            # no parts yet
-            pn = 0
-        else:
-            pn = core.to_relative_part_string(novel, novel.parts[-1])
-        tracked_series[series_url] = {"part": pn, "name": novel.raw_serie.title}
-        core.write_tracked_series(tracked_series)
-
-        if len(novel.parts) == 0:
-            print(
-                colored(
-                    f"The series '{novel.raw_serie.title}' is now tracked, starting "
-                    f"from the beginning",
-                    "green",
-                )
-            )
-        else:
-            relative_part = core.to_relative_part_string(novel, novel.parts[-1])
-            print(
-                colored(
-                    f"The series '{novel.raw_serie.title}' is now tracked, starting "
-                    f"after part {relative_part}",
-                    "green",
-                )
-            )
-    else:
-        if series_slug not in tracked_series and series_url not in tracked_series:
-            print(
-                colored(
-                    f"The series '{novel.raw_serie.title}' is not tracked!", "yellow"
-                )
-            )
-            return
-
-        # try both old and new form
-        try:
-            del tracked_series[series_slug]
-        except Exception:
-            del tracked_series[series_url]
-
-        core.write_tracked_series(tracked_series)
-
-        print(
-            colored(
-                f"The series '{novel.raw_serie.title}' is no longer tracked", "green"
-            )
-        )
+    return novel, series_url, series_slug
 
 
 @cli.command(
@@ -290,7 +292,7 @@ def update_tracked(  # noqa: C901
     if len(tracked_series) == 0:
         print(
             colored(
-                "There are no tracked series! Use the 'jncep track' command first.",
+                "There are no tracked series! Use the 'jncep track add' command first.",
                 "yellow",
             )
         )
@@ -358,7 +360,7 @@ def update_tracked(  # noqa: C901
         has_error = False
         for series_slug_or_url, series_details in tracked_series.items():
             try:
-                # see track command: always record the Novel slug
+                # see track command: always record the Novel URL
                 try:
                     slug = jncapi.slug_from_url(series_slug_or_url)
                 except Exception:
