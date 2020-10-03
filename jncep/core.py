@@ -45,6 +45,10 @@ class Part:
     content = attr.ib(default=None)
 
 
+class CoverImageException(Exception):
+    pass
+
+
 def to_relative_part_string(novel, part):
     volume_number = part.volume.raw_volume.volumeNumber
     part_number = part.num_in_volume
@@ -63,16 +67,33 @@ def create_epub(
     contents, downloaded_img_urls = get_book_content_and_images(
         token, novel, parts, is_not_replace_chars
     )
-    identifier, title, author, cover_url, toc = get_book_details(novel, parts)
+    identifier, title, author, cover_url_candidates, toc = get_book_details(
+        novel, parts
+    )
 
-    if cover_url in downloaded_img_urls:
-        # no need to redownload
-        # tuple : index 0 => bytes content
-        # TODO do not add same file (same content, different name) in EPUB
-        cover_bytes = downloaded_img_urls[cover_url][0]
+    print("Fetching cover image...")
+    for cover_url in cover_url_candidates:
+        if cover_url in downloaded_img_urls:
+            # no need to redownload
+            # tuple : index 0 => bytes content
+            # TODO do not add same file (same content, different name) in EPUB
+            cover_bytes = downloaded_img_urls[cover_url][0]
+            break
+        else:
+            try:
+                cover_bytes = jncapi.fetch_image_from_cdn(cover_url)
+                break
+            except Exception:
+                print(
+                    colored(
+                        f"Unable to download cover image with URL: '{cover_url}'. "
+                        "Trying next candidate...",
+                        "yellow",
+                    )
+                )
+                continue
     else:
-        print("Fetching cover image...")
-        cover_bytes = jncapi.fetch_image_from_cdn(cover_url)
+        raise CoverImageException("No suitable cover could be downloaded!")
 
     output_filename = _to_safe_filename(title) + ".epub"
     output_filepath = os.path.join(output_dirpath, output_filename)
@@ -182,9 +203,8 @@ def get_book_details(novel, parts_to_download):
         else:
             complete_suffix = ""
         title = f"{part.raw_part.title}{complete_suffix}"
-        # use the first part of the volume: it contains a link to
-        # a good resolution image
-        cover_url = _cover_url(part.volume.parts[0].raw_part)
+
+        cover_url_candidates = _cover_url_candidates(part.volume)
         # single part => single volume: part numbers relative to
         # that volume
         # TODO no TOC for single part ?
@@ -210,16 +230,12 @@ def get_book_details(novel, parts_to_download):
             # TODO simplify instead ?
             toc = [part.raw_part.title for part in parts_to_download]
 
-            # use the first part of the first volume in the requested content:
-            # first part of a volume has cvr_860.jpg which is bigger than the cover_400
-            # in volume or novel
-            cover_url = _cover_url(volumes[0].parts[0].raw_part)
+            cover_url_candidates = _cover_url_candidates(volumes[0])
             title = f"{title_base} [{part_nums}]"
         else:
             volume = volumes[0]
             title_base = volume.raw_volume.title
-            # same : use first part in volume which has cvr_860
-            cover_url = _cover_url(volume.parts[0].raw_part)
+            cover_url_candidates = _cover_url_candidates(volume)
             # relative to volume
             toc = [f"Part {part.num_in_volume}" for part in parts_to_download]
 
@@ -239,7 +255,7 @@ def get_book_details(novel, parts_to_download):
 
     identifier = identifier_base + str(int(time.time()))
 
-    return identifier, title, author, cover_url, toc
+    return identifier, title, author, cover_url_candidates, toc
 
 
 def _is_final(novel, part):
@@ -332,6 +348,19 @@ p {text-indent: 1.3em;}
     book.spine = [cover_page, "nav", *chapters]
 
     epub.write_epub(output_filepath, book, {})
+
+
+def _cover_url_candidates(volume):
+    # for each part in the volume, get the biggest cover image attachment
+    # usually the first part will have the biggest (cvr_860.jpg), but API
+    # may return invalid file ; so generate multiple candidates
+    candidates = [_cover_url(part.raw_part) for part in volume.parts]
+
+    # cover in the volume as ultimate fallback
+    # usually has a cover_400.jpg
+    candidates.append(_cover_url(volume.raw_volume))
+
+    return candidates
 
 
 def _cover_url(raw_metadata):
