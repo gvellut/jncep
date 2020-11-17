@@ -302,6 +302,7 @@ def update_tracked(  # noqa: C901
     token = jncapi.login(email, password)
 
     updated_series = []
+    has_error = False
     if jnc_url:
         slug = jncapi.slug_from_url(jnc_url)
 
@@ -356,8 +357,7 @@ def update_tracked(  # noqa: C901
             )
             updated_series.append(novel)
     else:
-        # keep compatibility
-        has_error = False
+        # keep compatibility : slug or url
         for series_slug_or_url, series_details in tracked_series.items():
             try:
                 # see track command: always record the Novel URL
@@ -407,6 +407,8 @@ def update_tracked(  # noqa: C901
     jncapi.logout(token)
 
     if has_error:
+        # only for multiple updates ; when url passed and error => goes directly
+        # to fatal error
         print(colored("Some series could not be updated!", "red"))
 
     if len(updated_series) > 0:

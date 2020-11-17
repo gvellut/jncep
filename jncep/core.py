@@ -354,7 +354,10 @@ def _cover_url_candidates(volume):
     # for each part in the volume, get the biggest cover image attachment
     # usually the first part will have the biggest (cvr_860.jpg), but API
     # may return invalid file ; so generate multiple candidates
-    candidates = [_cover_url(part.raw_part) for part in volume.parts]
+    # TODO get the max for all candidates not all individually
+    candidates = list(
+        filter(None, [_cover_url(part.raw_part) for part in volume.parts])
+    )
 
     # cover in the volume as ultimate fallback
     # usually has a cover_400.jpg
@@ -364,14 +367,17 @@ def _cover_url_candidates(volume):
 
 
 def _cover_url(raw_metadata):
-    covers = list(
-        filter(
-            lambda a: "cvr" in a.filename or "cover" in a.filename,
-            raw_metadata.attachments,
+    if raw_metadata.attachments :
+        covers = list(
+            filter(
+                lambda a: "cvr" in a.filename or "cover" in a.filename,
+                raw_metadata.attachments,
+            )
         )
-    )
-    cover = max(covers, key=lambda c: c.size)
-    return f"{jncapi.IMG_URL_BASE}/{cover.fullpath}"
+        if len(covers) > 0:
+            cover = max(covers, key=lambda c: c.size)
+            return f"{jncapi.IMG_URL_BASE}/{cover.fullpath}"
+    return None
 
 
 class ImgUrlParser(HTMLParser):
