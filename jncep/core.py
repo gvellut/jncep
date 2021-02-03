@@ -267,12 +267,23 @@ def _is_final(novel, part):
         return part == part.volume.parts[-1]
 
     # last volume
-    # TODO totalPartNumber comes from the API and is set only for some
+
+    # must be at the very least the last part listed for the volume
+    # seen some bug where the test on totalPartNumber below
+    # can be true even if not the last part
+    if part != part.volume.parts[-1]:
+        return False
+
+    # totalPartNumber comes from the API and is set only for some
     # series; Sometimes set on unfinished volumes but not present once the
     # volume is complete... (in this case return false: not possible to tell)
     total_pn_in_volume = part.volume.raw_volume.totalPartNumber
     if total_pn_in_volume:
-        return part.num_in_volume == total_pn_in_volume
+        # Should be == if no issue but...
+        # >= instead : I saw a volume where the last part was bigger than
+        # totalPartNumber (By the Grace of the Gods vol 6 => TPN = 10, but last
+        # part is 11)
+        return part.num_in_volume >= total_pn_in_volume
     else:
         # we can't tell
         return False
@@ -367,7 +378,7 @@ def _cover_url_candidates(volume):
 
 
 def _cover_url(raw_metadata):
-    if raw_metadata.attachments :
+    if raw_metadata.attachments:
         covers = list(
             filter(
                 lambda a: "cvr" in a.filename or "cover" in a.filename,
