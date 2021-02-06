@@ -6,10 +6,7 @@ import traceback
 import click
 from termcolor import colored
 
-from . import core, jncapi
-
-DEBUG = False
-
+from . import core, DEBUG, jncapi
 
 login_option = click.option(
     "-l",

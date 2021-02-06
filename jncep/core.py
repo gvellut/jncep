@@ -12,7 +12,7 @@ import attr
 from ebooklib import epub
 from termcolor import colored
 
-from . import jncapi
+from . import DEBUG, jncapi
 
 RANGE_SEP = ":"
 
@@ -448,7 +448,8 @@ def analyze_novel_metadata(req_type, metadata):
         # some novels have a gap in the part number ie index does not correspond
         # to field partNumber e.g. economics of prophecy starting at part 10
         # print warning
-        if absolute_num != raw_part.partNumber and not is_warned:
+        if DEBUG and absolute_num != raw_part.partNumber and not is_warned:
+            # not an issue in practice so leave it in DEBUG mode only
             print(
                 colored(
                     f"Absolute part number returned by API has a gap "
