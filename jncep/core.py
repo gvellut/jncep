@@ -677,10 +677,19 @@ def read_tracked_series():
     try:
         with _tracked_series_filepath().open() as json_file:
             data = json.load(json_file)
-            return Addict(data)
+            return _convert_to_latest_format(Addict(data))
     except FileNotFoundError:
         # first run ?
         return Addict({})
+
+
+def _convert_to_latest_format(data):
+    converted = {}
+    for legacy_series_url, value in data.items():
+        new_series_url = jncapi.to_new_website_series_url(legacy_series_url)
+        converted[new_series_url] = value
+        # TODO remove legacy tracked.json format as well
+    return converted
 
 
 def write_tracked_series(tracked):

@@ -258,7 +258,7 @@ def _canonical_series(jnc_url, email, password):
     novel = core.analyze_novel_metadata(slug[1], metadata)
     # series slug for the compat with old format
     series_slug = novel.raw_serie.titleslug
-    series_url = jncapi.url_from_slug(series_slug)
+    series_url = jncapi.url_from_series_slug(series_slug)
 
     return novel, series_url, series_slug
 
@@ -308,7 +308,7 @@ def update_tracked(  # noqa: C901
 
         novel = core.analyze_novel_metadata(slug[1], metadata)
         series_slug = novel.raw_serie.titleslug
-        series_url = jncapi.url_from_slug(series_slug)
+        series_url = jncapi.url_from_series_slug(series_slug)
 
         if series_slug not in tracked_series and series_url not in tracked_series:
             print(
@@ -414,7 +414,7 @@ def update_tracked(  # noqa: C901
         for novel in updated_series:
             pn = core.to_relative_part_string(novel, novel.parts[-1])
             # write part + name in case old version with just the part number
-            tracked_series[jncapi.url_from_slug(novel.raw_serie.titleslug)] = {
+            tracked_series[jncapi.url_from_series_slug(novel.raw_serie.titleslug)] = {
                 "part": pn,
                 "name": novel.raw_serie.title,
             }

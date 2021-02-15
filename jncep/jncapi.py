@@ -35,23 +35,52 @@ def logout(token):
 
 
 def fetch_metadata(token, slug):
-    headers = {"authorization": token, **COMMON_API_HEADERS}
-
-    where, req_type = slug
+    spec, req_type = slug
     if req_type == "PART":
         res_type = "parts"
         include = [{"serie": ["volumes", "parts"]}, "volume"]
+        where = {"titleslug": spec}
+        return _fetch_metadata_internal(token, res_type, where, include)
     elif req_type == "VOLUME":
-        res_type = "volumes"
-        include = [{"serie": ["volumes", "parts"]}, "parts"]
+        if isinstance(spec, tuple):
+            # for volume on new website => where is a tuple (series_slug, volume num)
+            series_slug, volume_number = spec
+
+            # TODO is the volume sluge always : <series_slug>-volume-<vol_num>
+            # TOOD if so can be simplified
+
+            # just in case do 2 queries
+
+            # first fetch series since we have the slug for it
+            res_type = "series"
+            include = []
+            where = {"titleslug": series_slug}
+            series = _fetch_metadata_internal(token, res_type, where, include)
+
+            serie_id = series.id
+            res_type = "volumes"
+            include = [{"serie": ["volumes", "parts"]}, "parts"]
+            where = {"volumeNumber": volume_number, "serieId": serie_id}
+            return _fetch_metadata_internal(token, res_type, where, include)
+
+        else:
+            res_type = "volumes"
+            include = [{"serie": ["volumes", "parts"]}, "parts"]
+            where = {"titleslug": spec}
+            return _fetch_metadata_internal(token, res_type, where, include)
     else:
         res_type = "series"
         include = ["volumes", "parts"]
+        where = {"titleslug": spec}
+        return _fetch_metadata_internal(token, res_type, where, include)
 
+
+def _fetch_metadata_internal(token, res_type, where, include):
+    headers = {"authorization": token, **COMMON_API_HEADERS}
     url = f"{API_JNC_URL_BASE}/api/{res_type}/findOne"
 
     qfilter = {
-        "where": {"titleslug": where},
+        "where": where,
         "include": include,
     }
     payload = {"filter": json.dumps(qfilter)}
@@ -78,6 +107,7 @@ def fetch_image_from_cdn(url):
     return r.content
 
 
+# TODO make class: already tuple, can have additional tuple... + repr
 def slug_from_url(url):
     pu = urlparse(url)
 
@@ -85,18 +115,46 @@ def slug_from_url(url):
         raise ValueError(f"Not a URL: {url}")
     # path is: /c/<slug>/...  or /v/<slug>/... or /s/<slug>/...
     # for c_hapter, v_olume, s_erie
+    # try legacy URL
     m = re.match(r"^/(v|c|s)/(.+?)(?:(?=/)|$)", pu.path)
-    if not m:
-        raise ValueError(f"Invalid path for URL: {url}")
+    if m:
+        return m.group(2), _to_const_legacy(m.group(1))
+    else:
+        s_re = r"^/titles/(.+?)(?:(?=/)|$)"
+        c_re = r"^/read/(.+?)(?:(?=/)|$)"
+        m = re.match(s_re, pu.path)
+        if m:
+            series_slug = m.group(1)
+            if not pu.fragment:
+                return series_slug, "NOVEL"
 
-    return m.group(2), _to_const(m.group(1))
+            v_re = r"^volume-(\d+)$"
+            m = re.match(v_re, pu.fragment)
+            if m:
+                # tuple with volume
+                return (series_slug, m.group(1)), "VOLUME"
+        else:
+            m = re.match(c_re, pu.path)
+            if m:
+                return m.group(1), "PART"
+
+    raise ValueError(f"Invalid path for URL: {url}")
 
 
-def url_from_slug(series_slug):
-    return f"{JNC_URL_BASE}/s/{series_slug}"
+def url_from_series_slug(series_slug):
+    # new URL
+    return f"{JNC_URL_BASE}/titles/{series_slug}"
 
 
-def _to_const(req_type):
+def to_new_website_series_url(series_url):
+    # supports legacy URLs + new
+    series_slug = slug_from_url(series_url)
+    # outputs new URL
+    new_series_url = url_from_series_slug(series_slug[0])
+    return new_series_url
+
+
+def _to_const_legacy(req_type):
     if req_type == "c":
         return "PART"
     elif req_type == "v":
