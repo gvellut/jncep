@@ -160,12 +160,12 @@ def track_series():
 @login_option
 @password_option
 def add_track_series(jnc_url, email, password):
-    novel, series_url, series_slug = _canonical_series(jnc_url, email, password)
+    novel, series_url = _canonical_series(jnc_url, email, password)
     tracked_series = core.read_tracked_series()
 
     # keep compatibility for now
     # TODO remove compat for 1.0
-    if series_slug in tracked_series or series_url in tracked_series:
+    if series_url in tracked_series:
         print(
             colored(
                 f"The series '{novel.raw_serie.title}' is already tracked!", "yellow",
@@ -206,20 +206,16 @@ def add_track_series(jnc_url, email, password):
 @login_option
 @password_option
 def remove_track_series(jnc_url, email, password):
-    novel, series_url, series_slug = _canonical_series(jnc_url, email, password)
+    novel, series_url = _canonical_series(jnc_url, email, password)
     tracked_series = core.read_tracked_series()
 
-    if series_slug not in tracked_series and series_url not in tracked_series:
+    if series_url not in tracked_series:
         print(
             colored(f"The series '{novel.raw_serie.title}' is not tracked!", "yellow")
         )
         return
 
-    # try both old and new form
-    try:
-        del tracked_series[series_slug]
-    except Exception:
-        del tracked_series[series_url]
+    del tracked_series[series_url]
 
     core.write_tracked_series(tracked_series)
 
@@ -234,11 +230,7 @@ def list_track_series():
     if len(tracked_series) > 0:
         print(f"{len(tracked_series)} series are tracked:")
         for ser_url, ser_details in tracked_series.items():
-            if isinstance(ser_details, dict):
-                print(f"'{ser_details.name}' ({ser_url}): {ser_details.part}")
-            else:
-                # keep compat with old version for now
-                print(f"'{ser_url}': {ser_details}")
+            print(f"'{ser_details.name}' ({ser_url}): {ser_details.part}")
     else:
         print(f"No series is tracked.")
 
@@ -256,11 +248,10 @@ def _canonical_series(jnc_url, email, password):
     jncapi.logout(token)
 
     novel = core.analyze_novel_metadata(slug[1], metadata)
-    # series slug for the compat with old format
     series_slug = novel.raw_serie.titleslug
     series_url = jncapi.url_from_series_slug(series_slug)
 
-    return novel, series_url, series_slug
+    return novel, series_url
 
 
 @cli.command(
@@ -310,7 +301,7 @@ def update_tracked(  # noqa: C901
         series_slug = novel.raw_serie.titleslug
         series_url = jncapi.url_from_series_slug(series_slug)
 
-        if series_slug not in tracked_series and series_url not in tracked_series:
+        if series_url not in tracked_series:
             print(
                 colored(
                     f"The series '{novel.raw_serie.title}' is not tracked! "
@@ -355,14 +346,10 @@ def update_tracked(  # noqa: C901
             updated_series.append(novel)
     else:
         # keep compatibility : slug or url
-        for series_slug_or_url, series_details in tracked_series.items():
+        for series_url, series_details in tracked_series.items():
             try:
-                # see track command: always record the Novel URL
-                try:
-                    slug = jncapi.slug_from_url(series_slug_or_url)
-                except Exception:
-                    # not a URL. It is probably a slug from an older version
-                    slug = (series_slug_or_url, "NOVEL")
+                slug = jncapi.slug_from_url(series_url)
+
                 print(f"Fetching metadata for '{slug[0]}'...")
                 metadata = jncapi.fetch_metadata(token, slug)
                 novel = core.analyze_novel_metadata(slug[1], metadata)

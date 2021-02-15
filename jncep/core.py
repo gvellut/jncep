@@ -685,10 +685,26 @@ def read_tracked_series():
 
 def _convert_to_latest_format(data):
     converted = {}
-    for legacy_series_url, value in data.items():
+
+    # while at it convert from old format
+    # legacy format for tracked parts : just the part instead of object
+    # with keys part, name
+    # key is slug
+    for series_url_or_slug, value in data.items():
+        if not isinstance(value, dict):
+            series_slug = series_url_or_slug
+            series_url = jncapi.url_from_series_slug(series_slug)
+            # low effort way to get some title
+            name = series_slug.replace("-", " ").title()
+            value = Addict({"name": name, "part": value})
+            converted[series_url] = value
+        else:
+            converted[series_url_or_slug] = value
+
+    for legacy_series_url, value in converted.items():
         new_series_url = jncapi.to_new_website_series_url(legacy_series_url)
         converted[new_series_url] = value
-        # TODO remove legacy tracked.json format as well
+
     return converted
 
 
