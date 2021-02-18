@@ -64,6 +64,7 @@ def to_part(novel, relpart_str) -> Part:
 def create_epub(
     token, novel, parts, output_dirpath, is_extract_images, is_not_replace_chars
 ):
+    # here normally all parts in parameter are available
     contents, downloaded_img_urls = get_book_content_and_images(
         token, novel, parts, is_not_replace_chars
     )

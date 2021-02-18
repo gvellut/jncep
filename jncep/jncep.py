@@ -4,6 +4,7 @@ import sys
 import traceback
 
 import click
+import dateutil.parser
 from termcolor import colored
 
 from . import core, DEBUG, jncapi
@@ -136,7 +137,7 @@ def generate_epub(
     else:
         parts_to_download = core.analyze_requested(novel)
 
-    _create_epub_with_parts(
+    _create_epub_with_requested_parts(
         token,
         novel,
         parts_to_download,
@@ -163,8 +164,6 @@ def add_track_series(jnc_url, email, password):
     novel, series_url = _canonical_series(jnc_url, email, password)
     tracked_series = core.read_tracked_series()
 
-    # keep compatibility for now
-    # TODO remove compat for 1.0
     if series_url in tracked_series:
         print(
             colored(
@@ -177,9 +176,17 @@ def add_track_series(jnc_url, email, password):
     if len(novel.parts) == 0:
         # no parts yet
         pn = 0
+        # 0000-... not a valid date so 1111-...
+        pdate = "1111-11-11T11:11:11.111Z"
     else:
         pn = core.to_relative_part_string(novel, novel.parts[-1])
-    tracked_series[series_url] = {"part": pn, "name": novel.raw_serie.title}
+        pdate = novel.parts[-1].raw_part.launchDate
+
+    tracked_series[series_url] = {
+        "part_date": pdate,
+        "part": pn,  # now just for show
+        "name": novel.raw_serie.title,
+    }
     core.write_tracked_series(tracked_series)
 
     if len(novel.parts) == 0:
@@ -192,10 +199,12 @@ def add_track_series(jnc_url, email, password):
         )
     else:
         relative_part = core.to_relative_part_string(novel, novel.parts[-1])
+        part_date = dateutil.parser.parse(novel.parts[-1].raw_part.launchDate)
+        part_date_formatted = part_date.strftime("%b %d, %Y")
         print(
             colored(
                 f"The series '{novel.raw_serie.title}' is now tracked, starting "
-                f"after part {relative_part}",
+                f"after part {relative_part} [{part_date_formatted}]",
                 "green",
             )
         )
@@ -230,7 +239,17 @@ def list_track_series():
     if len(tracked_series) > 0:
         print(f"{len(tracked_series)} series are tracked:")
         for ser_url, ser_details in tracked_series.items():
-            print(f"'{ser_details.name}' ({ser_url}): {ser_details.part}")
+            details = None
+            if ser_details.part_date:
+                part_date = dateutil.parser.parse(ser_details.part_date)
+                part_date_formatted = part_date.strftime("%b %d, %Y")
+                details = f"{ser_details.part} [{part_date_formatted}]"
+            elif ser_details.part == 0:
+                details = "No part released"
+            else:
+                details = f"{ser_details.part}"
+
+            print(f"'{ser_details.name}' ({ser_url}): {details}")
     else:
         print(f"No series is tracked.")
 
@@ -311,26 +330,11 @@ def update_tracked(  # noqa: C901
             )
             return
 
-        # TODO merge with case no URL
-        if series_slug in tracked_series:
-            series_details = tracked_series[series_slug]
-        else:
-            series_details = tracked_series[series_url]
-        # keep compatibility for now
-        if isinstance(series_details, dict):
-            # special processing : cond means there was no part available when the
-            # series was started tracking
-            if series_details.part == 0:
-                last_pn = 0
-            else:
-                last_pn = core.to_part(novel, series_details.part).absolute_num
-        else:
-            last_pn = series_details
-
+        series_details = tracked_series[series_url]
         is_updated = _create_updated_epub(
             token,
             novel,
-            last_pn,
+            series_details,
             is_by_volume,
             output_dirpath,
             is_extract_images,
@@ -345,7 +349,6 @@ def update_tracked(  # noqa: C901
             )
             updated_series.append(novel)
     else:
-        # keep compatibility : slug or url
         for series_url, series_details in tracked_series.items():
             try:
                 slug = jncapi.slug_from_url(series_url)
@@ -354,19 +357,10 @@ def update_tracked(  # noqa: C901
                 metadata = jncapi.fetch_metadata(token, slug)
                 novel = core.analyze_novel_metadata(slug[1], metadata)
 
-                # keep compatibility for now
-                if isinstance(series_details, dict):
-                    if series_details.part == 0:
-                        last_pn = 0
-                    else:
-                        last_pn = core.to_part(novel, series_details.part).absolute_num
-                else:
-                    last_pn = series_details
-
                 is_updated = _create_updated_epub(
                     token,
                     novel,
-                    last_pn,
+                    series_details,
                     is_by_volume,
                     output_dirpath,
                     is_extract_images,
@@ -400,17 +394,13 @@ def update_tracked(  # noqa: C901
         # TODO do that in the loop instead of the end ?
         for novel in updated_series:
             pn = core.to_relative_part_string(novel, novel.parts[-1])
+            pdate = novel.parts[-1].raw_part.launchDate
             # write part + name in case old version with just the part number
             tracked_series[jncapi.url_from_series_slug(novel.raw_serie.titleslug)] = {
+                "part_date": pdate,
                 "part": pn,
                 "name": novel.raw_serie.title,
             }
-            # wipeout old format if exists
-            # TODO do that for all ?
-            try:
-                del tracked_series[novel.raw_serie.titleslug]
-            except Exception:
-                pass
         core.write_tracked_series(tracked_series)
 
         print(colored(f"{len(updated_series)} series sucessfully updated!", "green"))
@@ -425,13 +415,39 @@ def _to_yn(b):
 def _create_updated_epub(
     token,
     novel,
-    last_pn,
+    series_details,
     is_by_volume,
     output_dirpath,
     is_extract_images,
     is_not_replace_chars,
 ):
-    if len(novel.parts) == 0 or novel.parts[-1].absolute_num <= last_pn:
+    if series_details.part == 0:
+        # special processing : means there was no part available when the
+        # series was started tracking
+
+        # still no part ?
+        if len(novel.parts) == 0:
+            is_updated = False
+            # just to bind or pylint complains
+            first_new_part = 0
+        else:
+            is_updated = True
+            # starting from the first part
+            first_new_part = 1
+    else:
+        # for others, look at the date if there
+        if not series_details.part_date:
+            # if not => old format, first lookup date of last part and use that
+            # TODO possible to do that for all ie no need to keep the date around
+            last_part = core.to_part(novel, series_details.part)
+            last_update_date = last_part.raw_part.launchDate
+        else:
+            last_update_date = series_details.part_date
+
+        first_new_part = _first_part_released_after_date(novel, last_update_date)
+        is_updated = first_new_part is not None
+
+    if not is_updated:
         # no new part
         print(
             colored(
@@ -440,13 +456,13 @@ def _create_updated_epub(
         )
         return False
 
-    # create string part specs based on the next abs part number
-    part_specs = f"{last_pn + 1}:"
+    # create string part specs starting from the part number of the first new part
+    part_specs = f"{first_new_part}:"
     is_absolute = True
     parts_to_download = core.analyze_part_specs(novel, part_specs, is_absolute)
 
     # TODO create options object
-    _create_epub_with_parts(
+    _create_epub_with_requested_parts(
         token,
         novel,
         parts_to_download,
@@ -459,7 +475,19 @@ def _create_updated_epub(
     return True
 
 
-def _create_epub_with_parts(
+def _first_part_released_after_date(novel, date):
+    comparison_date = dateutil.parser.parse(date)
+    for part in novel.parts:
+        # all date strings are in ISO format
+        # so no need to parse really
+        # parsing just to be safe
+        launch_date = dateutil.parser.parse(part.raw_part.launchDate)
+        if launch_date > comparison_date:
+            return part.absolute_num
+    return None
+
+
+def _create_epub_with_requested_parts(
     token,
     novel,
     parts_to_download,

@@ -164,7 +164,7 @@ In the cases of `add` and `rm`, a URL link to a part or volume or series on the 
 
 The tracking is performed by updating the local config file `<home>/.jncep/tracked.json` (where `<home>` is either `/Users/<user>` on macOS, `C:\Users\<user>` on Windows or `/home/<user>` on Linux). That file will be created by the tool if it doesn't exist.
 
-The `tracked.json` file can be updated manually with a text editor if needed. It is a JSON dictionary with keys the canonical URLs of the series and values another dictionary with keys "name" and "part". The value for "part" is a string in relative format (`<volume>.<part>`).
+The `tracked.json` file can be updated manually with a text editor if needed. It is a JSON dictionary with keys the canonical URLs of the series and values another dictionary with keys "name", "part" and "part_date". The value for "part_date" is the launch date for the last downloaded part and is used for the `update` command to find out if new parts have been released. The value for "part" is a string in relative format (`<volume>.<part>`) that corresponds to the last downloaded part: It is used in `track list` subcommand.
 
 ### Options
 
@@ -228,6 +228,8 @@ This will display something like:
 ## update
 
 This command is used to generate EPUB files for newly updated series that were previously added using the `track` command. Optionally, a URL link to a part or volume or series on the J-Novel Club website can be passed, in order to only update that series.
+
+This command uses the launch date of the parts to find out if the series has been updated.
 
 ### Options
 
