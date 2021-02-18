@@ -686,7 +686,6 @@ def read_tracked_series():
 
 def _convert_to_latest_format(data):
     converted = {}
-
     # while at it convert from old format
     # legacy format for tracked parts : just the part instead of object
     # with keys part, name
@@ -702,11 +701,12 @@ def _convert_to_latest_format(data):
         else:
             converted[series_url_or_slug] = value
 
+    converted_b = {}
     for legacy_series_url, value in converted.items():
         new_series_url = jncapi.to_new_website_series_url(legacy_series_url)
-        converted[new_series_url] = value
+        converted_b[new_series_url] = value
 
-    return converted
+    return converted_b
 
 
 def write_tracked_series(tracked):
