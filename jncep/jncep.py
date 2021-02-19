@@ -429,11 +429,11 @@ def _create_updated_epub(
         if len(novel.parts) == 0:
             is_updated = False
             # just to bind or pylint complains
-            first_new_part = 0
+            new_parts = None
         else:
             is_updated = True
             # starting from the first part
-            first_new_part = 1
+            new_parts = core.analyze_part_specs(novel, "1:", True)
     else:
         # for others, look at the date if there
         if not series_details.part_date:
@@ -444,8 +444,8 @@ def _create_updated_epub(
         else:
             last_update_date = series_details.part_date
 
-        first_new_part = _first_part_released_after_date(novel, last_update_date)
-        is_updated = first_new_part is not None
+        new_parts = _parts_released_after_date(novel, last_update_date)
+        is_updated = len(new_parts) > 0
 
     if not is_updated:
         # no new part
@@ -456,16 +456,11 @@ def _create_updated_epub(
         )
         return False
 
-    # create string part specs starting from the part number of the first new part
-    part_specs = f"{first_new_part}:"
-    is_absolute = True
-    parts_to_download = core.analyze_part_specs(novel, part_specs, is_absolute)
-
     # TODO create options object
     _create_epub_with_requested_parts(
         token,
         novel,
-        parts_to_download,
+        new_parts,
         is_by_volume,
         output_dirpath,
         is_extract_images,
@@ -475,7 +470,8 @@ def _create_updated_epub(
     return True
 
 
-def _first_part_released_after_date(novel, date):
+def _parts_released_after_date(novel, date):
+    parts = []
     comparison_date = dateutil.parser.parse(date)
     for part in novel.parts:
         # all date strings are in ISO format
@@ -483,8 +479,8 @@ def _first_part_released_after_date(novel, date):
         # parsing just to be safe
         launch_date = dateutil.parser.parse(part.raw_part.launchDate)
         if launch_date > comparison_date:
-            return part.absolute_num
-    return None
+            parts.append(part)
+    return parts
 
 
 def _create_epub_with_requested_parts(
