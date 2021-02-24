@@ -119,36 +119,42 @@ def generate_epub(
     is_extract_images,
     is_not_replace_chars,
 ):
-    slug = jncapi.slug_from_url(jnc_url)
+    token = None
+    try:
+        slug = jncapi.slug_from_url(jnc_url)
 
-    print(f"Login with email '{email}'...")
-    token = jncapi.login(email, password)
+        print(f"Login with email '{email}'...")
+        token = jncapi.login(email, password)
 
-    print(f"Fetching metadata for '{slug[0]}'...")
-    metadata = jncapi.fetch_metadata(token, slug)
+        print(f"Fetching metadata for '{slug[0]}'...")
+        metadata = jncapi.fetch_metadata(token, slug)
 
-    novel = core.analyze_novel_metadata(slug[1], metadata)
-    if part_specs:
-        print(
-            f"Using part specification '{part_specs}' "
-            f"(absolute={_to_yn(is_absolute)})..."
+        novel = core.analyze_novel_metadata(slug[1], metadata)
+        if part_specs:
+            print(
+                f"Using part specification '{part_specs}' "
+                f"(absolute={_to_yn(is_absolute)})..."
+            )
+            parts_to_download = core.analyze_part_specs(novel, part_specs, is_absolute)
+        else:
+            parts_to_download = core.analyze_requested(novel)
+
+        _create_epub_with_requested_parts(
+            token,
+            novel,
+            parts_to_download,
+            is_by_volume,
+            output_dirpath,
+            is_extract_images,
+            is_not_replace_chars,
         )
-        parts_to_download = core.analyze_part_specs(novel, part_specs, is_absolute)
-    else:
-        parts_to_download = core.analyze_requested(novel)
-
-    _create_epub_with_requested_parts(
-        token,
-        novel,
-        parts_to_download,
-        is_by_volume,
-        output_dirpath,
-        is_extract_images,
-        is_not_replace_chars,
-    )
-
-    print("Logout...")
-    jncapi.logout(token)
+    finally:
+        if token:
+            try:
+                print("Logout...")
+                jncapi.logout(token)
+            except Exception:
+                pass
 
 
 @cli.group(name="track", help="Track updates to a series")
@@ -255,22 +261,28 @@ def list_track_series():
 
 
 def _canonical_series(jnc_url, email, password):
-    slug = jncapi.slug_from_url(jnc_url)
+    token = None
+    try:
+        slug = jncapi.slug_from_url(jnc_url)
 
-    print(f"Login with email '{email}'...")
-    token = jncapi.login(email, password)
+        print(f"Login with email '{email}'...")
+        token = jncapi.login(email, password)
 
-    print(f"Fetching metadata for '{slug[0]}'...")
-    metadata = jncapi.fetch_metadata(token, slug)
+        print(f"Fetching metadata for '{slug[0]}'...")
+        metadata = jncapi.fetch_metadata(token, slug)
 
-    print("Logout...")
-    jncapi.logout(token)
+        novel = core.analyze_novel_metadata(slug[1], metadata)
+        series_slug = novel.raw_serie.titleslug
+        series_url = jncapi.url_from_series_slug(series_slug)
 
-    novel = core.analyze_novel_metadata(slug[1], metadata)
-    series_slug = novel.raw_serie.titleslug
-    series_url = jncapi.url_from_series_slug(series_slug)
-
-    return novel, series_url
+        return novel, series_url
+    finally:
+        if token:
+            try:
+                print("Logout...")
+                jncapi.logout(token)
+            except Exception:
+                pass
 
 
 @cli.command(
@@ -294,95 +306,103 @@ def update_tracked(  # noqa: C901
     is_extract_images,
     is_not_replace_chars,
 ):
-
-    tracked_series = core.read_tracked_series()
-    if len(tracked_series) == 0:
-        print(
-            colored(
-                "There are no tracked series! Use the 'jncep track add' command first.",
-                "yellow",
-            )
-        )
-        return
-
-    print(f"Login with email '{email}'...")
-    token = jncapi.login(email, password)
-
-    updated_series = []
-    has_error = False
-    if jnc_url:
-        slug = jncapi.slug_from_url(jnc_url)
-
-        print(f"Fetching metadata for '{slug[0]}'...")
-        metadata = jncapi.fetch_metadata(token, slug)
-
-        novel = core.analyze_novel_metadata(slug[1], metadata)
-        series_slug = novel.raw_serie.titleslug
-        series_url = jncapi.url_from_series_slug(series_slug)
-
-        if series_url not in tracked_series:
+    token = None
+    try:
+        tracked_series = core.read_tracked_series()
+        if len(tracked_series) == 0:
             print(
                 colored(
-                    f"The series '{novel.raw_serie.title}' is not tracked! "
-                    f"Use the 'jncep track' command first.",
+                    "There are no tracked series! Use the 'jncep track add' command "
+                    "first.",
                     "yellow",
                 )
             )
             return
 
-        series_details = tracked_series[series_url]
-        is_updated = _create_updated_epub(
-            token,
-            novel,
-            series_details,
-            is_by_volume,
-            output_dirpath,
-            is_extract_images,
-            is_not_replace_chars,
-        )
+        print(f"Login with email '{email}'...")
+        token = jncapi.login(email, password)
 
-        if is_updated:
-            print(
-                colored(
-                    f"The series '{novel.raw_serie.title}' has been updated!", "green"
-                )
-            )
-            updated_series.append(novel)
-    else:
-        for series_url, series_details in tracked_series.items():
-            try:
-                slug = jncapi.slug_from_url(series_url)
+        updated_series = []
+        has_error = False
+        if jnc_url:
+            slug = jncapi.slug_from_url(jnc_url)
 
-                print(f"Fetching metadata for '{slug[0]}'...")
-                metadata = jncapi.fetch_metadata(token, slug)
-                novel = core.analyze_novel_metadata(slug[1], metadata)
+            print(f"Fetching metadata for '{slug[0]}'...")
+            metadata = jncapi.fetch_metadata(token, slug)
 
-                is_updated = _create_updated_epub(
-                    token,
-                    novel,
-                    series_details,
-                    is_by_volume,
-                    output_dirpath,
-                    is_extract_images,
-                    is_not_replace_chars,
-                )
-                if is_updated:
-                    print(
-                        colored(
-                            f"The series '{novel.raw_serie.title}' has been updated!",
-                            f"green",
-                        )
+            novel = core.analyze_novel_metadata(slug[1], metadata)
+            series_slug = novel.raw_serie.titleslug
+            series_url = jncapi.url_from_series_slug(series_slug)
+
+            if series_url not in tracked_series:
+                print(
+                    colored(
+                        f"The series '{novel.raw_serie.title}' is not tracked! "
+                        f"Use the 'jncep track' command first.",
+                        "yellow",
                     )
-                    updated_series.append(novel)
-            except Exception as ex:
-                has_error = True
-                print(colored("An error occured while updating the series:", "red"))
-                print(colored(str(ex), "red"))
-                if DEBUG:
-                    traceback.print_exc()
+                )
+                return
 
-    print("Logout...")
-    jncapi.logout(token)
+            series_details = tracked_series[series_url]
+            is_updated = _create_updated_epub(
+                token,
+                novel,
+                series_details,
+                is_by_volume,
+                output_dirpath,
+                is_extract_images,
+                is_not_replace_chars,
+            )
+
+            if is_updated:
+                print(
+                    colored(
+                        f"The series '{novel.raw_serie.title}' has been updated!",
+                        "green",
+                    )
+                )
+                updated_series.append(novel)
+        else:
+            for series_url, series_details in tracked_series.items():
+                try:
+                    slug = jncapi.slug_from_url(series_url)
+
+                    print(f"Fetching metadata for '{slug[0]}'...")
+                    metadata = jncapi.fetch_metadata(token, slug)
+                    novel = core.analyze_novel_metadata(slug[1], metadata)
+
+                    is_updated = _create_updated_epub(
+                        token,
+                        novel,
+                        series_details,
+                        is_by_volume,
+                        output_dirpath,
+                        is_extract_images,
+                        is_not_replace_chars,
+                    )
+                    if is_updated:
+                        print(
+                            colored(
+                                f"The series '{novel.raw_serie.title}' has been "
+                                "updated!",
+                                f"green",
+                            )
+                        )
+                        updated_series.append(novel)
+                except Exception as ex:
+                    has_error = True
+                    print(colored("An error occured while updating the series:", "red"))
+                    print(colored(str(ex), "red"))
+                    if DEBUG:
+                        traceback.print_exc()
+    finally:
+        if token:
+            try:
+                print("Logout...")
+                jncapi.logout(token)
+            except Exception:
+                pass
 
     if has_error:
         # only for multiple updates ; when url passed and error => goes directly
