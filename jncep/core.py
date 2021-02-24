@@ -347,7 +347,9 @@ p {text-indent: 1.3em;}
     chapters = []
     for i, content in enumerate(contents):
         c = epub.EpubHtml(title=toc[i], file_name=f"chap_{i +1}.xhtml", lang=lang)
-        c.content = content
+        # explicit encoding to bytes or some issue with lxml on some platforms (PyDroid)
+        # some message about USC4 little endian not supported
+        c.content = content.encode("utf-8")
         c.add_item(css)
         book.add_item(c)
         chapters.append(c)
