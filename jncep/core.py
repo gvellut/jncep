@@ -1,3 +1,4 @@
+from collections import namedtuple
 from html.parser import HTMLParser
 import json
 import os
@@ -45,6 +46,18 @@ class Part:
     content = attr.ib(default=None)
 
 
+EpubGenerationOptions = namedtuple(
+    "EpubGenerationOptions",
+    [
+        "output_dirpath",
+        "is_by_volume",
+        "is_extract_images",
+        "is_extract_content",
+        "is_not_replace_chars",
+    ],
+)
+
+
 class CoverImageException(Exception):
     pass
 
@@ -61,12 +74,16 @@ def to_part(novel, relpart_str) -> Part:
     return parts[0]
 
 
-def create_epub(
-    token, novel, parts, output_dirpath, is_extract_images, is_not_replace_chars
-):
+def to_pretty_part_name(novel, part) -> str:
+    part_str = f"Part_{part.num_in_volume}"
+    title = part.volume.raw_volume.title
+    return f"{_to_safe_filename(title)}_{part_str}"
+
+
+def create_epub(token, novel, parts, epub_generation_options):
     # here normally all parts in parameter are available
-    contents, downloaded_img_urls = get_book_content_and_images(
-        token, novel, parts, is_not_replace_chars
+    contents, downloaded_img_urls, raw_contents = get_book_content_and_images(
+        token, novel, parts, epub_generation_options.is_not_replace_chars
     )
     identifier, title, author, cover_url_candidates, toc = get_book_details(
         novel, parts
@@ -97,9 +114,11 @@ def create_epub(
         raise CoverImageException("No suitable cover could be downloaded!")
 
     output_filename = _to_safe_filename(title) + ".epub"
-    output_filepath = os.path.join(output_dirpath, output_filename)
+    output_filepath = os.path.join(
+        epub_generation_options.output_dirpath, output_filename
+    )
 
-    if is_extract_images:
+    if epub_generation_options.is_extract_images:
         print("Extracting images...")
         current_part = None
         img_index = -1
@@ -109,18 +128,30 @@ def create_epub(
                 current_part = part
             else:
                 img_index += 1
-            part_str = to_relative_part_string(novel, part)
             # change filename to something more readable since visible to
             # user
             _, ext = os.path.splitext(img_filename)
             img_filename = (
-                f"{_to_safe_filename(novel.raw_serie.titleslug)}_part{part_str}"
+                to_pretty_part_name(novel, part)
                 # extension at the end
-                f"_image{img_index}{ext}"
+                + f"_Image_{img_index}{ext}"
             )
-            img_filepath = os.path.join(output_dirpath, img_filename)
+            img_filepath = os.path.join(
+                epub_generation_options.output_dirpath, img_filename
+            )
             with open(img_filepath, "wb") as img_f:
                 img_f.write(img_bytes)
+
+    if epub_generation_options.is_extract_content:
+        print("Extracting content...")
+        for content, part in zip(raw_contents, parts):
+            content_filename = to_pretty_part_name(novel, part) + ".html"
+            content_filepath = os.path.join(
+                epub_generation_options.output_dirpath, content_filename
+            )
+            with open(content_filepath, "w") as content_f:
+                # TODO wrap i in html/body ?
+                content_f.write(content)
 
     create_epub_file(
         output_filepath,
@@ -139,9 +170,11 @@ def create_epub(
 def get_book_content_and_images(token, novel, parts_to_download, is_not_replace_chars):
     downloaded_img_urls = {}
     contents = []
+    raw_contents = []
     for part in parts_to_download:
         print(f"Fetching part '{part.raw_part.title}'...")
         content = jncapi.fetch_content(token, part.raw_part.id)
+        raw_contents.append(content)
 
         if not is_not_replace_chars:
             # both the chars to replace and replacement are hardcoded
@@ -190,7 +223,7 @@ def get_book_content_and_images(token, novel, parts_to_download, is_not_replace_
 
         contents.append(content)
 
-    return contents, downloaded_img_urls
+    return contents, downloaded_img_urls, raw_contents
 
 
 def get_book_details(novel, parts_to_download):

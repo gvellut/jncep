@@ -17,7 +17,6 @@ login_option = click.option(
     help="Login email for J-Novel Club account",
 )
 
-
 password_option = click.option(
     "-p",
     "--password",
@@ -25,7 +24,6 @@ password_option = click.option(
     envvar="JNCEP_PASSWORD",
     help="Login password for J-Novel Club account",
 )
-
 
 output_option = click.option(
     "-o",
@@ -36,7 +34,6 @@ output_option = click.option(
     envvar="JNCEP_OUTPUT",
     help="Existing folder to write the output [default: The current directory]",
 )
-
 
 byvolume_option = click.option(
     "-v",
@@ -49,7 +46,6 @@ byvolume_option = click.option(
     ),
 )
 
-
 images_option = click.option(
     "-i",
     "--images",
@@ -61,6 +57,16 @@ images_option = click.option(
     ),
 )
 
+raw_content_option = click.option(
+    "-c",
+    "--content",
+    "is_extract_content",
+    is_flag=True,
+    help=(
+        "Flag to indicate that the raw content of the parts should be extracted into "
+        "the output folder"
+    ),
+)
 
 no_replace_chars_option = click.option(
     "-n",
@@ -107,6 +113,7 @@ def cli():
 )
 @byvolume_option
 @images_option
+@raw_content_option
 @no_replace_chars_option
 def generate_epub(
     jnc_url,
@@ -117,8 +124,17 @@ def generate_epub(
     output_dirpath,
     is_by_volume,
     is_extract_images,
+    is_extract_content,
     is_not_replace_chars,
 ):
+    epub_generation_options = core.EpubGenerationOptions(
+        output_dirpath,
+        is_by_volume,
+        is_extract_images,
+        is_extract_content,
+        is_not_replace_chars,
+    )
+
     token = None
     try:
         slug = jncapi.slug_from_url(jnc_url)
@@ -140,13 +156,7 @@ def generate_epub(
             parts_to_download = core.analyze_requested(novel)
 
         _create_epub_with_requested_parts(
-            token,
-            novel,
-            parts_to_download,
-            is_by_volume,
-            output_dirpath,
-            is_extract_images,
-            is_not_replace_chars,
+            token, novel, parts_to_download, epub_generation_options
         )
     finally:
         if token:
@@ -296,6 +306,7 @@ def _canonical_series(jnc_url, email, password):
 @output_option
 @byvolume_option
 @images_option
+@raw_content_option
 @no_replace_chars_option
 def update_tracked(  # noqa: C901
     jnc_url,
@@ -304,8 +315,17 @@ def update_tracked(  # noqa: C901
     output_dirpath,
     is_by_volume,
     is_extract_images,
+    is_extract_content,
     is_not_replace_chars,
 ):
+    epub_generation_options = core.EpubGenerationOptions(
+        output_dirpath,
+        is_by_volume,
+        is_extract_images,
+        is_extract_content,
+        is_not_replace_chars,
+    )
+
     token = None
     try:
         tracked_series = core.read_tracked_series()
@@ -346,13 +366,7 @@ def update_tracked(  # noqa: C901
 
             series_details = tracked_series[series_url]
             is_updated = _create_updated_epub(
-                token,
-                novel,
-                series_details,
-                is_by_volume,
-                output_dirpath,
-                is_extract_images,
-                is_not_replace_chars,
+                token, novel, series_details, epub_generation_options
             )
 
             if is_updated:
@@ -373,13 +387,7 @@ def update_tracked(  # noqa: C901
                     novel = core.analyze_novel_metadata(slug[1], metadata)
 
                     is_updated = _create_updated_epub(
-                        token,
-                        novel,
-                        series_details,
-                        is_by_volume,
-                        output_dirpath,
-                        is_extract_images,
-                        is_not_replace_chars,
+                        token, novel, series_details, epub_generation_options
                     )
                     if is_updated:
                         print(
@@ -432,15 +440,7 @@ def _to_yn(b):
     return "yes" if b else "no"
 
 
-def _create_updated_epub(
-    token,
-    novel,
-    series_details,
-    is_by_volume,
-    output_dirpath,
-    is_extract_images,
-    is_not_replace_chars,
-):
+def _create_updated_epub(token, novel, series_details, epub_generation_options):
     if series_details.part == 0:
         # special processing : means there was no part available when the
         # series was started tracking
@@ -476,16 +476,7 @@ def _create_updated_epub(
         )
         return False
 
-    # TODO create options object
-    _create_epub_with_requested_parts(
-        token,
-        novel,
-        new_parts,
-        is_by_volume,
-        output_dirpath,
-        is_extract_images,
-        is_not_replace_chars,
-    )
+    _create_epub_with_requested_parts(token, novel, new_parts, epub_generation_options)
 
     return True
 
@@ -504,13 +495,7 @@ def _parts_released_after_date(novel, date):
 
 
 def _create_epub_with_requested_parts(
-    token,
-    novel,
-    parts_to_download,
-    is_by_volume,
-    output_dirpath,
-    is_extract_images,
-    is_not_replace_chars,
+    token, novel, parts_to_download, epub_generation_options
 ):
     # preview => parts 1 of each volume, always available
     # not expired => prepub
@@ -532,27 +517,15 @@ def _create_epub_with_requested_parts(
             )
         )
 
-    if is_by_volume:
+    if epub_generation_options.is_by_volume:
         for _, g in itertools.groupby(
             available_parts_to_download, lambda p: p.volume.volume_id
         ):
             parts = list(g)
-            core.create_epub(
-                token,
-                novel,
-                parts,
-                output_dirpath,
-                is_extract_images,
-                is_not_replace_chars,
-            )
+            core.create_epub(token, novel, parts, epub_generation_options)
     else:
         core.create_epub(
-            token,
-            novel,
-            available_parts_to_download,
-            output_dirpath,
-            is_extract_images,
-            is_not_replace_chars,
+            token, novel, available_parts_to_download, epub_generation_options
         )
 
 
