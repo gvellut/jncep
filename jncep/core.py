@@ -149,8 +149,8 @@ def create_epub(token, novel, parts, epub_generation_options):
             content_filepath = os.path.join(
                 epub_generation_options.output_dirpath, content_filename
             )
-            with open(content_filepath, "w") as content_f:
-                # TODO wrap i in html/body ?
+            with open(content_filepath, "w", encoding="utf-8") as content_f:
+                # TODO wrap it in html/body ?
                 content_f.write(content)
 
     create_epub_file(
