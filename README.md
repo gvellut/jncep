@@ -96,6 +96,8 @@ Options:
                           shoud be output in separate EPUBs
   -i, --images            Flag to indicate that the images of the novel should
                           be extracted into the output folder
+  -c, --content           Flag to indicate that the raw content of the parts
+                          should be extracted into the output folder
   -n, --no-replace        Flag to indicate that some unicode characters
                           unlikely to be in an EPUB reader font should NOT be
                           replaced and instead kept as is
@@ -251,6 +253,8 @@ Options:
                           shoud be output in separate EPUBs
   -i, --images            Flag to indicate that the images of the novel should
                           be extracted into the output folder
+  -c, --content           Flag to indicate that the raw content of the parts
+                          should be extracted into the output folder
   -n, --no-replace        Flag to indicate that some unicode characters
                           unlikely to be in an EPUB reader font should NOT be
                           replaced and instead kept as is
