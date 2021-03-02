@@ -4,4 +4,4 @@ import colorama
 
 colorama.init()
 
-DEBUG = False
+DEBUG = True

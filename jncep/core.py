@@ -1,4 +1,4 @@
-from collections import namedtuple
+from collections import namedtuple, OrderedDict
 from html.parser import HTMLParser
 import json
 import os
@@ -245,21 +245,32 @@ def get_book_details(novel, parts_to_download):
         # TODO no TOC for single part ?
         toc = [f"Part {part.num_in_volume}"]
     else:
-        volume_index = set()
-        volumes = []
-        for part in parts_to_download:
-            if part.volume.volume_id in volume_index:
-                continue
-            volume_index.add(part.volume.volume_id)
-            volumes.append(part.volume)
-
+        volumes = _volumes_for_parts(parts_to_download)
         if len(volumes) > 1:
-            volume_nums = [str(volume.raw_volume.volumeNumber) for volume in volumes]
-            volume_nums = ", ".join(volume_nums[:-1]) + " & " + volume_nums[-1]
+            # can happen than volume order and part order do not correspond
+            # ie parts in lower volume are bigger than parts in higher
+            # only in Altina volume 8 and 9
+            # but parts in epub will always be ordered by part number
+            # but it makes name weird => 9.1 to 8.3
+            # so reorder by volume
+            # TODO change upstream => reorder the part numbers by volume order
+            # so no issue ; if reordered names in title have diff order than
+            # in content + crash if --parts 8:9
+
+            volume_nums = [volume.raw_volume.volumeNumber for volume in volumes]
+            s_volume_nums = list(sorted(volume_nums))
+            last_volume = s_volume_nums[-1]
+            volume_nums = (
+                ", ".join([str(v) for v in s_volume_nums[:-1]]) + f" & {last_volume}"
+            )
             title_base = f"{novel.raw_serie.title}: Volumes {volume_nums}"
 
-            part1 = to_relative_part_string(novel, parts_to_download[0])
-            part2 = to_relative_part_string(novel, parts_to_download[-1])
+            first_part = _parts_in_volume(parts_to_download, s_volume_nums[0])[0]
+            last_part = _parts_in_volume(parts_to_download, s_volume_nums[-1])[-1]
+
+            part1 = to_relative_part_string(novel, first_part)
+            part2 = to_relative_part_string(novel, last_part)
+
             part_nums = f"Parts {part1} to {part2}"
 
             # TODO simplify instead ?
@@ -291,6 +302,23 @@ def get_book_details(novel, parts_to_download):
     identifier = identifier_base + str(int(time.time()))
 
     return identifier, title, author, cover_url_candidates, toc
+
+
+def _volumes_for_parts(parts):
+    volumes = OrderedDict()
+    for part in parts:
+        if part.volume.volume_id in volumes:
+            continue
+        volumes[part.volume.volume_id] = part.volume
+    return list(volumes.values())
+
+
+def _parts_in_volume(candidate_parts, volume_num):
+    parts = []
+    for part in candidate_parts:
+        if part.volume.raw_volume.volumeNumber == volume_num:
+            parts.append(part)
+    return parts
 
 
 def _is_final(novel, part):
@@ -629,7 +657,13 @@ def _analyze_volume_part_specs(novel, part_specs):  # noqa: C901
     # range
     m1 = re.match(reg, sides[0])
     m2 = re.match(reg, sides[1])
-    if not m1 and not m2:
+    if (
+        (not m1 and not m2)
+        # left side not valid
+        or (not m1 and len(sides[0]) > 0)
+        # right side not valid
+        or (not m2 and len(sides[1]) > 0)
+    ):
         msg = (
             "Part specification must be vol[.part]:vol[.part] or vol[.part]: or "
             ":vol[.part]"
