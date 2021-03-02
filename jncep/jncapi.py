@@ -113,22 +113,24 @@ def slug_from_url(url):
 
     if pu.scheme == "":
         raise ValueError(f"Not a URL: {url}")
+
+    # try legacy URL first
     # path is: /c/<slug>/...  or /v/<slug>/... or /s/<slug>/...
     # for c_hapter, v_olume, s_erie
-    # try legacy URL
     m = re.match(r"^/(v|c|s)/(.+?)(?:(?=/)|$)", pu.path)
     if m:
         return m.group(2), _to_const_legacy(m.group(1))
     else:
+        # new site
         s_re = r"^/titles/(.+?)(?:(?=/)|$)"
         c_re = r"^/read/(.+?)(?:(?=/)|$)"
+        v_re = r"^volume-(\d+)$"
+
         m = re.match(s_re, pu.path)
         if m:
             series_slug = m.group(1)
             if not pu.fragment:
                 return series_slug, "NOVEL"
-
-            v_re = r"^volume-(\d+)$"
             m = re.match(v_re, pu.fragment)
             if m:
                 # tuple with volume
