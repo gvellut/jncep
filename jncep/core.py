@@ -34,6 +34,7 @@ class Novel:
 class Volume:
     raw_volume = attr.ib()
     volume_id = attr.ib()
+    num = attr.ib(default=-1)
     parts = attr.ib(factory=list)
 
 
@@ -63,7 +64,7 @@ class CoverImageException(Exception):
 
 
 def to_relative_part_string(novel, part):
-    volume_number = part.volume.raw_volume.volumeNumber
+    volume_number = part.volume.num
     part_number = part.num_in_volume
     return f"{volume_number}.{part_number}"
 
@@ -245,31 +246,21 @@ def get_book_details(novel, parts_to_download):
         # TODO no TOC for single part ?
         toc = [f"Part {part.num_in_volume}"]
     else:
-        volumes = _volumes_for_parts(parts_to_download)
-        if len(volumes) > 1:
-            # can happen than volume order and part order do not correspond
-            # ie parts in lower volume are bigger than parts in higher
-            # only in Altina volume 8 and 9
-            # but parts in epub will always be ordered by part number
-            # but it makes name weird => 9.1 to 8.3
-            # so reorder by volume
-            # TODO change upstream => reorder the part numbers by volume order
-            # so no issue ; if reordered names in title have diff order than
-            # in content + crash if --parts 8:9
+        volume_index = set()
+        volumes = []
+        for part in parts_to_download:
+            if part.volume.volume_id in volume_index:
+                continue
+            volume_index.add(part.volume.volume_id)
+            volumes.append(part.volume)
 
-            volume_nums = [volume.raw_volume.volumeNumber for volume in volumes]
-            s_volume_nums = list(sorted(volume_nums))
-            last_volume = s_volume_nums[-1]
-            volume_nums = (
-                ", ".join([str(v) for v in s_volume_nums[:-1]]) + f" & {last_volume}"
-            )
+        if len(volumes) > 1:
+            volume_nums = [str(volume.num) for volume in volumes]
+            volume_nums = ", ".join(volume_nums[:-1]) + " & " + volume_nums[-1]
             title_base = f"{novel.raw_serie.title}: Volumes {volume_nums}"
 
-            first_part = _parts_in_volume(parts_to_download, s_volume_nums[0])[0]
-            last_part = _parts_in_volume(parts_to_download, s_volume_nums[-1])[-1]
-
-            part1 = to_relative_part_string(novel, first_part)
-            part2 = to_relative_part_string(novel, last_part)
+            part1 = to_relative_part_string(novel, parts_to_download[0])
+            part2 = to_relative_part_string(novel, parts_to_download[-1])
 
             part_nums = f"Parts {part1} to {part2}"
 
@@ -302,23 +293,6 @@ def get_book_details(novel, parts_to_download):
     identifier = identifier_base + str(int(time.time()))
 
     return identifier, title, author, cover_url_candidates, toc
-
-
-def _volumes_for_parts(parts):
-    volumes = OrderedDict()
-    for part in parts:
-        if part.volume.volume_id in volumes:
-            continue
-        volumes[part.volume.volume_id] = part.volume
-    return list(volumes.values())
-
-
-def _parts_in_volume(candidate_parts, volume_num):
-    parts = []
-    for part in candidate_parts:
-        if part.volume.raw_volume.volumeNumber == volume_num:
-            parts.append(part)
-    return parts
 
 
 def _is_final(novel, part):
@@ -483,9 +457,8 @@ def _to_safe_filename(name):
 
 
 def analyze_novel_metadata(req_type, metadata):
-    """ Assumes the JSON returned from the API has all the parts and
-    that they are ordered """
-    # TODO don't trust and reorder no matter what ?
+    # takes order of parts as returned by API
+    # (irrespective of actual partNumber)
 
     if req_type in ("PART", "VOLUME"):
         novel = Novel(metadata.serie, metadata, req_type)
@@ -493,17 +466,33 @@ def analyze_novel_metadata(req_type, metadata):
         novel = Novel(metadata, metadata, "NOVEL")
 
     volume_index = {}
-    volumes = []
     for raw_volume in novel.raw_serie.volumes:
         volume = Volume(raw_volume, raw_volume.id)
-        volumes.append(volume)
         volume_index[volume.volume_id] = volume
 
+    # Volume can be out of order : use part number as reference
+    volumes = []
+    processed_volumes = OrderedDict()
     parts = []
     is_warned = False
     for i, raw_part in enumerate(novel.raw_serie.parts):
         volume_id = raw_part.volumeId
-        volume = volume_index[volume_id]
+        volume: Volume = volume_index[volume_id]
+        if volume_id not in processed_volumes:
+            volume.num = len(volumes) + 1
+            volumes.append(volume)
+            processed_volumes[volume_id] = volumes
+
+            if volume.num != volume.raw_volume.volumeNumber:
+                print(
+                    colored(
+                        f"Volume number returned by API doesn't match "
+                        f"with the order of parts: Volume "
+                        f"{volume.raw_volume.volumeNumber} in API is now {volume.num}",
+                        "yellow",
+                    )
+                )
+
         num_in_volume = len(volume.parts) + 1
         absolute_num = i + 1
         part = Part(raw_part, num_in_volume, absolute_num, volume)
@@ -539,8 +528,12 @@ def analyze_requested(novel):
                 return [part]
 
     if novel.requested_type == "VOLUME":
-        iv = novel.raw_metadata.volumeNumber - 1
-        return list(novel.volumes[iv].parts)
+        # because volumes can be reordered (according to the actual ordering of
+        # part), loop through all volumes to find the actuall object instead of
+        # using the raw .volumeNumber directly
+        for volume in novel.volumes:
+            if volume.raw_volume.volumeNumber == novel.raw_metadata.volumeNumber:
+                return volume.parts
 
     # novel: all parts
     return list(novel.parts)
