@@ -1,4 +1,4 @@
-from collections import namedtuple, OrderedDict
+from collections import namedtuple
 from html.parser import HTMLParser
 import json
 import os
@@ -34,16 +34,16 @@ class Novel:
 class Volume:
     raw_volume = attr.ib()
     volume_id = attr.ib()
-    num = attr.ib(default=-1)
+    num = attr.ib()
     parts = attr.ib(factory=list)
 
 
 @attr.s
 class Part:
     raw_part = attr.ib()
-    num_in_volume = attr.ib()
-    absolute_num = attr.ib()
     volume = attr.ib()
+    num_in_volume = attr.ib()
+    absolute_num = attr.ib(default=None)
     content = attr.ib(default=None)
 
 
@@ -459,59 +459,56 @@ def _to_safe_filename(name):
 def analyze_novel_metadata(req_type, metadata):
     # takes order of parts as returned by API
     # (irrespective of actual partNumber)
+    # reorder by volume ordering
 
     if req_type in ("PART", "VOLUME"):
         novel = Novel(metadata.serie, metadata, req_type)
     else:
         novel = Novel(metadata, metadata, "NOVEL")
 
+    volumes = []
     volume_index = {}
     for raw_volume in novel.raw_serie.volumes:
-        volume = Volume(raw_volume, raw_volume.id)
+        volume_num = len(volumes) + 1
+        volume = Volume(raw_volume, raw_volume.id, volume_num)
         volume_index[volume.volume_id] = volume
+        volumes.append(volume)
 
-    # Volume can be out of order : use part number as reference
-    volumes = []
-    processed_volumes = OrderedDict()
-    parts = []
     is_warned = False
-    for i, raw_part in enumerate(novel.raw_serie.parts):
+    for raw_part in novel.raw_serie.parts:
         volume_id = raw_part.volumeId
         volume: Volume = volume_index[volume_id]
-        if volume_id not in processed_volumes:
-            volume.num = len(volumes) + 1
-            volumes.append(volume)
-            processed_volumes[volume_id] = volumes
+        num_in_volume = len(volume.parts) + 1
+        part = Part(raw_part, volume, num_in_volume)
+        volume.parts.append(part)
 
-            if volume.num != volume.raw_volume.volumeNumber:
+    parts = []
+    for volume in volumes:
+        for part in volume.parts:
+            # volume number ordering and part number ordering sometimes do not match
+            # actually just for Altina volume 8 / 9
+            # so set abolute num in sequential order according to volumes
+            part.absolute_num = len(parts) + 1
+            parts.append(part)
+
+            # some novels have a gap in the part number ie index does not correspond
+            # to field partNumber e.g. economics of prophecy starting at part 10
+            # print warning
+            if (
+                DEBUG
+                and part.absolute_num != part.raw_part.partNumber
+                and not is_warned
+            ):
+                # not an issue in practice so leave it in DEBUG mode only
                 print(
                     colored(
-                        f"Volume number returned by API doesn't match "
-                        f"with the order of parts: Volume "
-                        f"{volume.raw_volume.volumeNumber} in API is now {volume.num}",
+                        f"Absolute part number returned by API doesn't correspond to "
+                        f"its actual position in series (corrected, starting at part "
+                        f"{part.raw_part.partNumber} found in volume {volume.num})",
                         "yellow",
                     )
                 )
-
-        num_in_volume = len(volume.parts) + 1
-        absolute_num = i + 1
-        part = Part(raw_part, num_in_volume, absolute_num, volume)
-        volume.parts.append(part)
-        parts.append(part)
-
-        # some novels have a gap in the part number ie index does not correspond
-        # to field partNumber e.g. economics of prophecy starting at part 10
-        # print warning
-        if DEBUG and absolute_num != raw_part.partNumber and not is_warned:
-            # not an issue in practice so leave it in DEBUG mode only
-            print(
-                colored(
-                    f"Absolute part number returned by API has a gap "
-                    f"(corrected, starting at part {part.absolute_num})",
-                    "yellow",
-                )
-            )
-            is_warned = True
+                is_warned = True
 
     novel.volumes = volumes
     novel.parts = parts
@@ -528,12 +525,8 @@ def analyze_requested(novel):
                 return [part]
 
     if novel.requested_type == "VOLUME":
-        # because volumes can be reordered (according to the actual ordering of
-        # part), loop through all volumes to find the actuall object instead of
-        # using the raw .volumeNumber directly
-        for volume in novel.volumes:
-            if volume.raw_volume.volumeNumber == novel.raw_metadata.volumeNumber:
-                return volume.parts
+        iv = novel.raw_metadata.volumeNumber - 1
+        return list(novel.volumes[iv].parts)
 
     # novel: all parts
     return list(novel.parts)
