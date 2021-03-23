@@ -52,7 +52,7 @@ images_option = click.option(
     "is_extract_images",
     is_flag=True,
     help=(
-        "Flag to indicate that the images of the novel should be extracted into "
+        "Flag to indicate that the images of the series should be extracted into "
         "the output folder"
     ),
 )
@@ -85,7 +85,7 @@ def cli():
     pass
 
 
-@cli.command(name="epub", help="Generate EPUB files for J-Novel Club pre-pub novels")
+@cli.command(name="epub", help="Generate EPUB files for J-Novel Club pre-pub seriess")
 @click.argument("jnc_url", metavar="JNOVEL_CLUB_URL", required=True)
 @login_option
 @password_option
@@ -143,20 +143,21 @@ def generate_epub(
         token = jncapi.login(email, password)
 
         print(f"Fetching metadata for '{slug[0]}'...")
-        metadata = jncapi.fetch_metadata(token, slug)
+        jnc_resource = jncapi.fetch_metadata(token, slug)
 
-        novel = core.analyze_novel_metadata(slug[1], metadata)
+        series = core.analyze_metadata(jnc_resource)
+
         if part_specs:
             print(
                 f"Using part specification '{part_specs}' "
                 f"(absolute={_to_yn(is_absolute)})..."
             )
-            parts_to_download = core.analyze_part_specs(novel, part_specs, is_absolute)
+            parts_to_download = core.analyze_part_specs(series, part_specs, is_absolute)
         else:
-            parts_to_download = core.analyze_requested(novel)
+            parts_to_download = core.analyze_requested(jnc_resource, series)
 
         _create_epub_with_requested_parts(
-            token, novel, parts_to_download, epub_generation_options
+            token, series, parts_to_download, epub_generation_options
         )
     finally:
         if token:
@@ -177,49 +178,49 @@ def track_series():
 @login_option
 @password_option
 def add_track_series(jnc_url, email, password):
-    novel, series_url = _canonical_series(jnc_url, email, password)
+    series, series_url = _canonical_series(jnc_url, email, password)
     tracked_series = core.read_tracked_series()
 
     if series_url in tracked_series:
         print(
             colored(
-                f"The series '{novel.raw_serie.title}' is already tracked!", "yellow",
+                f"The series '{series.raw_series.title}' is already tracked!", "yellow",
             )
         )
         return
 
     # record current last part + name
-    if len(novel.parts) == 0:
+    if len(series.parts) == 0:
         # no parts yet
         pn = 0
         # 0000-... not a valid date so 1111-...
         pdate = "1111-11-11T11:11:11.111Z"
     else:
-        pn = core.to_relative_part_string(novel, novel.parts[-1])
-        pdate = novel.parts[-1].raw_part.launchDate
+        pn = core.to_relative_part_string(series, series.parts[-1])
+        pdate = series.parts[-1].raw_part.launchDate
 
     tracked_series[series_url] = {
         "part_date": pdate,
         "part": pn,  # now just for show
-        "name": novel.raw_serie.title,
+        "name": series.raw_series.title,
     }
     core.write_tracked_series(tracked_series)
 
-    if len(novel.parts) == 0:
+    if len(series.parts) == 0:
         print(
             colored(
-                f"The series '{novel.raw_serie.title}' is now tracked, starting "
+                f"The series '{series.raw_series.title}' is now tracked, starting "
                 f"from the beginning",
                 "green",
             )
         )
     else:
-        relative_part = core.to_relative_part_string(novel, novel.parts[-1])
-        part_date = dateutil.parser.parse(novel.parts[-1].raw_part.launchDate)
+        relative_part = core.to_relative_part_string(series, series.parts[-1])
+        part_date = dateutil.parser.parse(series.parts[-1].raw_part.launchDate)
         part_date_formatted = part_date.strftime("%b %d, %Y")
         print(
             colored(
-                f"The series '{novel.raw_serie.title}' is now tracked, starting "
+                f"The series '{series.raw_series.title}' is now tracked, starting "
                 f"after part {relative_part} [{part_date_formatted}]",
                 "green",
             )
@@ -231,12 +232,12 @@ def add_track_series(jnc_url, email, password):
 @login_option
 @password_option
 def remove_track_series(jnc_url, email, password):
-    novel, series_url = _canonical_series(jnc_url, email, password)
+    series, series_url = _canonical_series(jnc_url, email, password)
     tracked_series = core.read_tracked_series()
 
     if series_url not in tracked_series:
         print(
-            colored(f"The series '{novel.raw_serie.title}' is not tracked!", "yellow")
+            colored(f"The series '{series.raw_series.title}' is not tracked!", "yellow")
         )
         return
 
@@ -245,7 +246,7 @@ def remove_track_series(jnc_url, email, password):
     core.write_tracked_series(tracked_series)
 
     print(
-        colored(f"The series '{novel.raw_serie.title}' is no longer tracked", "green")
+        colored(f"The series '{series.raw_series.title}' is no longer tracked", "green")
     )
 
 
@@ -281,11 +282,11 @@ def _canonical_series(jnc_url, email, password):
         print(f"Fetching metadata for '{slug[0]}'...")
         metadata = jncapi.fetch_metadata(token, slug)
 
-        novel = core.analyze_novel_metadata(slug[1], metadata)
-        series_slug = novel.raw_serie.titleslug
+        series = core.analyze_series_metadata(slug[1], metadata)
+        series_slug = series.raw_series.titleslug
         series_url = jncapi.url_from_series_slug(series_slug)
 
-        return novel, series_url
+        return series, series_url
     finally:
         if token:
             try:
@@ -348,16 +349,17 @@ def update_tracked(  # noqa: C901
             slug = jncapi.slug_from_url(jnc_url)
 
             print(f"Fetching metadata for '{slug[0]}'...")
-            metadata = jncapi.fetch_metadata(token, slug)
+            jnc_resource = jncapi.fetch_metadata(token, slug)
 
-            novel = core.analyze_novel_metadata(slug[1], metadata)
-            series_slug = novel.raw_serie.titleslug
+            series = core.analyze_metadata(jnc_resource)
+
+            series_slug = series.raw_series.titleslug
             series_url = jncapi.url_from_series_slug(series_slug)
 
             if series_url not in tracked_series:
                 print(
                     colored(
-                        f"The series '{novel.raw_serie.title}' is not tracked! "
+                        f"The series '{series.raw_series.title}' is not tracked! "
                         f"Use the 'jncep track' command first.",
                         "yellow",
                     )
@@ -366,38 +368,39 @@ def update_tracked(  # noqa: C901
 
             series_details = tracked_series[series_url]
             is_updated = _create_updated_epub(
-                token, novel, series_details, epub_generation_options
+                token, series, series_details, epub_generation_options
             )
 
             if is_updated:
                 print(
                     colored(
-                        f"The series '{novel.raw_serie.title}' has been updated!",
+                        f"The series '{series.raw_series.title}' has been updated!",
                         "green",
                     )
                 )
-                updated_series.append(novel)
+                updated_series.append(series)
         else:
             for series_url, series_details in tracked_series.items():
                 try:
                     slug = jncapi.slug_from_url(series_url)
 
                     print(f"Fetching metadata for '{slug[0]}'...")
-                    metadata = jncapi.fetch_metadata(token, slug)
-                    novel = core.analyze_novel_metadata(slug[1], metadata)
+                    jnc_resource = jncapi.fetch_metadata(token, slug)
+
+                    series = core.analyze_metadata(jnc_resource)
 
                     is_updated = _create_updated_epub(
-                        token, novel, series_details, epub_generation_options
+                        token, series, series_details, epub_generation_options
                     )
                     if is_updated:
                         print(
                             colored(
-                                f"The series '{novel.raw_serie.title}' has been "
+                                f"The series '{series.raw_series.title}' has been "
                                 "updated!",
                                 f"green",
                             )
                         )
-                        updated_series.append(novel)
+                        updated_series.append(series)
                 except Exception as ex:
                     has_error = True
                     print(colored("An error occured while updating the series:", "red"))
@@ -420,14 +423,14 @@ def update_tracked(  # noqa: C901
     if len(updated_series) > 0:
         # update tracking config JSON => to last part in series
         # TODO do that in the loop instead of the end ?
-        for novel in updated_series:
-            pn = core.to_relative_part_string(novel, novel.parts[-1])
-            pdate = novel.parts[-1].raw_part.launchDate
+        for series in updated_series:
+            pn = core.to_relative_part_string(series, series.parts[-1])
+            pdate = series.parts[-1].raw_part.launchDate
             # write part + name in case old version with just the part number
-            tracked_series[jncapi.url_from_series_slug(novel.raw_serie.titleslug)] = {
+            tracked_series[jncapi.url_from_series_slug(series.raw_series.titleslug)] = {
                 "part_date": pdate,
                 "part": pn,
-                "name": novel.raw_serie.title,
+                "name": series.raw_series.title,
             }
         core.write_tracked_series(tracked_series)
 
@@ -440,51 +443,52 @@ def _to_yn(b):
     return "yes" if b else "no"
 
 
-def _create_updated_epub(token, novel, series_details, epub_generation_options):
+def _create_updated_epub(token, series, series_details, epub_generation_options):
     if series_details.part == 0:
         # special processing : means there was no part available when the
         # series was started tracking
 
         # still no part ?
-        if len(novel.parts) == 0:
+        if len(series.parts) == 0:
             is_updated = False
             # just to bind or pylint complains
             new_parts = None
         else:
             is_updated = True
             # starting from the first part
-            new_parts = core.analyze_part_specs(novel, "1:", True)
+            new_parts = core.analyze_part_specs(series, "1:", True)
     else:
         # for others, look at the date if there
         if not series_details.part_date:
             # if not => old format, first lookup date of last part and use that
             # TODO possible to do that for all ie no need to keep the date around
-            last_part = core.to_part(novel, series_details.part)
+            last_part = core.to_part(series, series_details.part)
             last_update_date = last_part.raw_part.launchDate
         else:
             last_update_date = series_details.part_date
 
-        new_parts = _parts_released_after_date(novel, last_update_date)
+        new_parts = _parts_released_after_date(series, last_update_date)
         is_updated = len(new_parts) > 0
 
     if not is_updated:
         # no new part
         print(
             colored(
-                f"The series '{novel.raw_serie.title}' has not been updated!", "yellow",
+                f"The series '{series.raw_series.title}' has not been updated!",
+                "yellow",
             )
         )
         return False
 
-    _create_epub_with_requested_parts(token, novel, new_parts, epub_generation_options)
+    _create_epub_with_requested_parts(token, series, new_parts, epub_generation_options)
 
     return True
 
 
-def _parts_released_after_date(novel, date):
+def _parts_released_after_date(series, date):
     parts = []
     comparison_date = dateutil.parser.parse(date)
-    for part in novel.parts:
+    for part in series.parts:
         # all date strings are in ISO format
         # so no need to parse really
         # parsing just to be safe
@@ -495,7 +499,7 @@ def _parts_released_after_date(novel, date):
 
 
 def _create_epub_with_requested_parts(
-    token, novel, parts_to_download, epub_generation_options
+    token, series, parts_to_download, epub_generation_options
 ):
     # preview => parts 1 of each volume, always available
     # not expired => prepub
@@ -522,10 +526,10 @@ def _create_epub_with_requested_parts(
             available_parts_to_download, lambda p: p.volume.volume_id
         ):
             parts = list(g)
-            core.create_epub(token, novel, parts, epub_generation_options)
+            core.create_epub(token, series, parts, epub_generation_options)
     else:
         core.create_epub(
-            token, novel, available_parts_to_download, epub_generation_options
+            token, series, available_parts_to_download, epub_generation_options
         )
 
 

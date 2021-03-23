@@ -21,11 +21,8 @@ CONFIG_DIRPATH = Path.home() / ".jncep"
 
 
 @attr.s
-class Novel:
-    # TODO separate req data raw_metadata and reqed_type from Novel struct
-    raw_serie = attr.ib()
-    raw_metadata = attr.ib()
-    requested_type = attr.ib()
+class Series:
+    raw_series = attr.ib()
     volumes = attr.ib(default=None)
     parts = attr.ib(default=None)
 
@@ -63,31 +60,31 @@ class CoverImageException(Exception):
     pass
 
 
-def to_relative_part_string(novel, part):
+def to_relative_part_string(series, part):
     volume_number = part.volume.num
     part_number = part.num_in_volume
     return f"{volume_number}.{part_number}"
 
 
-def to_part(novel, relpart_str) -> Part:
+def to_part(series, relpart_str) -> Part:
     # there will be an error if the relpart does not not existe
-    parts = _analyze_volume_part_specs(novel, relpart_str)
+    parts = _analyze_volume_part_specs(series, relpart_str)
     return parts[0]
 
 
-def to_pretty_part_name(novel, part) -> str:
+def to_pretty_part_name(series, part) -> str:
     part_str = f"Part_{part.num_in_volume}"
     title = part.volume.raw_volume.title
     return f"{_to_safe_filename(title)}_{part_str}"
 
 
-def create_epub(token, novel, parts, epub_generation_options):
+def create_epub(token, series, parts, epub_generation_options):
     # here normally all parts in parameter are available
     contents, downloaded_img_urls, raw_contents = get_book_content_and_images(
-        token, novel, parts, epub_generation_options.is_not_replace_chars
+        token, series, parts, epub_generation_options.is_not_replace_chars
     )
     identifier, title, author, cover_url_candidates, toc = get_book_details(
-        novel, parts
+        series, parts
     )
 
     print("Fetching cover image...")
@@ -133,7 +130,7 @@ def create_epub(token, novel, parts, epub_generation_options):
             # user
             _, ext = os.path.splitext(img_filename)
             img_filename = (
-                to_pretty_part_name(novel, part)
+                to_pretty_part_name(series, part)
                 # extension at the end
                 + f"_Image_{img_index}{ext}"
             )
@@ -146,7 +143,7 @@ def create_epub(token, novel, parts, epub_generation_options):
     if epub_generation_options.is_extract_content:
         print("Extracting content...")
         for content, part in zip(raw_contents, parts):
-            content_filename = to_pretty_part_name(novel, part) + ".html"
+            content_filename = to_pretty_part_name(series, part) + ".html"
             content_filepath = os.path.join(
                 epub_generation_options.output_dirpath, content_filename
             )
@@ -168,7 +165,7 @@ def create_epub(token, novel, parts, epub_generation_options):
     print(colored(f"Success! EPUB generated in '{output_filepath}'!", "green"))
 
 
-def get_book_content_and_images(token, novel, parts_to_download, is_not_replace_chars):
+def get_book_content_and_images(token, series, parts_to_download, is_not_replace_chars):
     downloaded_img_urls = {}
     contents = []
     raw_contents = []
@@ -227,14 +224,14 @@ def get_book_content_and_images(token, novel, parts_to_download, is_not_replace_
     return contents, downloaded_img_urls, raw_contents
 
 
-def get_book_details(novel, parts_to_download):
+def get_book_details(series, parts_to_download):
     # shouldn't change between parts
-    author = novel.raw_metadata.author
+    author = series.raw_series.author
     if len(parts_to_download) == 1:
         # single part
         part = parts_to_download[0]
         identifier_base = part.raw_part.titleslug
-        if _is_final(novel, parts_to_download[-1]):
+        if _is_final(series, parts_to_download[-1]):
             complete_suffix = " - Final"
         else:
             complete_suffix = ""
@@ -257,10 +254,10 @@ def get_book_details(novel, parts_to_download):
         if len(volumes) > 1:
             volume_nums = [str(volume.num) for volume in volumes]
             volume_nums = ", ".join(volume_nums[:-1]) + " & " + volume_nums[-1]
-            title_base = f"{novel.raw_serie.title}: Volumes {volume_nums}"
+            title_base = f"{series.raw_series.title}: Volumes {volume_nums}"
 
-            part1 = to_relative_part_string(novel, parts_to_download[0])
-            part2 = to_relative_part_string(novel, parts_to_download[-1])
+            part1 = to_relative_part_string(series, parts_to_download[0])
+            part2 = to_relative_part_string(series, parts_to_download[-1])
 
             part_nums = f"Parts {part1} to {part2}"
 
@@ -276,9 +273,9 @@ def get_book_details(novel, parts_to_download):
             # relative to volume
             toc = [f"Part {part.num_in_volume}" for part in parts_to_download]
 
-            if _is_complete(novel, volume, parts_to_download):
+            if _is_complete(series, volume, parts_to_download):
                 complete_suffix = " - Complete"
-            elif _is_final(novel, parts_to_download[-1]):
+            elif _is_final(series, parts_to_download[-1]):
                 complete_suffix = " - Final"
             else:
                 complete_suffix = ""
@@ -288,19 +285,19 @@ def get_book_details(novel, parts_to_download):
                 f"{parts_to_download[-1].num_in_volume}{complete_suffix}]"
             )
 
-        identifier_base = novel.raw_serie.titleslug
+        identifier_base = series.raw_series.titleslug
 
     identifier = identifier_base + str(int(time.time()))
 
     return identifier, title, author, cover_url_candidates, toc
 
 
-def _is_final(novel, part):
+def _is_final(series, part):
     """
     Tells if the part is the last one of the volume it belongs to
     """
     # if not last volume, can tell for sure
-    if part.volume != novel.volumes[-1]:
+    if part.volume != series.volumes[-1]:
         return part == part.volume.parts[-1]
 
     # last volume
@@ -326,13 +323,13 @@ def _is_final(novel, part):
         return False
 
 
-def _is_complete(novel, volume, parts_in_volume_to_dl):
-    last_volume = novel.volumes[-1]
+def _is_complete(series, volume, parts_in_volume_to_dl):
+    last_volume = series.volumes[-1]
     if volume is not last_volume:
         return len(parts_in_volume_to_dl) == len(volume.parts)
     else:
         return len(parts_in_volume_to_dl) == len(volume.parts) and _is_final(
-            novel, parts_in_volume_to_dl[-1]
+            series, parts_in_volume_to_dl[-1]
         )
 
 
@@ -456,26 +453,26 @@ def _to_safe_filename(name):
     return s
 
 
-def analyze_novel_metadata(req_type, metadata):
+def analyze_metadata(jnc_resource: jncapi.JNCResource):
     # takes order of parts as returned by API
     # (irrespective of actual partNumber)
     # reorder by volume ordering
 
-    if req_type in ("PART", "VOLUME"):
-        novel = Novel(metadata.serie, metadata, req_type)
+    if jnc_resource.requested_type in ("PART", "VOLUME"):
+        series = Series(jnc_resource.raw_metadata.serie)
     else:
-        novel = Novel(metadata, metadata, "NOVEL")
+        series = Series(jnc_resource.raw_metadata)
 
     volumes = []
     volume_index = {}
-    for raw_volume in novel.raw_serie.volumes:
+    for raw_volume in series.raw_series.volumes:
         volume_num = len(volumes) + 1
         volume = Volume(raw_volume, raw_volume.id, volume_num)
         volume_index[volume.volume_id] = volume
         volumes.append(volume)
 
     is_warned = False
-    for raw_part in novel.raw_serie.parts:
+    for raw_part in series.raw_series.parts:
         volume_id = raw_part.volumeId
         volume: Volume = volume_index[volume_id]
         num_in_volume = len(volume.parts) + 1
@@ -491,7 +488,7 @@ def analyze_novel_metadata(req_type, metadata):
             part.absolute_num = len(parts) + 1
             parts.append(part)
 
-            # some novels have a gap in the part number ie index does not correspond
+            # some seriess have a gap in the part number ie index does not correspond
             # to field partNumber e.g. economics of prophecy starting at part 10
             # print warning
             if (
@@ -510,43 +507,43 @@ def analyze_novel_metadata(req_type, metadata):
                 )
                 is_warned = True
 
-    novel.volumes = volumes
-    novel.parts = parts
+    series.volumes = volumes
+    series.parts = parts
 
-    return novel
+    return series
 
 
-def analyze_requested(novel):
-    if novel.requested_type == "PART":
+def analyze_requested(jnc_resource, series):
+    if jnc_resource.requested_type == "PART":
         # because partNumber sometimes has a gap => loop through all parts
         # to find the actual object (instead of using [partNumber] directly)
-        for part in novel.parts:
-            if part.raw_part.partNumber == novel.raw_metadata.partNumber:
+        for part in series.parts:
+            if part.raw_part.partNumber == jnc_resource.raw_metadata.partNumber:
                 return [part]
 
-    if novel.requested_type == "VOLUME":
-        iv = novel.raw_metadata.volumeNumber - 1
-        return list(novel.volumes[iv].parts)
+    if jnc_resource.requested_type == "VOLUME":
+        iv = jnc_resource.raw_metadata.volumeNumber - 1
+        return list(series.volumes[iv].parts)
 
-    # novel: all parts
-    return list(novel.parts)
+    # series: all parts
+    return list(series.parts)
 
 
-def analyze_part_specs(novel, part_specs, is_absolute):
+def analyze_part_specs(series, part_specs, is_absolute):
     """ v(.p):v2(.p) or v(.p): or :v(.p) or v(.p) or : """
 
     part_specs = part_specs.strip()
 
     if part_specs == RANGE_SEP:
-        return novel.parts
+        return series.parts
 
     if is_absolute:
-        return _analyze_absolute_part_specs(novel, part_specs)
+        return _analyze_absolute_part_specs(series, part_specs)
 
-    return _analyze_volume_part_specs(novel, part_specs)
+    return _analyze_volume_part_specs(series, part_specs)
 
 
-def _analyze_absolute_part_specs(novel, part_specs):  # noqa: C901
+def _analyze_absolute_part_specs(series, part_specs):  # noqa: C901
     parts = []
     sides = part_specs.split(RANGE_SEP)
     if len(sides) > 2:
@@ -559,8 +556,8 @@ def _analyze_absolute_part_specs(novel, part_specs):  # noqa: C901
         if not m:
             raise ValueError("Specified part must be a number")
         fp = int(m.group(1))
-        ifp = _validate_absolute_part_number(novel, fp)
-        return [novel.parts[ifp]]
+        ifp = _validate_absolute_part_number(series, fp)
+        return [series.parts[ifp]]
 
     # range
     m1 = re.match(reg, sides[0])
@@ -571,23 +568,23 @@ def _analyze_absolute_part_specs(novel, part_specs):  # noqa: C901
 
     if m1:
         fp = int(m1.group(1))
-        ifp = _validate_absolute_part_number(novel, fp)
+        ifp = _validate_absolute_part_number(series, fp)
 
     if m2:
         lp = int(m2.group(1))
-        ilp = _validate_absolute_part_number(novel, lp)
+        ilp = _validate_absolute_part_number(series, lp)
 
     if m1 and not m2:
         # to the end
-        for ip in range(ifp, len(novel.parts)):
-            parts.append(novel.parts[ip])
+        for ip in range(ifp, len(series.parts)):
+            parts.append(series.parts[ip])
         return parts
 
     if m2 and not m1:
         # since the beginning
         # + 1 => include the second side of the range
         for ip in range(0, ilp + 1):
-            parts.append(novel.parts[ip])
+            parts.append(series.parts[ip])
         return parts
 
     # both sides are present
@@ -597,23 +594,23 @@ def _analyze_absolute_part_specs(novel, part_specs):  # noqa: C901
 
     # + 1 => include the second side of the range
     for ip in range(ifp, ilp + 1):
-        parts.append(novel.parts[ip])
+        parts.append(series.parts[ip])
     return parts
 
 
-def _validate_absolute_part_number(novel, p):
+def _validate_absolute_part_number(series, p):
     if p == 0:
         raise ValueError("Specified part number must be at least 1")
     # part specs start at 1 => transform to Python index
     ip = p - 1
-    if ip >= len(novel.parts):
+    if ip >= len(series.parts):
         raise ValueError(
-            "Specified part number must be less than the number of parts in novel"
+            "Specified part number must be less than the number of parts in series"
         )
     return ip
 
 
-def _analyze_volume_part_specs(novel, part_specs):  # noqa: C901
+def _analyze_volume_part_specs(series, part_specs):  # noqa: C901
     parts = []
     sides = part_specs.split(RANGE_SEP)
     if len(sides) > 2:
@@ -631,12 +628,12 @@ def _analyze_volume_part_specs(novel, part_specs):  # noqa: C901
         if m.group(2):
             # only the part specified
             fp = int(m.group(2))
-            iv, ip = _validate_volume_part_number(novel, fv, fp)
-            return [novel.volumes[iv].parts[ip]]
+            iv, ip = _validate_volume_part_number(series, fv, fp)
+            return [series.volumes[iv].parts[ip]]
         else:
             # full volume
-            iv = _validate_volume_part_number(novel, fv)
-            for part in novel.volumes[iv].parts:
+            iv = _validate_volume_part_number(series, fv)
+            for part in series.volumes[iv].parts:
                 parts.append(part)
             return parts
 
@@ -660,38 +657,38 @@ def _analyze_volume_part_specs(novel, part_specs):  # noqa: C901
         fv = int(m1.group(1))
         if m1.group(2):
             fp = int(m1.group(2))
-            ifv, ifp = _validate_volume_part_number(novel, fv, fp)
+            ifv, ifp = _validate_volume_part_number(series, fv, fp)
         else:
-            ifv = _validate_volume_part_number(novel, fv)
+            ifv = _validate_volume_part_number(series, fv)
             # beginning of the volume
             ifp = 0
-        ifp = _to_absolute_part_index(novel, ifv, ifp)
+        ifp = _to_absolute_part_index(series, ifv, ifp)
 
     if m2:
         lv = int(m2.group(1))
         if m2.group(2):
             lp = int(m2.group(2))
-            ilv, ilp = _validate_volume_part_number(novel, lv, lp)
+            ilv, ilp = _validate_volume_part_number(series, lv, lp)
         else:
-            ilv = _validate_volume_part_number(novel, lv)
+            ilv = _validate_volume_part_number(series, lv)
             # end of the volume
             ilp = -1
         # this works too if ilp == -1
-        ilp = _to_absolute_part_index(novel, ilv, ilp)
+        ilp = _to_absolute_part_index(series, ilv, ilp)
 
     # same as for absolute part spec
 
     if m1 and not m2:
         # to the end
-        for ip in range(ifp, len(novel.parts)):
-            parts.append(novel.parts[ip])
+        for ip in range(ifp, len(series.parts)):
+            parts.append(series.parts[ip])
         return parts
 
     if m2 and not m1:
         # since the beginning
         # + 1 => include the second side of the range
         for ip in range(0, ilp + 1):
-            parts.append(novel.parts[ip])
+            parts.append(series.parts[ip])
         return parts
 
     # both sides are present
@@ -701,18 +698,18 @@ def _analyze_volume_part_specs(novel, part_specs):  # noqa: C901
 
     # + 1 => always include the second side of the range
     for ip in range(ifp, ilp + 1):
-        parts.append(novel.parts[ip])
+        parts.append(series.parts[ip])
     return parts
 
 
-def _validate_volume_part_number(novel, v, p=None):
+def _validate_volume_part_number(series, v, p=None):
     iv = v - 1
 
-    if iv >= len(novel.volumes):
+    if iv >= len(series.volumes):
         raise ValueError(
-            "Specified volume number must be less than the number of volumes in novel"
+            "Specified volume number must be less than the number of volumes in series"
         )
-    volume = novel.volumes[iv]
+    volume = series.volumes[iv]
 
     if p is None:
         return iv
@@ -725,8 +722,8 @@ def _validate_volume_part_number(novel, v, p=None):
     return iv, ip
 
 
-def _to_absolute_part_index(novel, iv, ip):
-    volume = novel.volumes[iv]
+def _to_absolute_part_index(series, iv, ip):
+    volume = series.volumes[iv]
     return volume.parts[ip].absolute_num - 1
 
 

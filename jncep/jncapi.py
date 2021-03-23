@@ -3,6 +3,7 @@ import re
 from urllib.parse import urlparse
 
 from addict import Dict as Addict
+import attr
 import requests
 import requests_toolbelt.utils.dump
 
@@ -11,6 +12,12 @@ JNC_URL_BASE = "https://j-novel.club"
 API_JNC_URL_BASE = "https://api.j-novel.club"
 
 COMMON_API_HEADERS = {"accept": "application/json", "content-type": "application/json"}
+
+
+@attr.s
+class JNCResource:
+    raw_metadata = attr.ib()
+    requested_type = attr.ib()
 
 
 def login(email, password):
@@ -40,7 +47,7 @@ def fetch_metadata(token, slug):
         res_type = "parts"
         include = [{"serie": ["volumes", "parts"]}, "volume"]
         where = {"titleslug": spec}
-        return _fetch_metadata_internal(token, res_type, where, include)
+        metadata = _fetch_metadata_internal(token, res_type, where, include)
     elif req_type == "VOLUME":
         if isinstance(spec, tuple):
             # for volume on new website => where is a tuple (series_slug, volume num)
@@ -61,18 +68,21 @@ def fetch_metadata(token, slug):
             res_type = "volumes"
             include = [{"serie": ["volumes", "parts"]}, "parts"]
             where = {"volumeNumber": volume_number, "serieId": serie_id}
-            return _fetch_metadata_internal(token, res_type, where, include)
+            metadata = _fetch_metadata_internal(token, res_type, where, include)
 
         else:
+            # old website URL
             res_type = "volumes"
             include = [{"serie": ["volumes", "parts"]}, "parts"]
             where = {"titleslug": spec}
-            return _fetch_metadata_internal(token, res_type, where, include)
+            metadata = _fetch_metadata_internal(token, res_type, where, include)
     else:
         res_type = "series"
         include = ["volumes", "parts"]
         where = {"titleslug": spec}
-        return _fetch_metadata_internal(token, res_type, where, include)
+        metadata = _fetch_metadata_internal(token, res_type, where, include)
+
+    return JNCResource(metadata, req_type)
 
 
 def _fetch_metadata_internal(token, res_type, where, include):
