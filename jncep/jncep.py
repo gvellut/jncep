@@ -137,13 +137,13 @@ def generate_epub(
 
     token = None
     try:
-        slug = jncapi.slug_from_url(jnc_url)
+        jnc_resource = jncapi.resource_from_url(jnc_url)
 
         print(f"Login with email '{email}'...")
         token = jncapi.login(email, password)
 
-        print(f"Fetching metadata for '{slug[0]}'...")
-        jnc_resource = jncapi.fetch_metadata(token, slug)
+        print(f"Fetching metadata for '{jnc_resource}'...")
+        jncapi.fetch_metadata(token, jnc_resource)
 
         series = core.analyze_metadata(jnc_resource)
 
@@ -274,15 +274,15 @@ def list_track_series():
 def _canonical_series(jnc_url, email, password):
     token = None
     try:
-        slug = jncapi.slug_from_url(jnc_url)
+        jnc_resource = jncapi.resource_from_url(jnc_url)
 
         print(f"Login with email '{email}'...")
         token = jncapi.login(email, password)
 
-        print(f"Fetching metadata for '{slug[0]}'...")
-        metadata = jncapi.fetch_metadata(token, slug)
+        print(f"Fetching metadata for '{jnc_resource}'...")
+        jncapi.fetch_metadata(token, jnc_resource)
 
-        series = core.analyze_series_metadata(slug[1], metadata)
+        series = core.analyze_metadata(jnc_resource)
         series_slug = series.raw_series.titleslug
         series_url = jncapi.url_from_series_slug(series_slug)
 
@@ -346,10 +346,10 @@ def update_tracked(  # noqa: C901
         updated_series = []
         has_error = False
         if jnc_url:
-            slug = jncapi.slug_from_url(jnc_url)
+            jnc_resource = jncapi.resource_from_url(jnc_url)
 
-            print(f"Fetching metadata for '{slug[0]}'...")
-            jnc_resource = jncapi.fetch_metadata(token, slug)
+            print(f"Fetching metadata for '{jnc_resource}'...")
+            jncapi.fetch_metadata(token, jnc_resource)
 
             series = core.analyze_metadata(jnc_resource)
 
@@ -382,10 +382,10 @@ def update_tracked(  # noqa: C901
         else:
             for series_url, series_details in tracked_series.items():
                 try:
-                    slug = jncapi.slug_from_url(series_url)
+                    jnc_resource = jncapi.resource_from_url(series_url)
 
-                    print(f"Fetching metadata for '{slug[0]}'...")
-                    jnc_resource = jncapi.fetch_metadata(token, slug)
+                    print(f"Fetching metadata for '{jnc_resource}'...")
+                    jncapi.fetch_metadata(token, jnc_resource)
 
                     series = core.analyze_metadata(jnc_resource)
 

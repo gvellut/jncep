@@ -1,6 +1,6 @@
 import json
 import re
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 from addict import Dict as Addict
 import attr
@@ -16,8 +16,16 @@ COMMON_API_HEADERS = {"accept": "application/json", "content-type": "application
 
 @attr.s
 class JNCResource:
-    raw_metadata = attr.ib()
+    url = attr.ib()
+    slug = attr.ib()
+    is_new_wesite = attr.ib()
     requested_type = attr.ib()
+    raw_metadata = attr.ib(default=None)
+
+    def __str__(self):
+        pu = urlparse(self.url)
+        # remove scheme + domain
+        return urlunparse(("", "", *pu[2:]))
 
 
 def login(email, password):
@@ -41,17 +49,16 @@ def logout(token):
     r.raise_for_status()
 
 
-def fetch_metadata(token, slug):
-    spec, req_type = slug
-    if req_type == "PART":
+def fetch_metadata(token, jnc_resource: JNCResource):
+    if jnc_resource.requested_type == "PART":
         res_type = "parts"
         include = [{"serie": ["volumes", "parts"]}, "volume"]
-        where = {"titleslug": spec}
+        where = {"titleslug": jnc_resource.slug}
         metadata = _fetch_metadata_internal(token, res_type, where, include)
-    elif req_type == "VOLUME":
-        if isinstance(spec, tuple):
+    elif jnc_resource.requested_type == "VOLUME":
+        if jnc_resource.is_new_wesite:
             # for volume on new website => where is a tuple (series_slug, volume num)
-            series_slug, volume_number = spec
+            series_slug, volume_number = jnc_resource.slug
 
             # TODO is the volume sluge always : <series_slug>-volume-<vol_num>
             # TOOD if so can be simplified
@@ -74,15 +81,16 @@ def fetch_metadata(token, slug):
             # old website URL
             res_type = "volumes"
             include = [{"serie": ["volumes", "parts"]}, "parts"]
-            where = {"titleslug": spec}
+            where = {"titleslug": jnc_resource.slug}
             metadata = _fetch_metadata_internal(token, res_type, where, include)
     else:
         res_type = "series"
         include = ["volumes", "parts"]
-        where = {"titleslug": spec}
+        where = {"titleslug": jnc_resource.slug}
         metadata = _fetch_metadata_internal(token, res_type, where, include)
 
-    return JNCResource(metadata, req_type)
+    jnc_resource.raw_metadata = metadata
+    return jnc_resource
 
 
 def _fetch_metadata_internal(token, res_type, where, include):
@@ -117,8 +125,7 @@ def fetch_image_from_cdn(url):
     return r.content
 
 
-# TODO make class: already tuple, can have additional tuple... + repr
-def slug_from_url(url):
+def resource_from_url(url):
     pu = urlparse(url)
 
     if pu.scheme == "":
@@ -129,7 +136,7 @@ def slug_from_url(url):
     # for c_hapter, v_olume, s_erie
     m = re.match(r"^/(v|c|s)/(.+?)(?:(?=/)|$)", pu.path)
     if m:
-        return m.group(2), _to_const_legacy(m.group(1))
+        return JNCResource(url, m.group(2), False, _to_const_legacy(m.group(1)))
     else:
         # new site
         # new site changed titles to series in URL
@@ -142,15 +149,15 @@ def slug_from_url(url):
         if m:
             series_slug = m.group(1)
             if not pu.fragment:
-                return series_slug, "NOVEL"
+                return JNCResource(url, series_slug, True, "NOVEL")
             m = re.match(v_re, pu.fragment)
             if m:
                 # tuple with volume
-                return (series_slug, m.group(1)), "VOLUME"
+                return JNCResource(url, (series_slug, m.group(1)), True, "VOLUME")
         else:
             m = re.match(c_re, pu.path)
             if m:
-                return m.group(1), "PART"
+                return JNCResource(url, m.group(1), True, "PART")
 
     raise ValueError(f"Invalid path for URL: {url}")
 
@@ -162,9 +169,9 @@ def url_from_series_slug(series_slug):
 
 def to_new_website_series_url(series_url):
     # supports legacy URLs + new
-    series_slug = slug_from_url(series_url)
+    jnc_resource = resource_from_url(series_url)
     # outputs new URL
-    new_series_url = url_from_series_slug(series_slug[0])
+    new_series_url = url_from_series_slug(jnc_resource.slug)
     return new_series_url
 
 
