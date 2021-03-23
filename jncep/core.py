@@ -484,11 +484,11 @@ def analyze_metadata(jnc_resource: jncapi.JNCResource):
         for part in volume.parts:
             # volume number ordering and part number ordering sometimes do not match
             # actually just for Altina volume 8 / 9
-            # so set abolute num in sequential order according to volumes
+            # so set absolute num in sequential order according to volumes
             part.absolute_num = len(parts) + 1
             parts.append(part)
 
-            # some seriess have a gap in the part number ie index does not correspond
+            # some series have a gap in the part number ie index does not correspond
             # to field partNumber e.g. economics of prophecy starting at part 10
             # print warning
             if (

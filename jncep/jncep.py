@@ -52,7 +52,7 @@ images_option = click.option(
     "is_extract_images",
     is_flag=True,
     help=(
-        "Flag to indicate that the images of the series should be extracted into "
+        "Flag to indicate that the images of the novel should be extracted into "
         "the output folder"
     ),
 )
@@ -85,7 +85,7 @@ def cli():
     pass
 
 
-@cli.command(name="epub", help="Generate EPUB files for J-Novel Club pre-pub seriess")
+@cli.command(name="epub", help="Generate EPUB files for J-Novel Club pre-pub novels")
 @click.argument("jnc_url", metavar="JNOVEL_CLUB_URL", required=True)
 @login_option
 @password_option
