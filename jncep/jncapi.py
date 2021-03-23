@@ -122,7 +122,9 @@ def slug_from_url(url):
         return m.group(2), _to_const_legacy(m.group(1))
     else:
         # new site
-        s_re = r"^/titles/(.+?)(?:(?=/)|$)"
+        # new site changed titles to series in URL
+        # so process both
+        s_re = r"^/(?:series|titles)/(.+?)(?:(?=/)|$)"
         c_re = r"^/read/(.+?)(?:(?=/)|$)"
         v_re = r"^volume-(\d+)$"
 
@@ -145,7 +147,7 @@ def slug_from_url(url):
 
 def url_from_series_slug(series_slug):
     # new URL
-    return f"{JNC_URL_BASE}/titles/{series_slug}"
+    return f"{JNC_URL_BASE}/series/{series_slug}"
 
 
 def to_new_website_series_url(series_url):
