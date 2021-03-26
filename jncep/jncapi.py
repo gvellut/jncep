@@ -18,7 +18,7 @@ COMMON_API_HEADERS = {"accept": "application/json", "content-type": "application
 class JNCResource:
     url = attr.ib()
     slug = attr.ib()
-    is_new_wesite = attr.ib()
+    is_new_website = attr.ib()
     requested_type = attr.ib()
     raw_metadata = attr.ib(default=None)
 
@@ -56,7 +56,7 @@ def fetch_metadata(token, jnc_resource: JNCResource):
         where = {"titleslug": jnc_resource.slug}
         metadata = _fetch_metadata_internal(token, res_type, where, include)
     elif jnc_resource.requested_type == "VOLUME":
-        if jnc_resource.is_new_wesite:
+        if jnc_resource.is_new_website:
             # for volume on new website => where is a tuple (series_slug, volume num)
             series_slug, volume_number = jnc_resource.slug
 
