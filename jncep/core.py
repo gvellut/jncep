@@ -1,6 +1,7 @@
 from collections import namedtuple
 from html.parser import HTMLParser
 import json
+import logging
 import os
 import os.path
 from pathlib import Path
@@ -11,9 +12,11 @@ from addict import Dict as Addict
 from atomicwrites import atomic_write
 import attr
 from ebooklib import epub
-from termcolor import colored
 
-from . import DEBUG, jncapi
+from . import jncapi
+from .utils import green
+
+logger = logging.getLogger(__package__)
 
 RANGE_SEP = ":"
 
@@ -87,7 +90,7 @@ def create_epub(token, series, parts, epub_generation_options):
         series, parts
     )
 
-    print("Fetching cover image...")
+    logger.info("Fetching cover image...")
     for cover_url in cover_url_candidates:
         if cover_url in downloaded_img_urls:
             # no need to redownload
@@ -100,12 +103,9 @@ def create_epub(token, series, parts, epub_generation_options):
                 cover_bytes = jncapi.fetch_image_from_cdn(cover_url)
                 break
             except Exception:
-                print(
-                    colored(
-                        f"Unable to download cover image with URL: '{cover_url}'. "
-                        "Trying next candidate...",
-                        "yellow",
-                    )
+                logger.warning(
+                    f"Unable to download cover image with URL: '{cover_url}'. "
+                    "Trying next candidate..."
                 )
                 continue
     else:
@@ -117,7 +117,7 @@ def create_epub(token, series, parts, epub_generation_options):
     )
 
     if epub_generation_options.is_extract_images:
-        print("Extracting images...")
+        logger.info("Extracting images...")
         current_part = None
         img_index = -1
         for img_bytes, img_filename, part in downloaded_img_urls.values():
@@ -141,14 +141,13 @@ def create_epub(token, series, parts, epub_generation_options):
                 img_f.write(img_bytes)
 
     if epub_generation_options.is_extract_content:
-        print("Extracting content...")
+        logger.info("Extracting content...")
         for content, part in zip(raw_contents, parts):
             content_filename = to_pretty_part_name(series, part) + ".html"
             content_filepath = os.path.join(
                 epub_generation_options.output_dirpath, content_filename
             )
             with open(content_filepath, "w", encoding="utf-8") as content_f:
-                # TODO wrap it in html/body ?
                 content_f.write(content)
 
     create_epub_file(
@@ -162,7 +161,7 @@ def create_epub(token, series, parts, epub_generation_options):
         contents,
         downloaded_img_urls,
     )
-    print(colored(f"Success! EPUB generated in '{output_filepath}'!", "green"))
+    logger.info(green(f"Success! EPUB generated in '{output_filepath}'!"))
 
 
 def get_book_content_and_images(token, series, parts_to_download, is_not_replace_chars):
@@ -170,7 +169,7 @@ def get_book_content_and_images(token, series, parts_to_download, is_not_replace
     contents = []
     raw_contents = []
     for part in parts_to_download:
-        print(f"Fetching part '{part.raw_part.title}'...")
+        logger.info(f"Fetching part '{part.raw_part.title}'...")
         content = jncapi.fetch_content(token, part.raw_part.id)
         raw_contents.append(content)
 
@@ -184,29 +183,23 @@ def get_book_content_and_images(token, series, parts_to_download, is_not_replace
             regex = "|".join(chars_to_replace)
             content_b = re.sub(regex, replacement_char, content)
             if content != content_b:
-                print(
-                    colored(
-                        "Some Unicode characters unlikely to be readable with "
-                        "the base fonts of an EPUB reader have been replaced ",
-                        "yellow",
-                    )
+                logger.warning(
+                    "Some Unicode characters unlikely to be readable with "
+                    "the base fonts of an EPUB reader have been replaced "
                 )
             content = content_b
 
         img_urls = _img_urls(content)
         if len(img_urls) > 0:
-            print("Fetching images found in part content...")
+            logger.info("Fetching images found in part content...")
             for i, img_url in enumerate(img_urls):
-                print(f"Image {i + 1}...")
+                logger.info(f"Image {i + 1}...")
                 try:
                     img_bytes = jncapi.fetch_image_from_cdn(img_url)
                 except Exception:
-                    print(
-                        colored(
-                            f"Unable to download image with URL: '{img_url}'. "
-                            "Ignoring...",
-                            "red",
-                        )
+                    logger.error(
+                        f"Unable to download image with URL: '{img_url}'. "
+                        "Ignoring..."
                     )
                     continue
 
@@ -491,19 +484,12 @@ def analyze_metadata(jnc_resource: jncapi.JNCResource):
             # some series have a gap in the part number ie index does not correspond
             # to field partNumber e.g. economics of prophecy starting at part 10
             # print warning
-            if (
-                DEBUG
-                and part.absolute_num != part.raw_part.partNumber
-                and not is_warned
-            ):
-                # not an issue in practice so leave it in DEBUG mode only
-                print(
-                    colored(
-                        f"Absolute part number returned by API doesn't correspond to "
-                        f"its actual position in series (corrected, starting at part "
-                        f"{part.raw_part.partNumber} found in volume {volume.num})",
-                        "yellow",
-                    )
+            if part.absolute_num != part.raw_part.partNumber and not is_warned:
+                # not an issue in practice so leave it in debug mode only
+                logger.debug(
+                    f"Absolute part number returned by API doesn't correspond to "
+                    f"its actual position in series (corrected, starting at part "
+                    f"{part.raw_part.partNumber} found in volume {volume.num})"
                 )
                 is_warned = True
 

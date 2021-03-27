@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from urllib.parse import urlparse, urlunparse
 
@@ -6,6 +7,8 @@ from addict import Dict as Addict
 import attr
 import requests
 import requests_toolbelt.utils.dump
+
+logger = logging.getLogger(__package__)
 
 IMG_URL_BASE = "https://d2dq7ifhe7bu0f.cloudfront.net"
 JNC_URL_BASE = "https://j-novel.club"
@@ -186,4 +189,4 @@ def _to_const_legacy(req_type):
 
 def _dump(response):
     data = requests_toolbelt.utils.dump.dump_response(response)
-    print(data.decode("utf-8"))
+    logger.debug(data.decode("utf-8"))

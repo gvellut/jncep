@@ -1,13 +1,16 @@
 import itertools
+import logging
 import os
 import sys
 import traceback
 
 import click
 import dateutil.parser
-from termcolor import colored
 
-from . import core, DEBUG, jncapi
+from . import core, jncapi
+from .utils import green, setup_logging
+
+logger = logging.getLogger(__package__)
 
 login_option = click.option(
     "-l",
@@ -80,12 +83,46 @@ no_replace_chars_option = click.option(
 )
 
 
+class CatchAllExceptionsCommand(click.Command):
+    def invoke(self, ctx):
+        try:
+            return super().invoke(ctx)
+        except Exception as ex:
+            raise UnrecoverableJNCEPError(str(ex), sys.exc_info())
+
+
+class UnrecoverableJNCEPError(click.ClickException):
+    def __init__(self, message, exc_info):
+        super().__init__(message)
+        self.exc_info = exc_info
+
+    def show(self):
+        logger.error("*** An unrecoverable error occured ***")
+        logger.error(self.message)
+        logger.debug("".join(traceback.format_exception(*self.exc_info)))
+
+
 @click.group()
-def cli():
-    pass
+@click.option(
+    "-d",
+    "--debug",
+    "is_debug",
+    is_flag=True,
+    help=("Flag to activate debug mode"),
+    required=False,
+)
+@click.pass_context
+def cli(ctx, is_debug):
+    setup_logging(is_debug)
+    # special attribute of context
+    ctx.obj = {"DEBUG": is_debug}
 
 
-@cli.command(name="epub", help="Generate EPUB files for J-Novel Club pre-pub novels")
+@cli.command(
+    name="epub",
+    help="Generate EPUB files for J-Novel Club pre-pub novels",
+    cls=CatchAllExceptionsCommand,
+)
 @click.argument("jnc_url", metavar="JNOVEL_CLUB_URL", required=True)
 @login_option
 @password_option
@@ -139,16 +176,16 @@ def generate_epub(
     try:
         jnc_resource = jncapi.resource_from_url(jnc_url)
 
-        print(f"Login with email '{email}'...")
+        logger.info(f"Login with email '{email}'...")
         token = jncapi.login(email, password)
 
-        print(f"Fetching metadata for '{jnc_resource}'...")
+        logger.info(f"Fetching metadata for '{jnc_resource}'...")
         jncapi.fetch_metadata(token, jnc_resource)
 
         series = core.analyze_metadata(jnc_resource)
 
         if part_specs:
-            print(
+            logger.info(
                 f"Using part specification '{part_specs}' "
                 f"(absolute={_to_yn(is_absolute)})..."
             )
@@ -162,7 +199,7 @@ def generate_epub(
     finally:
         if token:
             try:
-                print("Logout...")
+                logger.info("Logout...")
                 jncapi.logout(token)
             except Exception:
                 pass
@@ -173,7 +210,9 @@ def track_series():
     pass
 
 
-@track_series.command(name="add", help="Add a new series for tracking")
+@track_series.command(
+    name="add", help="Add a new series for tracking", cls=CatchAllExceptionsCommand
+)
 @click.argument("jnc_url", metavar="JNOVEL_CLUB_URL", required=True)
 @login_option
 @password_option
@@ -182,11 +221,7 @@ def add_track_series(jnc_url, email, password):
     tracked_series = core.read_tracked_series()
 
     if series_url in tracked_series:
-        print(
-            colored(
-                f"The series '{series.raw_series.title}' is already tracked!", "yellow",
-            )
-        )
+        logger.warning(f"The series '{series.raw_series.title}' is already tracked!")
         return
 
     # record current last part + name
@@ -207,27 +242,27 @@ def add_track_series(jnc_url, email, password):
     core.write_tracked_series(tracked_series)
 
     if len(series.parts) == 0:
-        print(
-            colored(
+        logger.info(
+            green(
                 f"The series '{series.raw_series.title}' is now tracked, starting "
-                f"from the beginning",
-                "green",
+                f"from the beginning"
             )
         )
     else:
         relative_part = core.to_relative_part_string(series, series.parts[-1])
         part_date = dateutil.parser.parse(series.parts[-1].raw_part.launchDate)
         part_date_formatted = part_date.strftime("%b %d, %Y")
-        print(
-            colored(
+        logger.info(
+            green(
                 f"The series '{series.raw_series.title}' is now tracked, starting "
-                f"after part {relative_part} [{part_date_formatted}]",
-                "green",
+                f"after part {relative_part} [{part_date_formatted}]"
             )
         )
 
 
-@track_series.command(name="rm", help="Remove a series from tracking")
+@track_series.command(
+    name="rm", help="Remove a series from tracking", cls=CatchAllExceptionsCommand
+)
 @click.argument("jnc_url", metavar="JNOVEL_CLUB_URL", required=True)
 @login_option
 @password_option
@@ -236,25 +271,23 @@ def remove_track_series(jnc_url, email, password):
     tracked_series = core.read_tracked_series()
 
     if series_url not in tracked_series:
-        print(
-            colored(f"The series '{series.raw_series.title}' is not tracked!", "yellow")
-        )
+        logger.warning(f"The series '{series.raw_series.title}' is not tracked!")
         return
 
     del tracked_series[series_url]
 
     core.write_tracked_series(tracked_series)
 
-    print(
-        colored(f"The series '{series.raw_series.title}' is no longer tracked", "green")
-    )
+    logger.info(green(f"The series '{series.raw_series.title}' is no longer tracked"))
 
 
-@track_series.command(name="list", help="List tracked series")
+@track_series.command(
+    name="list", help="List tracked series", cls=CatchAllExceptionsCommand
+)
 def list_track_series():
     tracked_series = core.read_tracked_series()
     if len(tracked_series) > 0:
-        print(f"{len(tracked_series)} series are tracked:")
+        logger.info(f"{len(tracked_series)} series are tracked:")
         for ser_url, ser_details in tracked_series.items():
             details = None
             if ser_details.part_date:
@@ -266,9 +299,9 @@ def list_track_series():
             else:
                 details = f"{ser_details.part}"
 
-            print(f"'{ser_details.name}' ({ser_url}): {details}")
+            logger.info(f"'{green(ser_details.name)}' ({ser_url}): {details}")
     else:
-        print(f"No series is tracked.")
+        logger.info(f"No series is tracked.")
 
 
 def _canonical_series(jnc_url, email, password):
@@ -276,10 +309,10 @@ def _canonical_series(jnc_url, email, password):
     try:
         jnc_resource = jncapi.resource_from_url(jnc_url)
 
-        print(f"Login with email '{email}'...")
+        logger.info(f"Login with email '{email}'...")
         token = jncapi.login(email, password)
 
-        print(f"Fetching metadata for '{jnc_resource}'...")
+        logger.info(f"Fetching metadata for '{jnc_resource}'...")
         jncapi.fetch_metadata(token, jnc_resource)
 
         series = core.analyze_metadata(jnc_resource)
@@ -290,7 +323,7 @@ def _canonical_series(jnc_url, email, password):
     finally:
         if token:
             try:
-                print("Logout...")
+                logger.info("Logout...")
                 jncapi.logout(token)
             except Exception:
                 pass
@@ -300,6 +333,7 @@ def _canonical_series(jnc_url, email, password):
     name="update",
     help="Generate EPUB files for new parts of all tracked series (or specific "
     "series if a URL argument is passed)",
+    cls=CatchAllExceptionsCommand,
 )
 @click.argument("jnc_url", metavar="(JNOVEL_CLUB_URL?)", required=False)
 @login_option
@@ -331,16 +365,13 @@ def update_tracked(  # noqa: C901
     try:
         tracked_series = core.read_tracked_series()
         if len(tracked_series) == 0:
-            print(
-                colored(
-                    "There are no tracked series! Use the 'jncep track add' command "
-                    "first.",
-                    "yellow",
-                )
+            logger.warning(
+                "There are no tracked series! Use the 'jncep track add' command "
+                "first."
             )
             return
 
-        print(f"Login with email '{email}'...")
+        logger.info(f"Login with email '{email}'...")
         token = jncapi.login(email, password)
 
         updated_series = []
@@ -348,7 +379,7 @@ def update_tracked(  # noqa: C901
         if jnc_url:
             jnc_resource = jncapi.resource_from_url(jnc_url)
 
-            print(f"Fetching metadata for '{jnc_resource}'...")
+            logger.info(f"Fetching metadata for '{jnc_resource}'...")
             jncapi.fetch_metadata(token, jnc_resource)
 
             series = core.analyze_metadata(jnc_resource)
@@ -357,12 +388,9 @@ def update_tracked(  # noqa: C901
             series_url = jncapi.url_from_series_slug(series_slug)
 
             if series_url not in tracked_series:
-                print(
-                    colored(
-                        f"The series '{series.raw_series.title}' is not tracked! "
-                        f"Use the 'jncep track' command first.",
-                        "yellow",
-                    )
+                logger.warning(
+                    f"The series '{series.raw_series.title}' is not tracked! "
+                    f"Use the 'jncep track' command first."
                 )
                 return
 
@@ -372,11 +400,8 @@ def update_tracked(  # noqa: C901
             )
 
             if is_updated:
-                print(
-                    colored(
-                        f"The series '{series.raw_series.title}' has been updated!",
-                        "green",
-                    )
+                logger.info(
+                    green(f"The series '{series.raw_series.title}' has been updated!",)
                 )
                 updated_series.append(series)
         else:
@@ -384,7 +409,7 @@ def update_tracked(  # noqa: C901
                 try:
                     jnc_resource = jncapi.resource_from_url(series_url)
 
-                    print(f"Fetching metadata for '{jnc_resource}'...")
+                    logger.info(f"Fetching metadata for '{jnc_resource}'...")
                     jncapi.fetch_metadata(token, jnc_resource)
 
                     series = core.analyze_metadata(jnc_resource)
@@ -393,24 +418,22 @@ def update_tracked(  # noqa: C901
                         token, series, series_details, epub_generation_options
                     )
                     if is_updated:
-                        print(
-                            colored(
+                        logger.info(
+                            green(
                                 f"The series '{series.raw_series.title}' has been "
-                                "updated!",
-                                f"green",
+                                "updated!"
                             )
                         )
                         updated_series.append(series)
                 except Exception as ex:
                     has_error = True
-                    print(colored("An error occured while updating the series:", "red"))
-                    print(colored(str(ex), "red"))
-                    if DEBUG:
-                        traceback.print_exc()
+                    logger.error("An error occured while updating the series:")
+                    logger.error(str(ex))
+                    logger.debug(traceback.format_exc())
     finally:
         if token:
             try:
-                print("Logout...")
+                logger.info("Logout...")
                 jncapi.logout(token)
             except Exception:
                 pass
@@ -418,7 +441,7 @@ def update_tracked(  # noqa: C901
     if has_error:
         # only for multiple updates ; when url passed and error => goes directly
         # to fatal error
-        print(colored("Some series could not be updated!", "red"))
+        logger.error("Some series could not be updated!")
 
     if len(updated_series) > 0:
         # update tracking config JSON => to last part in series
@@ -434,9 +457,9 @@ def update_tracked(  # noqa: C901
             }
         core.write_tracked_series(tracked_series)
 
-        print(colored(f"{len(updated_series)} series sucessfully updated!", "green"))
+        logger.info(green(f"{len(updated_series)} series sucessfully updated!"))
     else:
-        print(colored(f"All series are already up to date!", "green"))
+        logger.info(green(f"All series are already up to date!"))
 
 
 def _to_yn(b):
@@ -472,12 +495,7 @@ def _create_updated_epub(token, series, series_details, epub_generation_options)
 
     if not is_updated:
         # no new part
-        print(
-            colored(
-                f"The series '{series.raw_series.title}' has not been updated!",
-                "yellow",
-            )
-        )
+        logger.warning(f"The series '{series.raw_series.title}' has not been updated!",)
         return False
 
     _create_epub_with_requested_parts(token, series, new_parts, epub_generation_options)
@@ -515,11 +533,7 @@ def _create_epub_with_requested_parts(
         )
 
     if len(available_parts_to_download) != len(parts_to_download):
-        print(
-            colored(
-                "Some of the requested parts are not available for reading !", "yellow"
-            )
-        )
+        logger.warning("Some of the requested parts are not available for reading !")
 
     if epub_generation_options.is_by_volume:
         for _, g in itertools.groupby(
@@ -538,16 +552,5 @@ class NoRequestedPartAvailableError(Exception):
         super().__init__(msg)
 
 
-def main():
-    try:
-        cli()
-    except Exception as ex:
-        print(colored("*** An unrecoverable error occured ***", "red"))
-        print(colored(str(ex), "red"))
-        if DEBUG:
-            traceback.print_exc()
-        sys.exit(1)
-
-
 if __name__ == "__main__":
-    main()
+    cli()

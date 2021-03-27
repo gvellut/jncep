@@ -304,4 +304,3 @@ Report issues at https://github.com/gvellut/jncep/issues
 - self-contained executable for macOS and Windows with PyInstaller
 - config file for account
 - async IO for faster downloads
-- replace prints with logging
