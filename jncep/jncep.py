@@ -102,7 +102,14 @@ class UnrecoverableJNCEPError(click.ClickException):
         logger.debug("".join(traceback.format_exception(*self.exc_info)))
 
 
-@click.group()
+class NoRequestedPartAvailableError(Exception):
+    pass
+
+
+@click.group(
+    help="Simple command-line tool to generate EPUB files for J-Novel Club pre-pub "
+    "novels"
+)
 @click.option(
     "-d",
     "--debug",
@@ -111,14 +118,11 @@ class UnrecoverableJNCEPError(click.ClickException):
     help=("Flag to activate debug mode"),
     required=False,
 )
-@click.pass_context
-def cli(ctx, is_debug):
+def main(is_debug):
     setup_logging(is_debug)
-    # special attribute of context
-    ctx.obj = {"DEBUG": is_debug}
 
 
-@cli.command(
+@main.command(
     name="epub",
     help="Generate EPUB files for J-Novel Club pre-pub novels",
     cls=CatchAllExceptionsCommand,
@@ -205,7 +209,7 @@ def generate_epub(
                 pass
 
 
-@cli.group(name="track", help="Track updates to a series")
+@main.group(name="track", help="Track updates to a series")
 def track_series():
     pass
 
@@ -329,7 +333,7 @@ def _canonical_series(jnc_url, email, password):
                 pass
 
 
-@cli.command(
+@main.command(
     name="update",
     help="Generate EPUB files for new parts of all tracked series (or specific "
     "series if a URL argument is passed)",
@@ -547,10 +551,5 @@ def _create_epub_with_requested_parts(
         )
 
 
-class NoRequestedPartAvailableError(Exception):
-    def __init__(self, msg):
-        super().__init__(msg)
-
-
 if __name__ == "__main__":
-    cli()
+    main()
