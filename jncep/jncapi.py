@@ -16,13 +16,17 @@ API_JNC_URL_BASE = "https://api.j-novel.club"
 
 COMMON_API_HEADERS = {"accept": "application/json", "content-type": "application/json"}
 
+RESOURCE_TYPE_NOVEL = "NOVEL"
+RESOURCE_TYPE_VOLUME = "VOLUME"
+RESOURCE_TYPE_PART = "PART"
+
 
 @attr.s
 class JNCResource:
     url = attr.ib()
     slug = attr.ib()
     is_new_website = attr.ib()
-    requested_type = attr.ib()
+    resource_type = attr.ib()
     raw_metadata = attr.ib(default=None)
 
     def __str__(self):
@@ -53,12 +57,12 @@ def logout(token):
 
 
 def fetch_metadata(token, jnc_resource: JNCResource):
-    if jnc_resource.requested_type == "PART":
+    if jnc_resource.resource_type == RESOURCE_TYPE_PART:
         res_type = "parts"
         include = [{"serie": ["volumes", "parts"]}, "volume"]
         where = {"titleslug": jnc_resource.slug}
         metadata = _fetch_metadata_internal(token, res_type, where, include)
-    elif jnc_resource.requested_type == "VOLUME":
+    elif jnc_resource.resource_type == RESOURCE_TYPE_VOLUME:
         if jnc_resource.is_new_website:
             # for volume on new website => where is a tuple (series_slug, volume num)
             series_slug, volume_number = jnc_resource.slug
@@ -128,6 +132,50 @@ def fetch_image_from_cdn(url):
     return r.content
 
 
+def fetch_follows(token):
+    headers = {"authorization": token, **COMMON_API_HEADERS}
+    url = f"{API_JNC_URL_BASE}/api/users/me"
+    qfilter = {"include": [{"serieFollows": "serie"}]}
+    payload = {"filter": json.dumps(qfilter)}
+
+    r = requests.get(url, headers=headers, params=payload)
+    r.raise_for_status()
+
+    me_data = Addict(r.json())
+    followed_series = []
+    for s in me_data.serieFollows:
+        series = s.serie
+        slug = series.titleslug
+        # the metadata is not as complete as the usual (with fetch_metadata)
+        # but it can still be useful to avoid a call later to the API
+        jnc_resource = JNCResource(
+            url_from_series_slug(slug), slug, True, RESOURCE_TYPE_NOVEL, series
+        )
+        followed_series.append(jnc_resource)
+
+    return followed_series
+
+
+def follow_series(token, series_id):
+    _set_follow(token, series_id, True)
+
+
+def unfollow_series(token, series_id):
+    _set_follow(token, series_id, False)
+
+
+def _set_follow(token, series_id, is_follow):
+    headers = {"authorization": token, **COMMON_API_HEADERS}
+
+    action = "follow" if is_follow else "unfollow"
+    url = f"{API_JNC_URL_BASE}/api/users/me/{action}"
+
+    payload = {"serieId": series_id, "serieType": 1}
+
+    r = requests.post(url, headers=headers, json=payload)
+    r.raise_for_status()
+
+
 def resource_from_url(url):
     pu = urlparse(url)
 
@@ -152,15 +200,17 @@ def resource_from_url(url):
         if m:
             series_slug = m.group(1)
             if not pu.fragment:
-                return JNCResource(url, series_slug, True, "NOVEL")
+                return JNCResource(url, series_slug, True, RESOURCE_TYPE_NOVEL)
             m = re.match(v_re, pu.fragment)
             if m:
                 # tuple with volume
-                return JNCResource(url, (series_slug, m.group(1)), True, "VOLUME")
+                return JNCResource(
+                    url, (series_slug, m.group(1)), True, RESOURCE_TYPE_VOLUME
+                )
         else:
             m = re.match(c_re, pu.path)
             if m:
-                return JNCResource(url, m.group(1), True, "PART")
+                return JNCResource(url, m.group(1), True, RESOURCE_TYPE_PART)
 
     raise ValueError(f"Invalid path for URL: {url}")
 
@@ -180,11 +230,11 @@ def to_new_website_series_url(series_url):
 
 def _to_const_legacy(req_type):
     if req_type == "c":
-        return "PART"
+        return RESOURCE_TYPE_PART
     elif req_type == "v":
-        return "VOLUME"
+        return RESOURCE_TYPE_VOLUME
     else:
-        return "NOVEL"
+        return RESOURCE_TYPE_NOVEL
 
 
 def _dump(response):

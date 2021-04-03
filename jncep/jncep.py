@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 import traceback
+from typing import List
 
 import click
 import dateutil.parser
@@ -209,6 +210,7 @@ def generate_epub(
                 pass
 
 
+# TODO separate command groups into different files
 @main.group(name="track", help="Track updates to a series")
 def track_series():
     pass
@@ -228,6 +230,12 @@ def add_track_series(jnc_url, email, password):
         logger.warning(f"The series '{series.raw_series.title}' is already tracked!")
         return
 
+    _process_series_for_tracking(tracked_series, series, series_url)
+
+    core.write_tracked_series(tracked_series)
+
+
+def _process_series_for_tracking(tracked_series, series, series_url):
     # record current last part + name
     if len(series.parts) == 0:
         # no parts yet
@@ -243,7 +251,6 @@ def add_track_series(jnc_url, email, password):
         "part": pn,  # now just for show
         "name": series.raw_series.title,
     }
-    core.write_tracked_series(tracked_series)
 
     if len(series.parts) == 0:
         logger.info(
@@ -262,6 +269,127 @@ def add_track_series(jnc_url, email, password):
                 f"after part {relative_part} [{part_date_formatted}]"
             )
         )
+
+
+@track_series.command(
+    name="sync",
+    help="Sync list of series to track based on series followed on J-Novel Club "
+    "website",
+    cls=CatchAllExceptionsCommand,
+)
+@login_option
+@password_option
+@click.option(
+    "-r",
+    "--reverse",
+    "is_reverse",
+    is_flag=True,
+    help=(
+        "Flag to sync followed series on JNC website based on the series tracked with "
+        "jncep"
+    ),
+)
+@click.option(
+    "-d",
+    "--delete",
+    "is_delete",
+    is_flag=True,
+    help="Flag to delete series not found on the sync source",
+)
+def sync_series(email, password, is_reverse, is_delete):
+    tracked_series = core.read_tracked_series()
+
+    token = None
+    try:
+        logger.info(f"Login with email '{email}'...")
+        token = jncapi.login(email, password)
+
+        logger.info("Fetch followed series from J-Novel Club...")
+        follows: List[jncapi.JNCResource] = jncapi.fetch_follows(token)
+
+        if is_reverse:
+            _sync_series_backward(token, follows, tracked_series, is_delete)
+        else:
+            _sync_series_forward(token, follows, tracked_series, is_delete)
+    finally:
+        if token:
+            try:
+                logger.info("Logout...")
+                jncapi.logout(token)
+            except Exception:
+                pass
+
+
+def _sync_series_forward(token, follows, tracked_series, is_delete):
+    # sync local tracked series based on remote follows
+    new_synced = []
+    del_synced = []
+    for jnc_resource in follows:
+        if jnc_resource.url in tracked_series:
+            continue
+        series, series_url = _tracking_series_metadata(token, jnc_resource)
+        _process_series_for_tracking(tracked_series, series, series_url)
+
+        new_synced.append(series_url)
+
+    if is_delete:
+        followed_index = {f.url: f for f in follows}
+        # to avoid dictionary changed size during iteration
+        for series_url, series_data in list(tracked_series.items()):
+            if series_url not in followed_index:
+                del tracked_series[series_url]
+
+                logger.warning(f"The series '{series_data.name}' is no longer tracked")
+
+                del_synced.append(series_url)
+
+    core.write_tracked_series(tracked_series)
+
+    if new_synced or del_synced:
+        logger.info(green("The list of tracked series has been sucessfully updated!"))
+    else:
+        logger.info(green("Everything is already synced!"))
+
+    return new_synced, del_synced
+
+
+def _sync_series_backward(token, follows, tracked_series, is_delete):
+    # sync remote follows based on locally tracked series
+    new_synced = []
+    del_synced = []
+
+    followed_index = {f.url: f for f in follows}
+    for series_url in tracked_series:
+        # series_url is the latest URL format (same as the follows)
+        if series_url in followed_index:
+            continue
+
+        jnc_resource = jncapi.resource_from_url(series_url)
+        logger.info(f"Fetching metadata for '{jnc_resource}'...")
+        jncapi.fetch_metadata(token, jnc_resource)
+        series_id = jnc_resource.raw_metadata.id
+        title = jnc_resource.raw_metadata.title
+        logger.info(f"Follow '{title}'...")
+        jncapi.follow_series(token, series_id)
+
+        new_synced.append(series_url)
+
+    if is_delete:
+        for jnc_resource in follows:
+            if jnc_resource.url not in tracked_series:
+                series_id = jnc_resource.raw_metadata.id
+                title = jnc_resource.raw_metadata.title
+                logger.warning(f"Unfollow '{title}'...")
+                jncapi.unfollow_series(token, series_id)
+
+                del_synced.append(jnc_resource.url)
+
+    if new_synced or del_synced:
+        logger.info(green("The list of followed series has been sucessfully updated!"))
+    else:
+        logger.info(green("Everything is already synced!"))
+
+    return new_synced, del_synced
 
 
 @track_series.command(
@@ -316,14 +444,7 @@ def _canonical_series(jnc_url, email, password):
         logger.info(f"Login with email '{email}'...")
         token = jncapi.login(email, password)
 
-        logger.info(f"Fetching metadata for '{jnc_resource}'...")
-        jncapi.fetch_metadata(token, jnc_resource)
-
-        series = core.analyze_metadata(jnc_resource)
-        series_slug = series.raw_series.titleslug
-        series_url = jncapi.url_from_series_slug(series_slug)
-
-        return series, series_url
+        return _tracking_series_metadata(token, jnc_resource)
     finally:
         if token:
             try:
@@ -331,6 +452,17 @@ def _canonical_series(jnc_url, email, password):
                 jncapi.logout(token)
             except Exception:
                 pass
+
+
+def _tracking_series_metadata(token, jnc_resource):
+    logger.info(f"Fetching metadata for '{jnc_resource}'...")
+    jncapi.fetch_metadata(token, jnc_resource)
+
+    series = core.analyze_metadata(jnc_resource)
+    series_slug = series.raw_series.titleslug
+    series_url = jncapi.url_from_series_slug(series_slug)
+
+    return series, series_url
 
 
 @main.command(
@@ -347,6 +479,16 @@ def _canonical_series(jnc_url, email, password):
 @images_option
 @raw_content_option
 @no_replace_chars_option
+@click.option(
+    "-s",
+    "--sync",
+    "is_sync",
+    is_flag=True,
+    help=(
+        "Flag to sync tracked series based on series followed on J-Novel Club and "
+        "update the new ones from the beginning of the series"
+    ),
+)
 def update_tracked(  # noqa: C901
     jnc_url,
     email,
@@ -356,6 +498,7 @@ def update_tracked(  # noqa: C901
     is_extract_images,
     is_extract_content,
     is_not_replace_chars,
+    is_sync,
 ):
     epub_generation_options = core.EpubGenerationOptions(
         output_dirpath,
@@ -366,6 +509,7 @@ def update_tracked(  # noqa: C901
     )
 
     token = None
+    # TODO split function : too large
     try:
         tracked_series = core.read_tracked_series()
         if len(tracked_series) == 0:
@@ -377,6 +521,12 @@ def update_tracked(  # noqa: C901
 
         logger.info(f"Login with email '{email}'...")
         token = jncapi.login(email, password)
+
+        new_synced = None
+        if is_sync:
+            logger.info("Fetch followed series from J-Novel Club...")
+            follows: List[jncapi.JNCResource] = jncapi.fetch_follows(token)
+            new_synced, _ = _sync_series_forward(token, follows, tracked_series, False)
 
         updated_series = []
         has_error = False
@@ -391,17 +541,48 @@ def update_tracked(  # noqa: C901
             series_slug = series.raw_series.titleslug
             series_url = jncapi.url_from_series_slug(series_slug)
 
-            if series_url not in tracked_series:
-                logger.warning(
-                    f"The series '{series.raw_series.title}' is not tracked! "
-                    f"Use the 'jncep track' command first."
-                )
-                return
+            if is_sync:
+                # not very useful but make it possible
+                # only consider newly synced series if --sync used
+                # to mirror case with no URL argument
+                if series_url not in new_synced:
+                    logger.warning(
+                        f"The series '{series.raw_series.title}' is not among the "
+                        f"tracked series added from syncing. Use 'jncep update' "
+                        "without --sync."
+                    )
+                    return
 
-            series_details = tracked_series[series_url]
-            is_updated = _create_updated_epub(
-                token, series, series_details, epub_generation_options
-            )
+                if len(series.parts) == 0:
+                    new_parts = None
+                else:
+                    # complete series
+                    new_parts = core.analyze_part_specs(series, ":", True)
+
+                if not new_parts:
+                    # no new part
+                    logger.warning(
+                        f"The series '{series.raw_series.title}' has no "
+                        "parts available!",
+                    )
+                    return
+
+                is_updated = True
+                _create_epub_with_requested_parts(
+                    token, series, new_parts, epub_generation_options
+                )
+            else:
+                if series_url not in tracked_series:
+                    logger.warning(
+                        f"The series '{series.raw_series.title}' is not tracked! "
+                        f"Use the 'jncep track' command first."
+                    )
+                    return
+
+                series_details = tracked_series[series_url]
+                is_updated = _create_updated_epub(
+                    token, series, series_details, epub_generation_options
+                )
 
             if is_updated:
                 logger.info(
@@ -411,6 +592,9 @@ def update_tracked(  # noqa: C901
         else:
             for series_url, series_details in tracked_series.items():
                 try:
+                    if is_sync and series_url not in new_synced:
+                        continue
+
                     jnc_resource = jncapi.resource_from_url(series_url)
 
                     logger.info(f"Fetching metadata for '{jnc_resource}'...")
@@ -418,9 +602,31 @@ def update_tracked(  # noqa: C901
 
                     series = core.analyze_metadata(jnc_resource)
 
-                    is_updated = _create_updated_epub(
-                        token, series, series_details, epub_generation_options
-                    )
+                    if is_sync:
+                        # TODO refactor
+                        if len(series.parts) == 0:
+                            new_parts = None
+                        else:
+                            # complete series
+                            new_parts = core.analyze_part_specs(series, ":", True)
+
+                        if not new_parts:
+                            # no new part
+                            logger.warning(
+                                f"The series '{series.raw_series.title}' has no "
+                                "parts available!",
+                            )
+                            continue
+
+                        is_updated = True
+                        _create_epub_with_requested_parts(
+                            token, series, new_parts, epub_generation_options
+                        )
+                    else:
+                        is_updated = _create_updated_epub(
+                            token, series, series_details, epub_generation_options
+                        )
+
                     if is_updated:
                         logger.info(
                             green(
@@ -482,8 +688,8 @@ def _create_updated_epub(token, series, series_details, epub_generation_options)
             new_parts = None
         else:
             is_updated = True
-            # starting from the first part
-            new_parts = core.analyze_part_specs(series, "1:", True)
+            # complete series
+            new_parts = core.analyze_part_specs(series, ":", True)
     else:
         # for others, look at the date if there
         if not series_details.part_date:

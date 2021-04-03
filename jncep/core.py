@@ -451,7 +451,10 @@ def analyze_metadata(jnc_resource: jncapi.JNCResource):
     # (irrespective of actual partNumber)
     # reorder by volume ordering
 
-    if jnc_resource.requested_type in ("PART", "VOLUME"):
+    if jnc_resource.resource_type in (
+        jncapi.RESOURCE_TYPE_PART,
+        jncapi.RESOURCE_TYPE_VOLUME,
+    ):
         series = Series(jnc_resource.raw_metadata.serie)
     else:
         series = Series(jnc_resource.raw_metadata)
@@ -500,14 +503,14 @@ def analyze_metadata(jnc_resource: jncapi.JNCResource):
 
 
 def analyze_requested(jnc_resource, series):
-    if jnc_resource.requested_type == "PART":
+    if jnc_resource.resource_type == jncapi.RESOURCE_TYPE_PART:
         # because partNumber sometimes has a gap => loop through all parts
         # to find the actual object (instead of using [partNumber] directly)
         for part in series.parts:
             if part.raw_part.partNumber == jnc_resource.raw_metadata.partNumber:
                 return [part]
 
-    if jnc_resource.requested_type == "VOLUME":
+    if jnc_resource.resource_type == jncapi.RESOURCE_TYPE_VOLUME:
         iv = jnc_resource.raw_metadata.volumeNumber - 1
         return list(series.volumes[iv].parts)
 
@@ -729,6 +732,7 @@ def _convert_to_latest_format(data):
     # legacy format for tracked parts : just the part instead of object
     # with keys part, name
     # key is slug
+    # TODO rename "name" field into "title"
     for series_url_or_slug, value in data.items():
         if not isinstance(value, dict):
             series_slug = series_url_or_slug
