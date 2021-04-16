@@ -549,16 +549,14 @@ def update_tracked(
                 is_sync,
                 new_synced,
             )
+
             if has_error:
-                if len(updated_series) > 0:
-                    logger.error("Some series could not be updated!")
-                else:
-                    logger.error("No series could be updated!")
-                    return
-            else:
-                if len(updated_series) == 0:
-                    logger.info(green(f"All series are already up to date!"))
-                    return
+                logger.error("Some series could not be updated!")
+
+            if len(updated_series) == 0:
+                # TODO case all in error ?
+                logger.info(green(f"All series are already up to date!"))
+                return
     finally:
         if token:
             try:
