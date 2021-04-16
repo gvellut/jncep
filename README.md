@@ -159,6 +159,7 @@ This command is used to manage series to track. It has 3 subcommands:
 - `add`: Add a new series for tracking. After a series has been added, it can be updated using the `update` command.
 - `rm`: Remove a series from tracking
 - `list`: List tracked serie
+- `sync`:  Update the list of series to track based on series followed on the J-Novel Club website (or the opposite using the `--reverse` flag)
 
 In the cases of `add` and `rm`, a URL link to a part or volume or series on the J-Novel Club website must be passed and is used to specify the series. Credentials are also needed for them (but not for `list`, which doesn't communicate with the J-Novel Club API).
 
@@ -185,9 +186,10 @@ Commands:
   add   Add a new series for tracking
   list  List tracked series
   rm    Remove a series from tracking
+  sync  Sync list of series to track based on series followed on J-Novel...
 ```
 
-In turn, the `add`, `rm` and `list` subcommands can be called with `--help` to get details about their arguments.
+In turn, the `add`, `rm`, `list` and `sync` subcommands can be called with `--help` to get details about their arguments.
 
 ### Examples
 
@@ -227,6 +229,20 @@ This will display something like:
 'The Tales of Marielle Clarac' (https://j-novel.club/s/the-tales-of-marielle-clarac): 1.4
 ```
 
+That subcommand doesn't need a login or password (it only reads the local `tracked.json` file).
+
+#### Sync
+
+Using the `sync`subcommand, `track` will update the list of series tracked by `jncep` based on series followed on the J-Novel Club website:
+
+```console
+jncep track sync
+```
+
+The `--reverse` flag can be used for the opposite: The list of series followed on the J-Novel Club website will be updated to add series that are tracked locally by the `jncep` tool. This can be useful since the Follow functionality of the website has been added just recently and the calendar of the website can be filtered with just the followed series.
+
+By default, the `sync` subcommand doesn't do any deletion, it just adds missing entries. To make the list of tracked series and followed series identical, the `--delete` flag can be passed.
+
 ## update
 
 This command is used to generate EPUB files for newly updated series that were previously added using the `track` command. Optionally, a URL link to a part or volume or series on the J-Novel Club website can be passed, in order to only update that series.
@@ -258,6 +274,9 @@ Options:
   -n, --no-replace        Flag to indicate that some unicode characters
                           unlikely to be in an EPUB reader font should NOT be
                           replaced and instead kept as is
+  -s, --sync              Flag to sync tracked series based on series followed
+                          on J-Novel Club and update the new ones from the
+                          beginning of the series
   --help                  Show this message and exit.
 ```
 
@@ -282,6 +301,12 @@ Or if no tracked series has seen any updates:
 ```console
 All series are already up to date!
 ```
+
+#### Sync
+
+The `--sync` flag can be passed (together with the other options), in which case the list of tracked series is first updated based on the list of followed series on the J-Novel Club website (equivalent of `jncep track sync`), then, only for the newly added series, an EPUB is created with the parts from the beginning.
+
+It can be useful for when a new series starts publishing: It can be set as Followed on the website then this `jncep update --sync` command can be launched to subscribe to the series and get all the newly released parts in one go, and without having to copy/paste an URL.
 
 ### Automation
 
