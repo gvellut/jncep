@@ -510,7 +510,6 @@ def update_tracked(
 
     token = None
     updated_series = []
-    has_error = False
     try:
         tracked_series = core.read_tracked_series()
         if len(tracked_series) == 0:
@@ -539,6 +538,8 @@ def update_tracked(
                 is_sync,
                 new_synced,
             )
+            if len(updated_series) == 0:
+                return
         else:
             has_error = _update_all_series(
                 token,
@@ -548,6 +549,16 @@ def update_tracked(
                 is_sync,
                 new_synced,
             )
+            if has_error:
+                if len(updated_series) > 0:
+                    logger.error("Some series could not be updated!")
+                else:
+                    logger.error("No series could be updated!")
+                    return
+            else:
+                if len(updated_series) == 0:
+                    logger.info(green(f"All series are already up to date!"))
+                    return
     finally:
         if token:
             try:
@@ -556,17 +567,11 @@ def update_tracked(
             except Exception:
                 pass
 
-    if has_error:
-        # only for multiple updates ; when url passed and error => goes directly
-        # to fatal error
-        logger.error("Some series could not be updated!")
-
     if len(updated_series) > 0:
-        # update tracking config JSON => to last part in series
+        # update tracking config JSON
         for series in updated_series:
             pn = core.to_relative_part_string(series, series.parts[-1])
             pdate = series.parts[-1].raw_part.launchDate
-            # write part + name in case old version with just the part number
             tracked_series[jncapi.url_from_series_slug(series.raw_series.titleslug)] = {
                 "part_date": pdate,
                 "part": pn,
@@ -575,8 +580,6 @@ def update_tracked(
         core.write_tracked_series(tracked_series)
 
         logger.info(green(f"{len(updated_series)} series sucessfully updated!"))
-    else:
-        logger.info(green(f"All series are already up to date!"))
 
 
 def _update_url_series(
@@ -609,29 +612,13 @@ def _update_url_series(
                 "without --sync."
             )
             return
+        is_updated = _create_epub_from_beginning(token, series, epub_generation_options)
 
-        if len(series.parts) == 0:
-            new_parts = None
-        else:
-            # complete series
-            new_parts = core.analyze_part_specs(series, ":", True)
-
-        if not new_parts:
-            # no new part
-            logger.warning(
-                f"The series '{series.raw_series.title}' has no " "parts available!",
-            )
-            return
-
-        is_updated = True
-        _create_epub_with_requested_parts(
-            token, series, new_parts, epub_generation_options
-        )
     else:
         if series_url not in tracked_series:
             logger.warning(
                 f"The series '{series.raw_series.title}' is not tracked! "
-                f"Use the 'jncep track' command first."
+                f"Use the 'jncep track add' command first."
             )
             return
 
@@ -641,7 +628,7 @@ def _update_url_series(
         )
 
     if is_updated:
-        logger.info(green(f"The series '{series.raw_series.title}' has been updated!",))
+        logger.info(green(f"The series '{series.raw_series.title}' has been updated!"))
         updated_series.append(series)
 
 
@@ -662,23 +649,8 @@ def _update_all_series(
             series = core.analyze_metadata(jnc_resource)
 
             if is_sync:
-                if len(series.parts) == 0:
-                    new_parts = None
-                else:
-                    # complete series
-                    new_parts = core.analyze_part_specs(series, ":", True)
-
-                if not new_parts:
-                    # no new part
-                    logger.warning(
-                        f"The series '{series.raw_series.title}' has no "
-                        "parts available!",
-                    )
-                    continue
-
-                is_updated = True
-                _create_epub_with_requested_parts(
-                    token, series, new_parts, epub_generation_options
+                is_updated = _create_epub_from_beginning(
+                    token, series, epub_generation_options
                 )
             else:
                 is_updated = _create_updated_epub(
@@ -687,11 +659,10 @@ def _update_all_series(
 
             if is_updated:
                 logger.info(
-                    green(
-                        f"The series '{series.raw_series.title}' has been " "updated!"
-                    )
+                    green(f"The series '{series.raw_series.title}' has been updated!")
                 )
                 updated_series.append(series)
+
         except Exception as ex:
             has_error = True
             logger.error("An error occured while updating the series:")
@@ -703,6 +674,25 @@ def _update_all_series(
 
 def _to_yn(b):
     return "yes" if b else "no"
+
+
+def _create_epub_from_beginning(token, series, epub_generation_options):
+    if len(series.parts) == 0:
+        new_parts = None
+    else:
+        # complete series
+        new_parts = core.analyze_part_specs(series, ":", True)
+
+    if not new_parts:
+        # no new part
+        logger.warning(
+            f"The series '{series.raw_series.title}' has no parts available!",
+        )
+        return False
+
+    return _create_epub_with_updated_parts(
+        token, series, new_parts, epub_generation_options
+    )
 
 
 def _create_updated_epub(token, series, series_details, epub_generation_options):
@@ -737,9 +727,9 @@ def _create_updated_epub(token, series, series_details, epub_generation_options)
         logger.warning(f"The series '{series.raw_series.title}' has not been updated!",)
         return False
 
-    _create_epub_with_requested_parts(token, series, new_parts, epub_generation_options)
-
-    return True
+    return _create_epub_with_updated_parts(
+        token, series, new_parts, epub_generation_options
+    )
 
 
 def _parts_released_after_date(series, date):
@@ -753,6 +743,19 @@ def _parts_released_after_date(series, date):
         if launch_date > comparison_date:
             parts.append(part)
     return parts
+
+
+def _create_epub_with_updated_parts(token, series, new_parts, epub_generation_options):
+    # just wrap _create_epub_with_requested_parts but handle case where parts
+    # have expired
+    try:
+        _create_epub_with_requested_parts(
+            token, series, new_parts, epub_generation_options
+        )
+        return True
+    except NoRequestedPartAvailableError:
+        logger.error("The parts that need to be updated have all expired!")
+        return False
 
 
 def _create_epub_with_requested_parts(
