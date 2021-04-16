@@ -61,7 +61,6 @@ def fetch_metadata(token, jnc_resource: JNCResource):
         res_type = "parts"
         include = [{"serie": ["volumes", "parts"]}, "volume"]
         where = {"titleslug": jnc_resource.slug}
-        metadata = _fetch_metadata_internal(token, res_type, where, include)
     elif jnc_resource.resource_type == RESOURCE_TYPE_VOLUME:
         if jnc_resource.is_new_website:
             # for volume on new website => where is a tuple (series_slug, volume num)
@@ -82,20 +81,18 @@ def fetch_metadata(token, jnc_resource: JNCResource):
             res_type = "volumes"
             include = [{"serie": ["volumes", "parts"]}, "parts"]
             where = {"volumeNumber": volume_number, "serieId": serie_id}
-            metadata = _fetch_metadata_internal(token, res_type, where, include)
 
         else:
             # old website URL
             res_type = "volumes"
             include = [{"serie": ["volumes", "parts"]}, "parts"]
             where = {"titleslug": jnc_resource.slug}
-            metadata = _fetch_metadata_internal(token, res_type, where, include)
     else:
         res_type = "series"
         include = ["volumes", "parts"]
         where = {"titleslug": jnc_resource.slug}
-        metadata = _fetch_metadata_internal(token, res_type, where, include)
 
+    metadata = _fetch_metadata_internal(token, res_type, where, include)
     jnc_resource.raw_metadata = metadata
     return jnc_resource
 
