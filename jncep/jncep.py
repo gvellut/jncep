@@ -433,7 +433,7 @@ def list_track_series():
 
             logger.info(f"'{green(ser_details.name)}' ({ser_url}): {details}")
     else:
-        logger.info(f"No series is tracked.")
+        logger.info("No series is tracked.")
 
 
 def _canonical_series(jnc_url, email, password):
@@ -555,7 +555,7 @@ def update_tracked(
 
             if len(updated_series) == 0:
                 # TODO case all in error ?
-                logger.info(green(f"All series are already up to date!"))
+                logger.info(green("All series are already up to date!"))
                 return
     finally:
         if token:
@@ -631,7 +631,12 @@ def _update_url_series(
 
 
 def _update_all_series(
-    token, epub_generation_options, tracked_series, updated_series, is_sync, new_synced,
+    token,
+    epub_generation_options,
+    tracked_series,
+    updated_series,
+    is_sync,
+    new_synced,
 ):
     has_error = False
     for series_url, series_details in tracked_series.items():
@@ -722,7 +727,7 @@ def _create_updated_epub(token, series, series_details, epub_generation_options)
 
     if not is_updated:
         # no new part
-        logger.warning(f"The series '{series.raw_series.title}' has not been updated!",)
+        logger.warning(f"The series '{series.raw_series.title}' has not been updated!")
         return False
 
     return _create_epub_with_updated_parts(
