@@ -58,6 +58,11 @@ EpubGenerationOptions = namedtuple(
     ],
 )
 
+BookDetails = namedtuple(
+    "BookDetails",
+    ["identifier", "title", "author", "collection", "cover_url_candidates", "toc"],
+)
+
 
 class CoverImageException(Exception):
     pass
@@ -86,12 +91,10 @@ def create_epub(token, series, parts, epub_generation_options):
     contents, downloaded_img_urls, raw_contents = get_book_content_and_images(
         token, series, parts, epub_generation_options.is_not_replace_chars
     )
-    identifier, title, author, cover_url_candidates, toc = get_book_details(
-        series, parts
-    )
+    book_details = get_book_details(series, parts)
 
     logger.info("Fetching cover image...")
-    for cover_url in cover_url_candidates:
+    for cover_url in book_details.cover_url_candidates:
         if cover_url in downloaded_img_urls:
             # no need to redownload
             # tuple : index 0 => bytes content
@@ -111,7 +114,7 @@ def create_epub(token, series, parts, epub_generation_options):
     else:
         raise CoverImageException("No suitable cover could be downloaded!")
 
-    output_filename = _to_safe_filename(title) + ".epub"
+    output_filename = _to_safe_filename(book_details.title) + ".epub"
     output_filepath = os.path.join(
         epub_generation_options.output_dirpath, output_filename
     )
@@ -152,12 +155,9 @@ def create_epub(token, series, parts, epub_generation_options):
 
     create_epub_file(
         output_filepath,
-        identifier,
-        title,
-        author,
+        book_details,
         cover_bytes,
         parts,
-        toc,
         contents,
         downloaded_img_urls,
     )
@@ -220,6 +220,7 @@ def get_book_content_and_images(token, series, parts_to_download, is_not_replace
 def get_book_details(series, parts_to_download):
     # shouldn't change between parts
     author = series.raw_series.author
+    collection = (series.raw_series.id, series.raw_series.title)
     if len(parts_to_download) == 1:
         # single part
         part = parts_to_download[0]
@@ -282,7 +283,7 @@ def get_book_details(series, parts_to_download):
 
     identifier = identifier_base + str(int(time.time()))
 
-    return identifier, title, author, cover_url_candidates, toc
+    return BookDetails(identifier, title, author, collection, cover_url_candidates, toc)
 
 
 def _is_final(series, part):
@@ -328,21 +329,41 @@ def _is_complete(series, volume, parts_in_volume_to_dl):
 
 def create_epub_file(
     output_filepath,
-    identifier,
-    title,
-    author,
+    book_details,
     cover_bytes,
     parts,
-    toc,
     contents,
     img_urls,
 ):
     lang = "en"
     book = epub.EpubBook()
-    book.set_identifier(identifier)
-    book.set_title(title)
+    book.set_identifier(book_details.identifier)
+    book.set_title(book_details.title)
     book.set_language(lang)
-    book.add_author(author)
+    book.add_author(book_details.author)
+
+    # metadata for series GH issue #9
+    collection_id, collecton_title = book_details.collection
+    book.add_metadata(
+        "OPF",
+        "belongs-to-collection",
+        collecton_title,
+        {"property": "belongs-to-collection", "id": collection_id},
+    )
+    book.add_metadata(
+        "OPF",
+        "collection-type",
+        "series",
+        {"property": "collection-type", "refines": f"#{collection_id}"},
+    )
+    # as position, set the volume number of the first part in the epub
+    # in Calibre, display 1 (I) if not set so a bit better
+    book.add_metadata(
+        "OPF",
+        "group-position",
+        str(parts[0].volume.num),
+        {"property": "group-position", "refines": f"#{collection_id}"},
+    )
 
     book.set_cover("cover.jpg", cover_bytes, False)
 
@@ -372,7 +393,9 @@ p {text-indent: 1.3em;}
 
     chapters = []
     for i, content in enumerate(contents):
-        c = epub.EpubHtml(title=toc[i], file_name=f"chap_{i +1}.xhtml", lang=lang)
+        c = epub.EpubHtml(
+            title=book_details.toc[i], file_name=f"chap_{i +1}.xhtml", lang=lang
+        )
         # explicit encoding to bytes or some issue with lxml on some platforms (PyDroid)
         # some message about USC4 little endian not supported
         c.content = content.encode("utf-8")
