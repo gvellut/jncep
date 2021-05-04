@@ -343,11 +343,11 @@ def create_epub_file(
     book.add_author(book_details.author)
 
     # metadata for series GH issue #9
-    collection_id, collecton_title = book_details.collection
+    collection_id, collection_title = book_details.collection
     book.add_metadata(
         "OPF",
         "belongs-to-collection",
-        collecton_title,
+        collection_title,
         {"property": "belongs-to-collection", "id": collection_id},
     )
     book.add_metadata(
