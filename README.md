@@ -155,7 +155,7 @@ To solve this issue (without having to mess with fonts), by default, this specif
 
 ## track
 
-This command is used to manage series to track. It has 3 subcommands:
+This command is used to manage series to track. It has 4 subcommands:
 - `add`: Add a new series for tracking. After a series has been added, it can be updated using the `update` command.
 - `rm`: Remove a series from tracking
 - `list`: List tracked serie
