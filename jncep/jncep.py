@@ -601,6 +601,7 @@ def _update_url_series(
     updated_series,
     is_sync,
     new_synced,
+    whole_volume,
 ):
     jnc_resource = jncapi.resource_from_url(jnc_url)
 
@@ -635,7 +636,7 @@ def _update_url_series(
 
         series_details = tracked_series[series_url]
         is_updated = _create_updated_epub(
-            token, series, series_details, epub_generation_options
+            token, series, series_details, epub_generation_options, whole_volume
         )
 
     if is_updated:
