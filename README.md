@@ -277,6 +277,9 @@ Options:
   -s, --sync              Flag to sync tracked series based on series followed
                           on J-Novel Club and update the new ones from the
                           beginning of the series
+  -w, --whole             Flag to indicate whether the whole volume should be 
+                          regenerated when a new part is detected during the
+                          update
   --help                  Show this message and exit.
 ```
 
