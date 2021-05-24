@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 import traceback
+import operator
 from typing import List
 
 import click
@@ -489,6 +490,16 @@ def _tracking_series_metadata(token, jnc_resource):
         "update the new ones from the beginning of the series"
     ),
 )
+@click.option(
+    "-w",
+    "--whole",
+    "whole_volume",
+    is_flag=True,
+    help=(
+        "Flag to indicate whether the whole volume should be regenerated when a "
+        "new part is detected during the update"
+    ),
+)
 def update_tracked(
     jnc_url,
     email,
@@ -499,6 +510,7 @@ def update_tracked(
     is_extract_content,
     is_not_replace_chars,
     is_sync,
+    whole_volume,
 ):
     epub_generation_options = core.EpubGenerationOptions(
         output_dirpath,
@@ -548,6 +560,7 @@ def update_tracked(
                 updated_series,
                 is_sync,
                 new_synced,
+                whole_volume,
             )
 
             if has_error:
@@ -588,6 +601,7 @@ def _update_url_series(
     updated_series,
     is_sync,
     new_synced,
+    whole_volume,
 ):
     jnc_resource = jncapi.resource_from_url(jnc_url)
 
@@ -622,7 +636,7 @@ def _update_url_series(
 
         series_details = tracked_series[series_url]
         is_updated = _create_updated_epub(
-            token, series, series_details, epub_generation_options
+            token, series, series_details, epub_generation_options, whole_volume
         )
 
     if is_updated:
@@ -637,6 +651,7 @@ def _update_all_series(
     updated_series,
     is_sync,
     new_synced,
+    whole_volume,
 ):
     has_error = False
     for series_url, series_details in tracked_series.items():
@@ -657,7 +672,7 @@ def _update_all_series(
                 )
             else:
                 is_updated = _create_updated_epub(
-                    token, series, series_details, epub_generation_options
+                    token, series, series_details, epub_generation_options, whole_volume
                 )
 
             if is_updated:
@@ -698,7 +713,7 @@ def _create_epub_from_beginning(token, series, epub_generation_options):
     )
 
 
-def _create_updated_epub(token, series, series_details, epub_generation_options):
+def _create_updated_epub(token, series, series_details, epub_generation_options, whole_volume):
     if series_details.part == 0:
         # special processing : means there was no part available when the
         # series was started tracking
@@ -729,9 +744,17 @@ def _create_updated_epub(token, series, series_details, epub_generation_options)
         # no new part
         logger.warning(f"The series '{series.raw_series.title}' has not been updated!")
         return False
+    
+    parts_to_download = list(new_parts)
+    if whole_volume:
+        for part in new_parts:
+            for volpart in part.volume.parts:
+                if volpart not in parts_to_download:
+                    parts_to_download.append(volpart)
+        parts_to_download.sort(key=operator.attrgetter('absolute_num'))          
 
     return _create_epub_with_updated_parts(
-        token, series, new_parts, epub_generation_options
+        token, series, parts_to_download, epub_generation_options
     )
 
 
