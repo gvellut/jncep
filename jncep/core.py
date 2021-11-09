@@ -1,4 +1,4 @@
-from collections import namedtuple
+from collections import namedtuple, OrderedDict
 from html.parser import HTMLParser
 import json
 import logging
@@ -743,7 +743,9 @@ def _to_absolute_part_index(series, iv, ip):
 def read_tracked_series():
     try:
         with _tracked_series_filepath().open() as json_file:
-            data = json.load(json_file)
+            # Explicit ordereddict (although should be fine without
+            # since Python >= 3.6 dicts are ordered ; spec since 3.7)
+            data = json.load(json_file, object_pairs_hook=OrderedDict)
             return _convert_to_latest_format(Addict(data))
     except FileNotFoundError:
         # first run ?

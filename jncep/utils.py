@@ -1,10 +1,14 @@
 import logging
 import sys
 
-from termcolor import colored
+from colorama import Fore
 
 # specify colors for different logging levels
-LOG_COLORS = {logging.ERROR: "red", logging.WARNING: "yellow", logging.DEBUG: "cyan"}
+LOG_COLORS = {
+    logging.ERROR: Fore.RED,
+    logging.WARNING: Fore.YELLOW,
+    logging.DEBUG: Fore.CYAN,
+}
 
 
 class ColorFormatter(logging.Formatter):
@@ -28,5 +32,16 @@ def setup_logging(is_debug, package=__package__):
     logger.addHandler(handler)
 
 
+def colored(s, color):
+    return f"{color}{s}{Fore.RESET}"
+
+
 def green(msg):
-    return colored(msg, "green")
+    return colored(msg, Fore.GREEN)
+
+
+def tryint(val):
+    try:
+        return int(val)
+    except Exception:
+        return None

@@ -7,10 +7,11 @@ import traceback
 from typing import List
 
 import click
+from colorama import Fore
 import dateutil.parser
 
 from . import core, jncapi
-from .utils import green, setup_logging
+from .utils import colored, green, setup_logging, tryint
 
 logger = logging.getLogger(__package__)
 
@@ -396,32 +397,50 @@ def _sync_series_backward(token, follows, tracked_series, is_delete):
 @track_series.command(
     name="rm", help="Remove a series from tracking", cls=CatchAllExceptionsCommand
 )
-@click.argument("jnc_url", metavar="JNOVEL_CLUB_URL", required=True)
+@click.argument("jnc_url_or_index", metavar="JNOVEL_CLUB_URL_OR_INDEX", required=True)
 @login_option
 @password_option
-def remove_track_series(jnc_url, email, password):
-    series, series_url = _canonical_series(jnc_url, email, password)
+def remove_track_series(jnc_url_or_index, email, password):
     tracked_series = core.read_tracked_series()
 
-    if series_url not in tracked_series:
-        logger.warning(f"The series '{series.raw_series.title}' is not tracked!")
-        return
+    index = tryint(jnc_url_or_index)
+    if index is not None:
+        index0 = index - 1
+        if index0 < 0 or index0 >= len(tracked_series):
+            raise ValueError(f"Index '{index}' is not valid (use track --list)")
+        series_url_list = list(tracked_series.keys())
+        series_url = series_url_list[index0]
+        series_name = tracked_series[series_url].name
+    else:
+        series, series_url = _canonical_series(jnc_url_or_index, email, password)
+        series_name = series.raw_series.title
+
+        if series_url not in tracked_series:
+            logger.warning(f"The series '{series_name}' is not tracked!")
+            return
 
     del tracked_series[series_url]
 
     core.write_tracked_series(tracked_series)
 
-    logger.info(green(f"The series '{series.raw_series.title}' is no longer tracked"))
+    logger.info(green(f"The series '{series_name}' is no longer tracked"))
 
 
 @track_series.command(
     name="list", help="List tracked series", cls=CatchAllExceptionsCommand
 )
-def list_track_series():
+@click.option(
+    "-t",
+    "--details",
+    "is_detail",
+    is_flag=True,
+    help="Flag to list the details of the tracked series (URL, date of last release)",
+)
+def list_tracked_series(is_detail):
     tracked_series = core.read_tracked_series()
     if len(tracked_series) > 0:
         logger.info(f"{len(tracked_series)} series are tracked:")
-        for ser_url, ser_details in tracked_series.items():
+        for index, (ser_url, ser_details) in enumerate(tracked_series.items()):
             details = None
             if ser_details.part_date:
                 part_date = dateutil.parser.parse(ser_details.part_date)
@@ -432,7 +451,11 @@ def list_track_series():
             else:
                 details = f"{ser_details.part}"
 
-            logger.info(f"'{green(ser_details.name)}' ({ser_url}): {details}")
+            msg = f"[{colored(index + 1, Fore.YELLOW)}] {green(ser_details.name)}"
+            if is_detail:
+                msg += f" {ser_url} {colored(details, Fore.RED)}"
+
+            logger.info(msg)
     else:
         logger.info("No series is tracked.")
 
