@@ -407,7 +407,7 @@ def remove_track_series(jnc_url_or_index, email, password):
     if index is not None:
         index0 = index - 1
         if index0 < 0 or index0 >= len(tracked_series):
-            raise ValueError(f"Index '{index}' is not valid (use track --list)")
+            raise ValueError(f"Index '{index}' is not valid (use 'track list')")
         series_url_list = list(tracked_series.keys())
         series_url = series_url_list[index0]
         series_name = tracked_series[series_url].name
