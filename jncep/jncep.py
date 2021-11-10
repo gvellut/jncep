@@ -407,7 +407,8 @@ def rm_track_series(jnc_url_or_index, email, password):
     if index is not None:
         index0 = index - 1
         if index0 < 0 or index0 >= len(tracked_series):
-            raise ValueError(f"Index '{index}' is not valid (use 'track list')")
+            logger.warning(f"Index '{index}' is not valid! (Use 'track list')")
+            return
         series_url_list = list(tracked_series.keys())
         series_url = series_url_list[index0]
         series_name = tracked_series[series_url].name
@@ -416,7 +417,10 @@ def rm_track_series(jnc_url_or_index, email, password):
         series_name = series.raw_series.title
 
         if series_url not in tracked_series:
-            logger.warning(f"The series '{series_name}' is not tracked!")
+            logger.warning(
+                f"The series '{series_name}' is not tracked! "
+                "(Use 'track list --details')"
+            )
             return
 
     del tracked_series[series_url]
