@@ -400,7 +400,7 @@ def _sync_series_backward(token, follows, tracked_series, is_delete):
 @click.argument("jnc_url_or_index", metavar="JNOVEL_CLUB_URL_OR_INDEX", required=True)
 @login_option
 @password_option
-def remove_track_series(jnc_url_or_index, email, password):
+def rm_track_series(jnc_url_or_index, email, password):
     tracked_series = core.read_tracked_series()
 
     index = tryint(jnc_url_or_index)
@@ -436,7 +436,7 @@ def remove_track_series(jnc_url_or_index, email, password):
     is_flag=True,
     help="Flag to list the details of the tracked series (URL, date of last release)",
 )
-def list_tracked_series(is_detail):
+def list_track_series(is_detail):
     tracked_series = core.read_tracked_series()
     if len(tracked_series) > 0:
         logger.info(f"{len(tracked_series)} series are tracked:")

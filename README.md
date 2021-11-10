@@ -221,7 +221,7 @@ jncep track rm 5
 
 #### List tracked series
 
-The `list`subcommand lists the tracked series:
+The `list` subcommand lists the tracked series:
 
 ```console
 jncep track list --details
