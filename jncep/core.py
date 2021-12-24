@@ -179,7 +179,8 @@ def get_book_content_and_images(token, series, parts_to_download, is_not_replace
             # U+25C6 => Black Diamond (used in SOAP)
             # U+1F3F6 => Black Rosette
             # U+25C7 => White Diamond
-            chars_to_replace = ["\u2671", "\u25C6", "\U0001F3F6", "\u25C7"]
+            # U+2605 => Black star
+            chars_to_replace = ["\u2671", "\u25C6", "\U0001F3F6", "\u25C7", "\u2605"]
             replacement_char = "**"
             regex = "|".join(chars_to_replace)
             content_b = re.sub(regex, replacement_char, content)
