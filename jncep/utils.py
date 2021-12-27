@@ -45,3 +45,7 @@ def tryint(val):
         return int(val)
     except Exception:
         return None
+
+
+def to_yn(b):
+    return "yes" if b else "no"

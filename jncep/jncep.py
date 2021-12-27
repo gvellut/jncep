@@ -1,184 +1,21 @@
 import itertools
 import logging
 import operator
-import os
-import sys
 import traceback
-from typing import List
 
-import click
-from colorama import Fore
 import dateutil.parser
 
 from . import core, jncapi
-from .utils import colored, green, setup_logging, tryint
+from .utils import green
 
 logger = logging.getLogger(__package__)
-
-login_option = click.option(
-    "-l",
-    "--email",
-    required=True,
-    envvar="JNCEP_EMAIL",
-    help="Login email for J-Novel Club account",
-)
-
-password_option = click.option(
-    "-p",
-    "--password",
-    required=True,
-    envvar="JNCEP_PASSWORD",
-    help="Login password for J-Novel Club account",
-)
-
-output_option = click.option(
-    "-o",
-    "--output",
-    "output_dirpath",
-    type=click.Path(exists=True, resolve_path=True, file_okay=False, writable=True),
-    default=os.getcwd(),
-    envvar="JNCEP_OUTPUT",
-    help="Existing folder to write the output [default: The current directory]",
-)
-
-byvolume_option = click.option(
-    "-v",
-    "--byvolume",
-    "is_by_volume",
-    is_flag=True,
-    help=(
-        "Flag to indicate that the parts of different volumes shoud be output in "
-        "separate EPUBs"
-    ),
-)
-
-images_option = click.option(
-    "-i",
-    "--images",
-    "is_extract_images",
-    is_flag=True,
-    help=(
-        "Flag to indicate that the images of the novel should be extracted into "
-        "the output folder"
-    ),
-)
-
-raw_content_option = click.option(
-    "-c",
-    "--content",
-    "is_extract_content",
-    is_flag=True,
-    help=(
-        "Flag to indicate that the raw content of the parts should be extracted into "
-        "the output folder"
-    ),
-)
-
-no_replace_chars_option = click.option(
-    "-n",
-    "--no-replace",
-    "is_not_replace_chars",
-    is_flag=True,
-    help=(
-        "Flag to indicate that some unicode characters unlikely to be in an EPUB "
-        "reader font should NOT be replaced and instead kept as is"
-    ),
-)
-
-
-class CatchAllExceptionsCommand(click.Command):
-    def invoke(self, ctx):
-        try:
-            return super().invoke(ctx)
-        except Exception as ex:
-            raise UnrecoverableJNCEPError(str(ex), sys.exc_info())
-
-
-class UnrecoverableJNCEPError(click.ClickException):
-    def __init__(self, message, exc_info):
-        super().__init__(message)
-        self.exc_info = exc_info
-
-    def show(self):
-        logger.error("*** An unrecoverable error occured ***")
-        logger.error(self.message)
-        logger.debug("".join(traceback.format_exception(*self.exc_info)))
 
 
 class NoRequestedPartAvailableError(Exception):
     pass
 
 
-@click.group(
-    help="Simple command-line tool to generate EPUB files for J-Novel Club pre-pub "
-    "novels"
-)
-@click.option(
-    "-d",
-    "--debug",
-    "is_debug",
-    is_flag=True,
-    help=("Flag to activate debug mode"),
-    required=False,
-)
-def main(is_debug):
-    setup_logging(is_debug)
-
-
-@main.command(
-    name="epub",
-    help="Generate EPUB files for J-Novel Club pre-pub novels",
-    cls=CatchAllExceptionsCommand,
-)
-@click.argument("jnc_url", metavar="JNOVEL_CLUB_URL", required=True)
-@login_option
-@password_option
-@output_option
-@click.option(
-    "-s",
-    "--parts",
-    "part_specs",
-    help=(
-        "Specification of a range of parts to download in the form of "
-        "<vol>[.part]:<vol>[.part] [default: All the content linked by "
-        "the JNOVEL_CLUB_URL argument, either a single part, a whole volume "
-        "or the whole series]"
-    ),
-)
-@click.option(
-    "-a",
-    "--absolute",
-    "is_absolute",
-    is_flag=True,
-    help=(
-        "Flag to indicate that the --parts option specifies part numbers "
-        "globally, instead of relative to a volume i.e. <part>:<part>"
-    ),
-)
-@byvolume_option
-@images_option
-@raw_content_option
-@no_replace_chars_option
-def generate_epub(
-    jnc_url,
-    email,
-    password,
-    part_specs,
-    is_absolute,
-    output_dirpath,
-    is_by_volume,
-    is_extract_images,
-    is_extract_content,
-    is_not_replace_chars,
-):
-    epub_generation_options = core.EpubGenerationOptions(
-        output_dirpath,
-        is_by_volume,
-        is_extract_images,
-        is_extract_content,
-        is_not_replace_chars,
-    )
-
+def canonical_series(jnc_url, email, password):
     token = None
     try:
         jnc_resource = jncapi.resource_from_url(jnc_url)
@@ -186,23 +23,7 @@ def generate_epub(
         logger.info(f"Login with email '{email}'...")
         token = jncapi.login(email, password)
 
-        logger.info(f"Fetching metadata for '{jnc_resource}'...")
-        jncapi.fetch_metadata(token, jnc_resource)
-
-        series = core.analyze_metadata(jnc_resource)
-
-        if part_specs:
-            logger.info(
-                f"Using part specification '{part_specs}' "
-                f"(absolute={_to_yn(is_absolute)})..."
-            )
-            parts_to_download = core.analyze_part_specs(series, part_specs, is_absolute)
-        else:
-            parts_to_download = core.analyze_requested(jnc_resource, series)
-
-        _create_epub_with_requested_parts(
-            token, series, parts_to_download, epub_generation_options
-        )
+        return tracking_series_metadata(token, jnc_resource)
     finally:
         if token:
             try:
@@ -212,32 +33,18 @@ def generate_epub(
                 pass
 
 
-# TODO separate command groups into different files
-@main.group(name="track", help="Track updates to a series")
-def track_series():
-    pass
+def tracking_series_metadata(token, jnc_resource):
+    logger.info(f"Fetching metadata for '{jnc_resource}'...")
+    jncapi.fetch_metadata(token, jnc_resource)
+
+    series = core.analyze_metadata(jnc_resource)
+    series_slug = series.raw_series.titleslug
+    series_url = jncapi.url_from_series_slug(series_slug)
+
+    return series, series_url
 
 
-@track_series.command(
-    name="add", help="Add a new series for tracking", cls=CatchAllExceptionsCommand
-)
-@click.argument("jnc_url", metavar="JNOVEL_CLUB_URL", required=True)
-@login_option
-@password_option
-def add_track_series(jnc_url, email, password):
-    series, series_url = _canonical_series(jnc_url, email, password)
-    tracked_series = core.read_tracked_series()
-
-    if series_url in tracked_series:
-        logger.warning(f"The series '{series.raw_series.title}' is already tracked!")
-        return
-
-    _process_series_for_tracking(tracked_series, series, series_url)
-
-    core.write_tracked_series(tracked_series)
-
-
-def _process_series_for_tracking(tracked_series, series, series_url):
+def process_series_for_tracking(tracked_series, series, series_url):
     # record current last part + name
     if len(series.parts) == 0:
         # no parts yet
@@ -273,64 +80,15 @@ def _process_series_for_tracking(tracked_series, series, series_url):
         )
 
 
-@track_series.command(
-    name="sync",
-    help="Sync list of series to track based on series followed on J-Novel Club "
-    "website",
-    cls=CatchAllExceptionsCommand,
-)
-@login_option
-@password_option
-@click.option(
-    "-r",
-    "--reverse",
-    "is_reverse",
-    is_flag=True,
-    help=(
-        "Flag to sync followed series on JNC website based on the series tracked with "
-        "jncep"
-    ),
-)
-@click.option(
-    "-d",
-    "--delete",
-    "is_delete",
-    is_flag=True,
-    help="Flag to delete series not found on the sync source",
-)
-def sync_series(email, password, is_reverse, is_delete):
-    tracked_series = core.read_tracked_series()
-
-    token = None
-    try:
-        logger.info(f"Login with email '{email}'...")
-        token = jncapi.login(email, password)
-
-        logger.info("Fetch followed series from J-Novel Club...")
-        follows: List[jncapi.JNCResource] = jncapi.fetch_follows(token)
-
-        if is_reverse:
-            _sync_series_backward(token, follows, tracked_series, is_delete)
-        else:
-            _sync_series_forward(token, follows, tracked_series, is_delete)
-    finally:
-        if token:
-            try:
-                logger.info("Logout...")
-                jncapi.logout(token)
-            except Exception:
-                pass
-
-
-def _sync_series_forward(token, follows, tracked_series, is_delete):
+def sync_series_forward(token, follows, tracked_series, is_delete):
     # sync local tracked series based on remote follows
     new_synced = []
     del_synced = []
     for jnc_resource in follows:
         if jnc_resource.url in tracked_series:
             continue
-        series, series_url = _tracking_series_metadata(token, jnc_resource)
-        _process_series_for_tracking(tracked_series, series, series_url)
+        series, series_url = tracking_series_metadata(token, jnc_resource)
+        process_series_for_tracking(tracked_series, series, series_url)
 
         new_synced.append(series_url)
 
@@ -355,7 +113,7 @@ def _sync_series_forward(token, follows, tracked_series, is_delete):
     return new_synced, del_synced
 
 
-def _sync_series_backward(token, follows, tracked_series, is_delete):
+def sync_series_backward(token, follows, tracked_series, is_delete):
     # sync remote follows based on locally tracked series
     new_synced = []
     del_synced = []
@@ -394,233 +152,7 @@ def _sync_series_backward(token, follows, tracked_series, is_delete):
     return new_synced, del_synced
 
 
-@track_series.command(
-    name="rm", help="Remove a series from tracking", cls=CatchAllExceptionsCommand
-)
-@click.argument("jnc_url_or_index", metavar="JNOVEL_CLUB_URL_OR_INDEX", required=True)
-@login_option
-@password_option
-def rm_track_series(jnc_url_or_index, email, password):
-    tracked_series = core.read_tracked_series()
-
-    index = tryint(jnc_url_or_index)
-    if index is not None:
-        index0 = index - 1
-        if index0 < 0 or index0 >= len(tracked_series):
-            logger.warning(f"Index '{index}' is not valid! (Use 'track list')")
-            return
-        series_url_list = list(tracked_series.keys())
-        series_url = series_url_list[index0]
-        series_name = tracked_series[series_url].name
-    else:
-        series, series_url = _canonical_series(jnc_url_or_index, email, password)
-        series_name = series.raw_series.title
-
-        if series_url not in tracked_series:
-            logger.warning(
-                f"The series '{series_name}' is not tracked! "
-                "(Use 'track list --details')"
-            )
-            return
-
-    del tracked_series[series_url]
-
-    core.write_tracked_series(tracked_series)
-
-    logger.info(green(f"The series '{series_name}' is no longer tracked"))
-
-
-@track_series.command(
-    name="list", help="List tracked series", cls=CatchAllExceptionsCommand
-)
-@click.option(
-    "-t",
-    "--details",
-    "is_detail",
-    is_flag=True,
-    help="Flag to list the details of the tracked series (URL, date of last release)",
-)
-def list_track_series(is_detail):
-    tracked_series = core.read_tracked_series()
-    if len(tracked_series) > 0:
-        logger.info(f"{len(tracked_series)} series are tracked:")
-        for index, (ser_url, ser_details) in enumerate(tracked_series.items()):
-            details = None
-            if ser_details.part_date:
-                part_date = dateutil.parser.parse(ser_details.part_date)
-                part_date_formatted = part_date.strftime("%b %d, %Y")
-                details = f"{ser_details.part} [{part_date_formatted}]"
-            elif ser_details.part == 0:
-                details = "No part released"
-            else:
-                details = f"{ser_details.part}"
-
-            msg = f"[{colored(index + 1, Fore.YELLOW)}] {green(ser_details.name)}"
-            if is_detail:
-                msg += f" {ser_url} {colored(details, Fore.RED)}"
-
-            logger.info(msg)
-    else:
-        logger.info("No series is tracked.")
-
-
-def _canonical_series(jnc_url, email, password):
-    token = None
-    try:
-        jnc_resource = jncapi.resource_from_url(jnc_url)
-
-        logger.info(f"Login with email '{email}'...")
-        token = jncapi.login(email, password)
-
-        return _tracking_series_metadata(token, jnc_resource)
-    finally:
-        if token:
-            try:
-                logger.info("Logout...")
-                jncapi.logout(token)
-            except Exception:
-                pass
-
-
-def _tracking_series_metadata(token, jnc_resource):
-    logger.info(f"Fetching metadata for '{jnc_resource}'...")
-    jncapi.fetch_metadata(token, jnc_resource)
-
-    series = core.analyze_metadata(jnc_resource)
-    series_slug = series.raw_series.titleslug
-    series_url = jncapi.url_from_series_slug(series_slug)
-
-    return series, series_url
-
-
-@main.command(
-    name="update",
-    help="Generate EPUB files for new parts of all tracked series (or specific "
-    "series if a URL argument is passed)",
-    cls=CatchAllExceptionsCommand,
-)
-@click.argument("jnc_url", metavar="(JNOVEL_CLUB_URL?)", required=False)
-@login_option
-@password_option
-@output_option
-@byvolume_option
-@images_option
-@raw_content_option
-@no_replace_chars_option
-@click.option(
-    "-s",
-    "--sync",
-    "is_sync",
-    is_flag=True,
-    help=(
-        "Flag to sync tracked series based on series followed on J-Novel Club and "
-        "update the new ones from the beginning of the series"
-    ),
-)
-@click.option(
-    "-w",
-    "--whole",
-    "is_whole_volume",
-    is_flag=True,
-    help=(
-        "Flag to indicate whether the whole volume should be regenerated when a "
-        "new part is detected during the update"
-    ),
-)
-def update_tracked(
-    jnc_url,
-    email,
-    password,
-    output_dirpath,
-    is_by_volume,
-    is_extract_images,
-    is_extract_content,
-    is_not_replace_chars,
-    is_sync,
-    is_whole_volume,
-):
-    epub_generation_options = core.EpubGenerationOptions(
-        output_dirpath,
-        is_by_volume,
-        is_extract_images,
-        is_extract_content,
-        is_not_replace_chars,
-    )
-
-    token = None
-    updated_series = []
-    try:
-        tracked_series = core.read_tracked_series()
-        if len(tracked_series) == 0:
-            logger.warning(
-                "There are no tracked series! Use the 'jncep track add' command "
-                "first."
-            )
-            return
-
-        logger.info(f"Login with email '{email}'...")
-        token = jncapi.login(email, password)
-
-        new_synced = None
-        if is_sync:
-            logger.info("Fetch followed series from J-Novel Club...")
-            follows = jncapi.fetch_follows(token)
-            new_synced, _ = _sync_series_forward(token, follows, tracked_series, False)
-
-        if jnc_url:
-            _update_url_series(
-                token,
-                jnc_url,
-                epub_generation_options,
-                tracked_series,
-                updated_series,
-                is_sync,
-                new_synced,
-            )
-            if len(updated_series) == 0:
-                return
-        else:
-            has_error = _update_all_series(
-                token,
-                epub_generation_options,
-                tracked_series,
-                updated_series,
-                is_sync,
-                new_synced,
-                is_whole_volume,
-            )
-
-            if has_error:
-                logger.error("Some series could not be updated!")
-
-            if len(updated_series) == 0:
-                # TODO case all in error ?
-                logger.info(green("All series are already up to date!"))
-                return
-    finally:
-        if token:
-            try:
-                logger.info("Logout...")
-                jncapi.logout(token)
-            except Exception:
-                pass
-
-    if len(updated_series) > 0:
-        # update tracking config JSON
-        for series in updated_series:
-            pn = core.to_relative_part_string(series, series.parts[-1])
-            pdate = series.parts[-1].raw_part.launchDate
-            tracked_series[jncapi.url_from_series_slug(series.raw_series.titleslug)] = {
-                "part_date": pdate,
-                "part": pn,
-                "name": series.raw_series.title,
-            }
-        core.write_tracked_series(tracked_series)
-
-        logger.info(green(f"{len(updated_series)} series sucessfully updated!"))
-
-
-def _update_url_series(
+def update_url_series(
     token,
     jnc_url,
     epub_generation_options,
@@ -671,7 +203,7 @@ def _update_url_series(
         updated_series.append(series)
 
 
-def _update_all_series(
+def update_all_series(
     token,
     epub_generation_options,
     tracked_series,
@@ -719,10 +251,6 @@ def _update_all_series(
             logger.debug(traceback.format_exc())
 
     return has_error
-
-
-def _to_yn(b):
-    return "yes" if b else "no"
 
 
 def _create_epub_from_beginning(token, series, epub_generation_options):
@@ -808,7 +336,7 @@ def _create_epub_with_updated_parts(token, series, new_parts, epub_generation_op
     # just wrap _create_epub_with_requested_parts but handle case where parts
     # have expired
     try:
-        _create_epub_with_requested_parts(
+        create_epub_with_requested_parts(
             token, series, new_parts, epub_generation_options
         )
         return True
@@ -817,7 +345,7 @@ def _create_epub_with_updated_parts(token, series, new_parts, epub_generation_op
         return False
 
 
-def _create_epub_with_requested_parts(
+def create_epub_with_requested_parts(
     token, series, parts_to_download, epub_generation_options
 ):
     # preview => parts 1 of each volume, always available
@@ -846,7 +374,3 @@ def _create_epub_with_requested_parts(
         core.create_epub(
             token, series, available_parts_to_download, epub_generation_options
         )
-
-
-if __name__ == "__main__":
-    main()
