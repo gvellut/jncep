@@ -1,38 +1,45 @@
 import json
 import logging
-import re
-from urllib.parse import urlparse, urlunparse
 
 from addict import Dict as Addict
 import attr
 import requests
 import requests_toolbelt.utils.dump
 
+from . import jncweb
+
 logger = logging.getLogger(__package__)
 
 IMG_URL_BASE = "https://d2dq7ifhe7bu0f.cloudfront.net"
-JNC_URL_BASE = "https://j-novel.club"
 API_JNC_URL_BASE = "https://api.j-novel.club"
 
 COMMON_API_HEADERS = {"accept": "application/json", "content-type": "application/json"}
 
-RESOURCE_TYPE_NOVEL = "NOVEL"
-RESOURCE_TYPE_VOLUME = "VOLUME"
-RESOURCE_TYPE_PART = "PART"
+# TODO remove raw_... from structs => no dep on API response struct + move to own module
 
 
 @attr.s
-class JNCResource:
-    url = attr.ib()
-    slug = attr.ib()
-    is_new_website = attr.ib()
-    resource_type = attr.ib()
-    raw_metadata = attr.ib(default=None)
+class Series:
+    raw_series = attr.ib()
+    volumes = attr.ib(default=None)
+    parts = attr.ib(default=None)
 
-    def __str__(self):
-        pu = urlparse(self.url)
-        # remove scheme + domain
-        return urlunparse(("", "", *pu[2:]))
+
+@attr.s
+class Volume:
+    raw_volume = attr.ib()
+    volume_id = attr.ib()
+    num = attr.ib()
+    parts = attr.ib(factory=list)
+
+
+@attr.s
+class Part:
+    raw_part = attr.ib()
+    volume = attr.ib()
+    num_in_volume = attr.ib()
+    absolute_num = attr.ib(default=None)
+    content = attr.ib(default=None)
 
 
 def login(email, password):
@@ -56,12 +63,12 @@ def logout(token):
     r.raise_for_status()
 
 
-def fetch_metadata(token, jnc_resource: JNCResource):
-    if jnc_resource.resource_type == RESOURCE_TYPE_PART:
+def fetch_metadata(token, jnc_resource: jncweb.JNCResource):
+    if jnc_resource.resource_type == jncweb.RESOURCE_TYPE_PART:
         res_type = "parts"
         include = [{"serie": ["volumes", "parts"]}, "volume"]
         where = {"titleslug": jnc_resource.slug}
-    elif jnc_resource.resource_type == RESOURCE_TYPE_VOLUME:
+    elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_VOLUME:
         if jnc_resource.is_new_website:
             # for volume on new website => where is a tuple (series_slug, volume num)
             series_slug, volume_number = jnc_resource.slug
@@ -145,8 +152,12 @@ def fetch_follows(token):
         slug = series.titleslug
         # the metadata is not as complete as the usual (with fetch_metadata)
         # but it can still be useful to avoid a call later to the API
-        jnc_resource = JNCResource(
-            url_from_series_slug(slug), slug, True, RESOURCE_TYPE_NOVEL, series
+        jnc_resource = jncweb.JNCResource(
+            jncweb.url_from_series_slug(slug),
+            slug,
+            True,
+            jncweb.RESOURCE_TYPE_NOVEL,
+            series,
         )
         followed_series.append(jnc_resource)
 
@@ -171,67 +182,6 @@ def _set_follow(token, series_id, is_follow):
 
     r = requests.post(url, headers=headers, json=payload)
     r.raise_for_status()
-
-
-def resource_from_url(url):
-    pu = urlparse(url)
-
-    if pu.scheme == "":
-        raise ValueError(f"Not a URL: {url}")
-
-    # try legacy URL first
-    # path is: /c/<slug>/...  or /v/<slug>/... or /s/<slug>/...
-    # for c_hapter, v_olume, s_erie
-    m = re.match(r"^/(v|c|s)/(.+?)(?:(?=/)|$)", pu.path)
-    if m:
-        return JNCResource(url, m.group(2), False, _to_const_legacy(m.group(1)))
-    else:
-        # new site
-        # new site changed titles to series in URL
-        # so process both
-        s_re = r"^/(?:series|titles)/(.+?)(?:(?=/)|$)"
-        c_re = r"^/read/(.+?)(?:(?=/)|$)"
-        v_re = r"^volume-(\d+)$"
-
-        m = re.match(s_re, pu.path)
-        if m:
-            series_slug = m.group(1)
-            if not pu.fragment:
-                return JNCResource(url, series_slug, True, RESOURCE_TYPE_NOVEL)
-            m = re.match(v_re, pu.fragment)
-            if m:
-                # tuple with volume
-                return JNCResource(
-                    url, (series_slug, m.group(1)), True, RESOURCE_TYPE_VOLUME
-                )
-        else:
-            m = re.match(c_re, pu.path)
-            if m:
-                return JNCResource(url, m.group(1), True, RESOURCE_TYPE_PART)
-
-    raise ValueError(f"Invalid path for URL: {url}")
-
-
-def url_from_series_slug(series_slug):
-    # new URL
-    return f"{JNC_URL_BASE}/series/{series_slug}"
-
-
-def to_new_website_series_url(series_url):
-    # supports legacy URLs + new
-    jnc_resource = resource_from_url(series_url)
-    # outputs new URL
-    new_series_url = url_from_series_slug(jnc_resource.slug)
-    return new_series_url
-
-
-def _to_const_legacy(req_type):
-    if req_type == "c":
-        return RESOURCE_TYPE_PART
-    elif req_type == "v":
-        return RESOURCE_TYPE_VOLUME
-    else:
-        return RESOURCE_TYPE_NOVEL
 
 
 def _dump(response):

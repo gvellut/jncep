@@ -5,7 +5,8 @@ import click
 from colorama import Fore
 import dateutil.parser
 
-from .. import core, jncapi, jncep, options as options
+from . import options
+from .. import core, jncapi, jncweb
 from ..utils import colored, green, tryint
 from .common import CatchAllExceptionsCommand
 
@@ -24,14 +25,14 @@ def track_series():
 @options.login_option
 @options.password_option
 def add_track_series(jnc_url, email, password):
-    series, series_url = jncep.canonical_series(jnc_url, email, password)
+    series, series_url = core.canonical_series(jnc_url, email, password)
     tracked_series = core.read_tracked_series()
 
     if series_url in tracked_series:
         logger.warning(f"The series '{series.raw_series.title}' is already tracked!")
         return
 
-    jncep.process_series_for_tracking(tracked_series, series, series_url)
+    core.process_series_for_tracking(tracked_series, series, series_url)
 
     core.write_tracked_series(tracked_series)
 
@@ -70,12 +71,12 @@ def sync_series(email, password, is_reverse, is_delete):
         token = jncapi.login(email, password)
 
         logger.info("Fetch followed series from J-Novel Club...")
-        follows: List[jncapi.JNCResource] = jncapi.fetch_follows(token)
+        follows: List[jncweb.JNCResource] = jncapi.fetch_follows(token)
 
         if is_reverse:
-            jncep.sync_series_backward(token, follows, tracked_series, is_delete)
+            core.sync_series_backward(token, follows, tracked_series, is_delete)
         else:
-            jncep.sync_series_forward(token, follows, tracked_series, is_delete)
+            core.sync_series_forward(token, follows, tracked_series, is_delete)
     finally:
         if token:
             try:
@@ -104,7 +105,7 @@ def rm_track_series(jnc_url_or_index, email, password):
         series_url = series_url_list[index0]
         series_name = tracked_series[series_url].name
     else:
-        series, series_url = jncep.canonical_series(jnc_url_or_index, email, password)
+        series, series_url = core.canonical_series(jnc_url_or_index, email, password)
         series_name = series.raw_series.title
 
         if series_url not in tracked_series:

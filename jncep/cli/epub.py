@@ -2,7 +2,8 @@ import logging
 
 import click
 
-from .. import core, jncapi, jncep, options
+from . import options
+from .. import core, epub as core_epub, jncapi, jncweb, spec
 from ..utils import to_yn
 from .common import CatchAllExceptionsCommand
 
@@ -55,7 +56,7 @@ def generate_epub(
     is_extract_content,
     is_not_replace_chars,
 ):
-    epub_generation_options = core.EpubGenerationOptions(
+    epub_generation_options = core_epub.EpubGenerationOptions(
         output_dirpath,
         is_by_volume,
         is_extract_images,
@@ -65,7 +66,7 @@ def generate_epub(
 
     token = None
     try:
-        jnc_resource = jncapi.resource_from_url(jnc_url)
+        jnc_resource = jncweb.resource_from_url(jnc_url)
 
         logger.info(f"Login with email '{email}'...")
         token = jncapi.login(email, password)
@@ -80,11 +81,11 @@ def generate_epub(
                 f"Using part specification '{part_specs}' "
                 f"(absolute={to_yn(is_absolute)})..."
             )
-            parts_to_download = core.analyze_part_specs(series, part_specs, is_absolute)
+            parts_to_download = spec.analyze_part_specs(series, part_specs, is_absolute)
         else:
-            parts_to_download = core.analyze_requested(jnc_resource, series)
+            parts_to_download = spec.analyze_requested(jnc_resource, series)
 
-        jncep.create_epub_with_requested_parts(
+        core.create_epub_with_requested_parts(
             token, series, parts_to_download, epub_generation_options
         )
     finally:

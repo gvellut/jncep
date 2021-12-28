@@ -2,7 +2,8 @@ import logging
 
 import click
 
-from .. import core, jncapi, jncep, options
+from . import options
+from .. import core, epub, jncapi, jncweb, spec
 from ..utils import green
 from .common import CatchAllExceptionsCommand
 
@@ -55,7 +56,7 @@ def update_tracked(
     is_sync,
     is_whole_volume,
 ):
-    epub_generation_options = core.EpubGenerationOptions(
+    epub_generation_options = epub.EpubGenerationOptions(
         output_dirpath,
         is_by_volume,
         is_extract_images,
@@ -81,12 +82,12 @@ def update_tracked(
         if is_sync:
             logger.info("Fetch followed series from J-Novel Club...")
             follows = jncapi.fetch_follows(token)
-            new_synced, _ = jncep.sync_series_forward(
+            new_synced, _ = core.sync_series_forward(
                 token, follows, tracked_series, False
             )
 
         if jnc_url:
-            jncep.update_url_series(
+            core.update_url_series(
                 token,
                 jnc_url,
                 epub_generation_options,
@@ -98,7 +99,7 @@ def update_tracked(
             if len(updated_series) == 0:
                 return
         else:
-            has_error = jncep.update_all_series(
+            has_error = core.update_all_series(
                 token,
                 epub_generation_options,
                 tracked_series,
@@ -126,9 +127,9 @@ def update_tracked(
     if len(updated_series) > 0:
         # update tracking config JSON
         for series in updated_series:
-            pn = core.to_relative_part_string(series, series.parts[-1])
+            pn = spec.to_relative_spec_from_part(series.parts[-1])
             pdate = series.parts[-1].raw_part.launchDate
-            tracked_series[jncapi.url_from_series_slug(series.raw_series.titleslug)] = {
+            tracked_series[jncweb.url_from_series_slug(series.raw_series.titleslug)] = {
                 "part_date": pdate,
                 "part": pn,
                 "name": series.raw_series.title,

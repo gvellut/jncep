@@ -1,503 +1,54 @@
-from collections import namedtuple, OrderedDict
-from html.parser import HTMLParser
+from collections import OrderedDict
+import itertools
 import json
 import logging
-import os
-import os.path
+import operator
 from pathlib import Path
-import re
-import time
+import traceback
 
 from addict import Dict as Addict
 from atomicwrites import atomic_write
-import attr
-from ebooklib import epub
+import dateutil.parser
 
-from . import jncapi
+from . import epub, jncapi, jncweb, spec
 from .utils import green
 
 logger = logging.getLogger(__package__)
 
-RANGE_SEP = ":"
-
 CONFIG_DIRPATH = Path.home() / ".jncep"
 
 
-@attr.s
-class Series:
-    raw_series = attr.ib()
-    volumes = attr.ib(default=None)
-    parts = attr.ib(default=None)
-
-
-@attr.s
-class Volume:
-    raw_volume = attr.ib()
-    volume_id = attr.ib()
-    num = attr.ib()
-    parts = attr.ib(factory=list)
-
-
-@attr.s
-class Part:
-    raw_part = attr.ib()
-    volume = attr.ib()
-    num_in_volume = attr.ib()
-    absolute_num = attr.ib(default=None)
-    content = attr.ib(default=None)
-
-
-EpubGenerationOptions = namedtuple(
-    "EpubGenerationOptions",
-    [
-        "output_dirpath",
-        "is_by_volume",
-        "is_extract_images",
-        "is_extract_content",
-        "is_not_replace_chars",
-    ],
-)
-
-BookDetails = namedtuple(
-    "BookDetails",
-    ["identifier", "title", "author", "collection", "cover_url_candidates", "toc"],
-)
-
-
-class CoverImageException(Exception):
+class NoRequestedPartAvailableError(Exception):
     pass
 
 
-def to_relative_part_string(series, part):
-    volume_number = part.volume.num
-    part_number = part.num_in_volume
-    return f"{volume_number}.{part_number}"
-
-
-def to_part(series, relpart_str) -> Part:
-    # there will be an error if the relpart does not not existe
-    parts = _analyze_volume_part_specs(series, relpart_str)
-    return parts[0]
-
-
-def to_pretty_part_name(series, part) -> str:
-    part_str = f"Part_{part.num_in_volume}"
-    title = part.volume.raw_volume.title
-    return f"{_to_safe_filename(title)}_{part_str}"
-
-
-def create_epub(token, series, parts, epub_generation_options):
-    # here normally all parts in parameter are available
-    contents, downloaded_img_urls, raw_contents = get_book_content_and_images(
-        token, series, parts, epub_generation_options.is_not_replace_chars
-    )
-    book_details = get_book_details(series, parts)
-
-    logger.info("Fetching cover image...")
-    for cover_url in book_details.cover_url_candidates:
-        if cover_url in downloaded_img_urls:
-            # no need to redownload
-            # tuple : index 0 => bytes content
-            # TODO do not add same file (same content, different name) in EPUB
-            cover_bytes = downloaded_img_urls[cover_url][0]
-            break
-        else:
-            try:
-                cover_bytes = jncapi.fetch_image_from_cdn(cover_url)
-                break
-            except Exception:
-                logger.warning(
-                    f"Unable to download cover image with URL: '{cover_url}'. "
-                    "Trying next candidate..."
-                )
-                continue
-    else:
-        raise CoverImageException("No suitable cover could be downloaded!")
-
-    output_filename = _to_safe_filename(book_details.title) + ".epub"
-    output_filepath = os.path.join(
-        epub_generation_options.output_dirpath, output_filename
-    )
-
-    if epub_generation_options.is_extract_images:
-        logger.info("Extracting images...")
-        current_part = None
-        img_index = -1
-        for img_bytes, img_filename, part in downloaded_img_urls.values():
-            if part is not current_part:
-                img_index = 1
-                current_part = part
-            else:
-                img_index += 1
-            # change filename to something more readable since visible to
-            # user
-            _, ext = os.path.splitext(img_filename)
-            img_filename = (
-                to_pretty_part_name(series, part)
-                # extension at the end
-                + f"_Image_{img_index}{ext}"
-            )
-            img_filepath = os.path.join(
-                epub_generation_options.output_dirpath, img_filename
-            )
-            with open(img_filepath, "wb") as img_f:
-                img_f.write(img_bytes)
-
-    if epub_generation_options.is_extract_content:
-        logger.info("Extracting content...")
-        for content, part in zip(raw_contents, parts):
-            content_filename = to_pretty_part_name(series, part) + ".html"
-            content_filepath = os.path.join(
-                epub_generation_options.output_dirpath, content_filename
-            )
-            with open(content_filepath, "w", encoding="utf-8") as content_f:
-                content_f.write(content)
-
-    create_epub_file(
-        output_filepath,
-        book_details,
-        cover_bytes,
-        parts,
-        contents,
-        downloaded_img_urls,
-    )
-    logger.info(green(f"Success! EPUB generated in '{output_filepath}'!"))
-
-
-def get_book_content_and_images(token, series, parts_to_download, is_not_replace_chars):
-    downloaded_img_urls = {}
-    contents = []
-    raw_contents = []
-    for part in parts_to_download:
-        logger.info(f"Fetching part '{part.raw_part.title}'...")
-        content = jncapi.fetch_content(token, part.raw_part.id)
-        raw_contents.append(content)
-
-        if not is_not_replace_chars:
-            # both the chars to replace and replacement are hardcoded
-            # U+2671 => East Syriac Cross (used in Her Majesty's Swarm)
-            # U+25C6 => Black Diamond (used in SOAP)
-            # U+1F3F6 => Black Rosette
-            # U+25C7 => White Diamond
-            # U+2605 => Black star
-            chars_to_replace = ["\u2671", "\u25C6", "\U0001F3F6", "\u25C7", "\u2605"]
-            replacement_char = "**"
-            regex = "|".join(chars_to_replace)
-            content_b = re.sub(regex, replacement_char, content)
-            if content != content_b:
-                logger.warning(
-                    "Some Unicode characters unlikely to be readable with "
-                    "the base fonts of an EPUB reader have been replaced "
-                )
-            content = content_b
-
-        img_urls = _img_urls(content)
-        if len(img_urls) > 0:
-            logger.info("Fetching images found in part content...")
-            for i, img_url in enumerate(img_urls):
-                logger.info(f"Image {i + 1}...")
-                try:
-                    img_bytes = jncapi.fetch_image_from_cdn(img_url)
-                except Exception:
-                    logger.error(
-                        f"Unable to download image with URL: '{img_url}'. "
-                        "Ignoring..."
-                    )
-                    continue
-
-                # the filename relative to the epub content root
-                # file will be added to the Epub archive
-                # ext is almost always .jpg but sometimes it is .jpeg
-                # splitext  works fine with a url
-                root, ext = os.path.splitext(img_url)
-                new_local_filename = _to_safe_filename(root) + ext
-                downloaded_img_urls[img_url] = (img_bytes, new_local_filename, part)
-                content = content.replace(img_url, new_local_filename)
-
-        contents.append(content)
-
-    return contents, downloaded_img_urls, raw_contents
-
-
-def get_book_details(series, parts_to_download):
-    # shouldn't change between parts
-    author = series.raw_series.author
-    collection = (series.raw_series.id, series.raw_series.title)
-    if len(parts_to_download) == 1:
-        # single part
-        part = parts_to_download[0]
-        identifier_base = part.raw_part.titleslug
-        if _is_final(series, parts_to_download[-1]):
-            complete_suffix = " - Final"
-        else:
-            complete_suffix = ""
-        title = f"{part.raw_part.title}{complete_suffix}"
-
-        cover_url_candidates = _cover_url_candidates(part.volume)
-        # single part => single volume: part numbers relative to
-        # that volume
-        # TODO no TOC for single part ?
-        toc = [f"Part {part.num_in_volume}"]
-    else:
-        volume_index = set()
-        volumes = []
-        for part in parts_to_download:
-            if part.volume.volume_id in volume_index:
-                continue
-            volume_index.add(part.volume.volume_id)
-            volumes.append(part.volume)
-
-        if len(volumes) > 1:
-            volume_nums = [str(volume.num) for volume in volumes]
-            volume_nums = ", ".join(volume_nums[:-1]) + " & " + volume_nums[-1]
-            title_base = f"{series.raw_series.title}: Volumes {volume_nums}"
-
-            part1 = to_relative_part_string(series, parts_to_download[0])
-            part2 = to_relative_part_string(series, parts_to_download[-1])
-
-            part_nums = f"Parts {part1} to {part2}"
-
-            # TODO simplify instead ?
-            toc = [part.raw_part.title for part in parts_to_download]
-
-            cover_url_candidates = _cover_url_candidates(volumes[0])
-            title = f"{title_base} [{part_nums}]"
-        else:
-            volume = volumes[0]
-            title_base = volume.raw_volume.title
-            cover_url_candidates = _cover_url_candidates(volume)
-            # relative to volume
-            toc = [f"Part {part.num_in_volume}" for part in parts_to_download]
-
-            if _is_complete(series, volume, parts_to_download):
-                complete_suffix = " - Complete"
-            elif _is_final(series, parts_to_download[-1]):
-                complete_suffix = " - Final"
-            else:
-                complete_suffix = ""
-
-            title = (
-                f"{title_base} [Parts {parts_to_download[0].num_in_volume} to "
-                f"{parts_to_download[-1].num_in_volume}{complete_suffix}]"
-            )
-
-        identifier_base = series.raw_series.titleslug
-
-    identifier = identifier_base + str(int(time.time()))
-
-    return BookDetails(identifier, title, author, collection, cover_url_candidates, toc)
-
-
-def _is_final(series, part):
-    """
-    Tells if the part is the last one of the volume it belongs to
-    """
-    # if not last volume, can tell for sure
-    if part.volume != series.volumes[-1]:
-        return part == part.volume.parts[-1]
-
-    # last volume
-
-    # must be at the very least the last part listed for the volume
-    # seen some bug where the test on totalPartNumber below
-    # can be true even if not the last part
-    if part != part.volume.parts[-1]:
-        return False
-
-    # totalPartNumber comes from the API and is set only for some
-    # series; Sometimes set on unfinished volumes but not present once the
-    # volume is complete... (in this case return false: not possible to tell)
-    total_pn_in_volume = part.volume.raw_volume.totalPartNumber
-    if total_pn_in_volume:
-        # Should be == if no issue but...
-        # >= instead : I saw a volume where the last part was bigger than
-        # totalPartNumber (By the Grace of the Gods vol 6 => TPN = 10, but last
-        # part is 11)
-        return part.num_in_volume >= total_pn_in_volume
-    else:
-        # we can't tell
-        return False
-
-
-def _is_complete(series, volume, parts_in_volume_to_dl):
-    last_volume = series.volumes[-1]
-    if volume is not last_volume:
-        return len(parts_in_volume_to_dl) == len(volume.parts)
-    else:
-        return len(parts_in_volume_to_dl) == len(volume.parts) and _is_final(
-            series, parts_in_volume_to_dl[-1]
-        )
-
-
-def create_epub_file(
-    output_filepath,
-    book_details,
-    cover_bytes,
-    parts,
-    contents,
-    img_urls,
-):
-    lang = "en"
-    book = epub.EpubBook()
-    book.set_identifier(book_details.identifier)
-    book.set_title(book_details.title)
-    book.set_language(lang)
-    book.add_author(book_details.author)
-
-    # metadata for series GH issue #9
-    collection_id, collection_title = book_details.collection
-    book.add_metadata(
-        "OPF",
-        "belongs-to-collection",
-        collection_title,
-        {"property": "belongs-to-collection", "id": collection_id},
-    )
-    book.add_metadata(
-        "OPF",
-        "collection-type",
-        "series",
-        {"property": "collection-type", "refines": f"#{collection_id}"},
-    )
-    # as position, set the volume number of the first part in the epub
-    # in Calibre, display 1 (I) if not set so a bit better
-    book.add_metadata(
-        "OPF",
-        "group-position",
-        str(parts[0].volume.num),
-        {"property": "group-position", "refines": f"#{collection_id}"},
-    )
-
-    book.set_cover("cover.jpg", cover_bytes, False)
-
-    style = """body {color: black;}
-h1 {page-break-before: always;}
-img {width: 100%; page-break-after: always; page-break-before: always;}
-p {text-indent: 1.3em;}
-.centerp {text-align: center; text-indent: 0em;}
-.noindent {text-indent: 0em;}"""
-    css = epub.EpubItem(
-        uid="style", file_name="book.css", media_type="text/css", content=style
-    )
-    book.add_item(css)
-
-    cover_page = epub.EpubHtml(title="Cover", file_name="cover.xhtml", lang=lang)
-    cover_page.content = '<img src="cover.jpg" alt="cover" />'
-    cover_page.add_item(css)
-    book.add_item(cover_page)
-
-    for img_url, img_content in img_urls.items():
-        img_bytes, local_filename, _ = img_content
-        img = epub.EpubImage()
-        img.file_name = local_filename
-        img.media_type = "image/jpeg"
-        img.content = img_bytes
-        book.add_item(img)
-
-    chapters = []
-    for i, content in enumerate(contents):
-        c = epub.EpubHtml(
-            title=book_details.toc[i], file_name=f"chap_{i +1}.xhtml", lang=lang
-        )
-        # explicit encoding to bytes or some issue with lxml on some platforms (PyDroid)
-        # some message about USC4 little endian not supported
-        c.content = content.encode("utf-8")
-        c.add_item(css)
-        book.add_item(c)
-        chapters.append(c)
-
-    book.toc = chapters
-
-    book.add_item(epub.EpubNcx())
-    book.add_item(epub.EpubNav())
-
-    book.spine = [cover_page, "nav", *chapters]
-
-    epub.write_epub(output_filepath, book, {})
-
-
-def _cover_url_candidates(volume):
-    # for each part in the volume, get the biggest cover image attachment
-    # usually the first part will have the biggest (cvr_860.jpg), but API
-    # may return invalid file ; so generate multiple candidates
-    # TODO get the max for all candidates not all individually
-    candidates = list(
-        filter(None, [_cover_url(part.raw_part) for part in volume.parts])
-    )
-
-    # cover in the volume as ultimate fallback
-    # usually has a cover_400.jpg
-    candidates.append(_cover_url(volume.raw_volume))
-
-    return candidates
-
-
-def _cover_url(raw_metadata):
-    if raw_metadata.attachments:
-        covers = list(
-            filter(
-                lambda a: "cvr" in a.filename or "cover" in a.filename,
-                raw_metadata.attachments,
-            )
-        )
-        if len(covers) > 0:
-            cover = max(covers, key=lambda c: c.size)
-            return f"{jncapi.IMG_URL_BASE}/{cover.fullpath}"
-    return None
-
-
-class ImgUrlParser(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.img_urls = []
-
-    def handle_starttag(self, tag, tag_attrs):
-        if tag != "img":
-            return
-
-        for tag_attr in tag_attrs:
-            if tag_attr[0] == "src":
-                self.img_urls.append(tag_attr[1])
-                break
-
-
-def _img_urls(content):
-    parser = ImgUrlParser()
-    parser.feed(content)
-    return parser.img_urls
-
-
-def _to_safe_filename(name):
-    s = re.sub("[^0-9a-zA-Z]+", "_", name).strip("_")
-    return s
-
-
-def analyze_metadata(jnc_resource: jncapi.JNCResource):
+def analyze_metadata(jnc_resource: jncweb.JNCResource):
     # takes order of parts as returned by API
     # (irrespective of actual partNumber)
     # reorder by volume ordering
 
     if jnc_resource.resource_type in (
-        jncapi.RESOURCE_TYPE_PART,
-        jncapi.RESOURCE_TYPE_VOLUME,
+        jncweb.RESOURCE_TYPE_PART,
+        jncweb.RESOURCE_TYPE_VOLUME,
     ):
-        series = Series(jnc_resource.raw_metadata.serie)
+        series = jncapi.Series(jnc_resource.raw_metadata.serie)
     else:
-        series = Series(jnc_resource.raw_metadata)
+        series = jncapi.Series(jnc_resource.raw_metadata)
 
     volumes = []
     volume_index = {}
     for raw_volume in series.raw_series.volumes:
         volume_num = len(volumes) + 1
-        volume = Volume(raw_volume, raw_volume.id, volume_num)
+        volume = jncapi.Volume(raw_volume, raw_volume.id, volume_num)
         volume_index[volume.volume_id] = volume
         volumes.append(volume)
 
     is_warned = False
     for raw_part in series.raw_series.parts:
         volume_id = raw_part.volumeId
-        volume: Volume = volume_index[volume_id]
+        volume: jncapi.Volume = volume_index[volume_id]
         num_in_volume = len(volume.parts) + 1
-        part = Part(raw_part, volume, num_in_volume)
+        part = jncapi.Part(raw_part, volume, num_in_volume)
         volume.parts.append(part)
 
     parts = []
@@ -527,218 +78,22 @@ def analyze_metadata(jnc_resource: jncapi.JNCResource):
     return series
 
 
-def analyze_requested(jnc_resource, series):
-    if jnc_resource.resource_type == jncapi.RESOURCE_TYPE_PART:
-        # because partNumber sometimes has a gap => loop through all parts
-        # to find the actual object (instead of using [partNumber] directly)
-        for part in series.parts:
-            if part.raw_part.partNumber == jnc_resource.raw_metadata.partNumber:
-                return [part]
+def canonical_series(jnc_url, email, password):
+    token = None
+    try:
+        jnc_resource = jncweb.resource_from_url(jnc_url)
 
-    if jnc_resource.resource_type == jncapi.RESOURCE_TYPE_VOLUME:
-        iv = jnc_resource.raw_metadata.volumeNumber - 1
-        return list(series.volumes[iv].parts)
+        logger.info(f"Login with email '{email}'...")
+        token = jncapi.login(email, password)
 
-    # series: all parts
-    return list(series.parts)
-
-
-def analyze_part_specs(series, part_specs, is_absolute):
-    """ v(.p):v2(.p) or v(.p): or :v(.p) or v(.p) or : """
-
-    part_specs = part_specs.strip()
-
-    if part_specs == RANGE_SEP:
-        return series.parts
-
-    if is_absolute:
-        return _analyze_absolute_part_specs(series, part_specs)
-
-    return _analyze_volume_part_specs(series, part_specs)
-
-
-def _analyze_absolute_part_specs(series, part_specs):  # noqa: C901
-    parts = []
-    sides = part_specs.split(RANGE_SEP)
-    if len(sides) > 2:
-        raise ValueError("Multiple ':' in part specs")
-
-    reg = r"^\s*(\d+)\s*$"
-    if len(sides) == 1:
-        # not a range: single part
-        m = re.match(reg, sides[0])
-        if not m:
-            raise ValueError("Specified part must be a number")
-        fp = int(m.group(1))
-        ifp = _validate_absolute_part_number(series, fp)
-        return [series.parts[ifp]]
-
-    # range
-    m1 = re.match(reg, sides[0])
-    m2 = re.match(reg, sides[1])
-    if not m1 and not m2:
-        msg = "Part specification must be <number>:<number> or <number>: or :<number>"
-        raise ValueError(msg)
-
-    if m1:
-        fp = int(m1.group(1))
-        ifp = _validate_absolute_part_number(series, fp)
-
-    if m2:
-        lp = int(m2.group(1))
-        ilp = _validate_absolute_part_number(series, lp)
-
-    if m1 and not m2:
-        # to the end
-        for ip in range(ifp, len(series.parts)):
-            parts.append(series.parts[ip])
-        return parts
-
-    if m2 and not m1:
-        # since the beginning
-        # + 1 => include the second side of the range
-        for ip in range(0, ilp + 1):
-            parts.append(series.parts[ip])
-        return parts
-
-    # both sides are present
-    if ifp > ilp:
-        msg = "Second side of the part range must be greater than first"
-        raise ValueError(msg)
-
-    # + 1 => include the second side of the range
-    for ip in range(ifp, ilp + 1):
-        parts.append(series.parts[ip])
-    return parts
-
-
-def _validate_absolute_part_number(series, p):
-    if p == 0:
-        raise ValueError("Specified part number must be at least 1")
-    # part specs start at 1 => transform to Python index
-    ip = p - 1
-    if ip >= len(series.parts):
-        raise ValueError(
-            "Specified part number must be less than the number of parts in series"
-        )
-    return ip
-
-
-def _analyze_volume_part_specs(series, part_specs):  # noqa: C901
-    parts = []
-    sides = part_specs.split(RANGE_SEP)
-    if len(sides) > 2:
-        raise ValueError("Multiple ':' in part specs")
-
-    reg = r"^\s*(\d+)(?:\.(\d+))?\s*$"
-    if len(sides) == 1:
-        # not a range: single part
-        m = re.match(reg, sides[0])
-        if not m:
-            raise ValueError(
-                "Specification must be a of the form 'vol[.part]' (part is optional)"
-            )
-        fv = int(m.group(1))
-        if m.group(2):
-            # only the part specified
-            fp = int(m.group(2))
-            iv, ip = _validate_volume_part_number(series, fv, fp)
-            return [series.volumes[iv].parts[ip]]
-        else:
-            # full volume
-            iv = _validate_volume_part_number(series, fv)
-            for part in series.volumes[iv].parts:
-                parts.append(part)
-            return parts
-
-    # range
-    m1 = re.match(reg, sides[0])
-    m2 = re.match(reg, sides[1])
-    if (
-        (not m1 and not m2)
-        # left side not valid
-        or (not m1 and len(sides[0]) > 0)
-        # right side not valid
-        or (not m2 and len(sides[1]) > 0)
-    ):
-        msg = (
-            "Part specification must be vol[.part]:vol[.part] or vol[.part]: or "
-            ":vol[.part]"
-        )
-        raise ValueError(msg)
-
-    if m1:
-        fv = int(m1.group(1))
-        if m1.group(2):
-            fp = int(m1.group(2))
-            ifv, ifp = _validate_volume_part_number(series, fv, fp)
-        else:
-            ifv = _validate_volume_part_number(series, fv)
-            # beginning of the volume
-            ifp = 0
-        ifp = _to_absolute_part_index(series, ifv, ifp)
-
-    if m2:
-        lv = int(m2.group(1))
-        if m2.group(2):
-            lp = int(m2.group(2))
-            ilv, ilp = _validate_volume_part_number(series, lv, lp)
-        else:
-            ilv = _validate_volume_part_number(series, lv)
-            # end of the volume
-            ilp = -1
-        # this works too if ilp == -1
-        ilp = _to_absolute_part_index(series, ilv, ilp)
-
-    # same as for absolute part spec
-
-    if m1 and not m2:
-        # to the end
-        for ip in range(ifp, len(series.parts)):
-            parts.append(series.parts[ip])
-        return parts
-
-    if m2 and not m1:
-        # since the beginning
-        # + 1 => include the second side of the range
-        for ip in range(0, ilp + 1):
-            parts.append(series.parts[ip])
-        return parts
-
-    # both sides are present
-    if ifp > ilp:
-        msg = "Second side of the vol[.part] range must be greater than first"
-        raise ValueError(msg)
-
-    # + 1 => always include the second side of the range
-    for ip in range(ifp, ilp + 1):
-        parts.append(series.parts[ip])
-    return parts
-
-
-def _validate_volume_part_number(series, v, p=None):
-    iv = v - 1
-
-    if iv >= len(series.volumes):
-        raise ValueError(
-            "Specified volume number must be less than the number of volumes in series"
-        )
-    volume = series.volumes[iv]
-
-    if p is None:
-        return iv
-
-    ip = p - 1
-    if ip >= len(volume.parts):
-        raise ValueError(
-            "Specified part number must be less than the number of parts in volume"
-        )
-    return iv, ip
-
-
-def _to_absolute_part_index(series, iv, ip):
-    volume = series.volumes[iv]
-    return volume.parts[ip].absolute_num - 1
+        return tracking_series_metadata(token, jnc_resource)
+    finally:
+        if token:
+            try:
+                logger.info("Logout...")
+                jncapi.logout(token)
+            except Exception:
+                pass
 
 
 def read_tracked_series():
@@ -763,7 +118,7 @@ def _convert_to_latest_format(data):
     for series_url_or_slug, value in data.items():
         if not isinstance(value, dict):
             series_slug = series_url_or_slug
-            series_url = jncapi.url_from_series_slug(series_slug)
+            series_url = jncweb.url_from_series_slug(series_slug)
             # low effort way to get some title
             name = series_slug.replace("-", " ").title()
             value = Addict({"name": name, "part": value})
@@ -773,7 +128,7 @@ def _convert_to_latest_format(data):
 
     converted_b = {}
     for legacy_series_url, value in converted.items():
-        new_series_url = jncapi.to_new_website_series_url(legacy_series_url)
+        new_series_url = jncweb.to_new_website_series_url(legacy_series_url)
         converted_b[new_series_url] = value
 
     return converted_b
@@ -791,3 +146,346 @@ def _tracked_series_filepath():
 
 def _ensure_config_dirpath_exists():
     CONFIG_DIRPATH.mkdir(parents=False, exist_ok=True)
+
+
+def tracking_series_metadata(token, jnc_resource):
+    logger.info(f"Fetching metadata for '{jnc_resource}'...")
+    jncapi.fetch_metadata(token, jnc_resource)
+
+    series = analyze_metadata(jnc_resource)
+    series_slug = series.raw_series.titleslug
+    series_url = jncweb.url_from_series_slug(series_slug)
+
+    return series, series_url
+
+
+def process_series_for_tracking(tracked_series, series, series_url):
+    # record current last part + name
+    if len(series.parts) == 0:
+        # no parts yet
+        pn = 0
+        # 0000-... not a valid date so 1111-...
+        pdate = "1111-11-11T11:11:11.111Z"
+    else:
+        pn = spec.to_relative_spec_from_part(series.parts[-1])
+        pdate = series.parts[-1].raw_part.launchDate
+
+    tracked_series[series_url] = {
+        "part_date": pdate,
+        "part": pn,  # now just for show
+        "name": series.raw_series.title,
+    }
+
+    if len(series.parts) == 0:
+        logger.info(
+            green(
+                f"The series '{series.raw_series.title}' is now tracked, starting "
+                f"from the beginning"
+            )
+        )
+    else:
+        relative_part = spec.to_relative_spec_from_part(series.parts[-1])
+        part_date = dateutil.parser.parse(series.parts[-1].raw_part.launchDate)
+        part_date_formatted = part_date.strftime("%b %d, %Y")
+        logger.info(
+            green(
+                f"The series '{series.raw_series.title}' is now tracked, starting "
+                f"after part {relative_part} [{part_date_formatted}]"
+            )
+        )
+
+
+def sync_series_forward(token, follows, tracked_series, is_delete):
+    # sync local tracked series based on remote follows
+    new_synced = []
+    del_synced = []
+    for jnc_resource in follows:
+        if jnc_resource.url in tracked_series:
+            continue
+        series, series_url = tracking_series_metadata(token, jnc_resource)
+        process_series_for_tracking(tracked_series, series, series_url)
+
+        new_synced.append(series_url)
+
+    if is_delete:
+        followed_index = {f.url: f for f in follows}
+        # to avoid dictionary changed size during iteration
+        for series_url, series_data in list(tracked_series.items()):
+            if series_url not in followed_index:
+                del tracked_series[series_url]
+
+                logger.warning(f"The series '{series_data.name}' is no longer tracked")
+
+                del_synced.append(series_url)
+
+    write_tracked_series(tracked_series)
+
+    if new_synced or del_synced:
+        logger.info(green("The list of tracked series has been sucessfully updated!"))
+    else:
+        logger.info(green("Everything is already synced!"))
+
+    return new_synced, del_synced
+
+
+def sync_series_backward(token, follows, tracked_series, is_delete):
+    # sync remote follows based on locally tracked series
+    new_synced = []
+    del_synced = []
+
+    followed_index = {f.url: f for f in follows}
+    for series_url in tracked_series:
+        # series_url is the latest URL format (same as the follows)
+        if series_url in followed_index:
+            continue
+
+        jnc_resource = jncweb.resource_from_url(series_url)
+        logger.info(f"Fetching metadata for '{jnc_resource}'...")
+        jncapi.fetch_metadata(token, jnc_resource)
+        series_id = jnc_resource.raw_metadata.id
+        title = jnc_resource.raw_metadata.title
+        logger.info(f"Follow '{title}'...")
+        jncapi.follow_series(token, series_id)
+
+        new_synced.append(series_url)
+
+    if is_delete:
+        for jnc_resource in follows:
+            if jnc_resource.url not in tracked_series:
+                series_id = jnc_resource.raw_metadata.id
+                title = jnc_resource.raw_metadata.title
+                logger.warning(f"Unfollow '{title}'...")
+                jncapi.unfollow_series(token, series_id)
+
+                del_synced.append(jnc_resource.url)
+
+    if new_synced or del_synced:
+        logger.info(green("The list of followed series has been sucessfully updated!"))
+    else:
+        logger.info(green("Everything is already synced!"))
+
+    return new_synced, del_synced
+
+
+def update_url_series(
+    token,
+    jnc_url,
+    epub_generation_options,
+    tracked_series,
+    updated_series,
+    is_sync,
+    new_synced,
+    is_whole_volume,
+):
+    jnc_resource = jncweb.resource_from_url(jnc_url)
+
+    logger.info(f"Fetching metadata for '{jnc_resource}'...")
+    jncapi.fetch_metadata(token, jnc_resource)
+
+    series = analyze_metadata(jnc_resource)
+
+    series_slug = series.raw_series.titleslug
+    series_url = jncweb.url_from_series_slug(series_slug)
+
+    if is_sync:
+        # not very useful but make it possible
+        # only consider newly synced series if --sync used
+        # to mirror case with no URL argument
+        if series_url not in new_synced:
+            logger.warning(
+                f"The series '{series.raw_series.title}' is not among the "
+                f"tracked series added from syncing. Use 'jncep update' "
+                "without --sync."
+            )
+            return
+        is_updated = _create_epub_from_beginning(token, series, epub_generation_options)
+
+    else:
+        if series_url not in tracked_series:
+            logger.warning(
+                f"The series '{series.raw_series.title}' is not tracked! "
+                f"Use the 'jncep track add' command first."
+            )
+            return
+
+        series_details = tracked_series[series_url]
+        is_updated = _create_updated_epub(
+            token, series, series_details, epub_generation_options, is_whole_volume
+        )
+
+    if is_updated:
+        logger.info(green(f"The series '{series.raw_series.title}' has been updated!"))
+        updated_series.append(series)
+
+
+def update_all_series(
+    token,
+    epub_generation_options,
+    tracked_series,
+    updated_series,
+    is_sync,
+    new_synced,
+    is_whole_volume,
+):
+    has_error = False
+    for series_url, series_details in tracked_series.items():
+        try:
+            if is_sync and series_url not in new_synced:
+                continue
+
+            jnc_resource = jncweb.resource_from_url(series_url)
+
+            logger.info(f"Fetching metadata for '{jnc_resource}'...")
+            jncapi.fetch_metadata(token, jnc_resource)
+
+            series = analyze_metadata(jnc_resource)
+
+            if is_sync:
+                is_updated = _create_epub_from_beginning(
+                    token, series, epub_generation_options
+                )
+            else:
+                is_updated = _create_updated_epub(
+                    token,
+                    series,
+                    series_details,
+                    epub_generation_options,
+                    is_whole_volume,
+                )
+
+            if is_updated:
+                logger.info(
+                    green(f"The series '{series.raw_series.title}' has been updated!")
+                )
+                updated_series.append(series)
+
+        except Exception as ex:
+            has_error = True
+            logger.error("An error occured while updating the series:")
+            logger.error(str(ex))
+            logger.debug(traceback.format_exc())
+
+    return has_error
+
+
+def _create_epub_from_beginning(token, series, epub_generation_options):
+    if len(series.parts) == 0:
+        new_parts = None
+    else:
+        # complete series
+        new_parts = spec.analyze_part_specs(series, ":", True)
+
+    if not new_parts:
+        # no new part
+        logger.warning(
+            f"The series '{series.raw_series.title}' has no parts available!",
+        )
+        return False
+
+    return _create_epub_with_updated_parts(
+        token, series, new_parts, epub_generation_options
+    )
+
+
+def _create_updated_epub(
+    token, series, series_details, epub_generation_options, is_whole_volume
+):
+    if series_details.part == 0:
+        # special processing : means there was no part available when the
+        # series was started tracking
+
+        # still no part ?
+        if len(series.parts) == 0:
+            is_updated = False
+            # just to bind or pylint complains
+            new_parts = None
+        else:
+            is_updated = True
+            # complete series
+            new_parts = spec.analyze_part_specs(series, ":", True)
+    else:
+        # for others, look at the date if there
+        if not series_details.part_date:
+            # if not => old format, first lookup date of last part and use that
+            # TODO possible to do that for all ie no need to keep the date around
+            last_part = spec.to_part_from_relative_spec(series, series_details.part)
+            last_update_date = last_part.raw_part.launchDate
+        else:
+            last_update_date = series_details.part_date
+
+        new_parts = _parts_released_after_date(series, last_update_date)
+        is_updated = len(new_parts) > 0
+
+    if not is_updated:
+        # no new part
+        logger.warning(f"The series '{series.raw_series.title}' has not been updated!")
+        return False
+
+    parts_to_download = list(new_parts)
+    if is_whole_volume:
+        for part in new_parts:
+            for volpart in part.volume.parts:
+                if volpart not in parts_to_download:
+                    parts_to_download.append(volpart)
+        parts_to_download.sort(key=operator.attrgetter("absolute_num"))
+
+    return _create_epub_with_updated_parts(
+        token, series, parts_to_download, epub_generation_options
+    )
+
+
+def _parts_released_after_date(series, date):
+    parts = []
+    comparison_date = dateutil.parser.parse(date)
+    for part in series.parts:
+        # all date strings are in ISO format
+        # so no need to parse really
+        # parsing just to be safe
+        launch_date = dateutil.parser.parse(part.raw_part.launchDate)
+        if launch_date > comparison_date:
+            parts.append(part)
+    return parts
+
+
+def _create_epub_with_updated_parts(token, series, new_parts, epub_generation_options):
+    # just wrap _create_epub_with_requested_parts but handle case where parts
+    # have expired
+    try:
+        create_epub_with_requested_parts(
+            token, series, new_parts, epub_generation_options
+        )
+        return True
+    except NoRequestedPartAvailableError:
+        logger.error("The parts that need to be updated have all expired!")
+        return False
+
+
+def create_epub_with_requested_parts(
+    token, series, parts_to_download, epub_generation_options
+):
+    # preview => parts 1 of each volume, always available
+    # not expired => prepub
+    available_parts_to_download = list(
+        filter(
+            lambda p: p.raw_part.preview or not p.raw_part.expired, parts_to_download
+        )
+    )
+
+    if len(available_parts_to_download) == 0:
+        raise NoRequestedPartAvailableError(
+            "None of the requested parts are available for reading"
+        )
+
+    if len(available_parts_to_download) != len(parts_to_download):
+        logger.warning("Some of the requested parts are not available for reading !")
+
+    if epub_generation_options.is_by_volume:
+        for _, g in itertools.groupby(
+            available_parts_to_download, lambda p: p.volume.volume_id
+        ):
+            parts = list(g)
+            epub.create_epub(token, series, parts, epub_generation_options)
+    else:
+        epub.create_epub(
+            token, series, available_parts_to_download, epub_generation_options
+        )
