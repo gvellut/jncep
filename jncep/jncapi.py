@@ -156,7 +156,7 @@ def fetch_follows(token):
             jncweb.url_from_series_slug(slug),
             slug,
             True,
-            jncweb.RESOURCE_TYPE_NOVEL,
+            jncweb.RESOURCE_TYPE_SERIES,
             series,
         )
         followed_series.append(jnc_resource)

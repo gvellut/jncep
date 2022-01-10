@@ -8,7 +8,7 @@ logger = logging.getLogger(__package__)
 
 JNC_URL_BASE = "https://j-novel.club"
 
-RESOURCE_TYPE_NOVEL = "NOVEL"
+RESOURCE_TYPE_SERIES = "SERIES"
 RESOURCE_TYPE_VOLUME = "VOLUME"
 RESOURCE_TYPE_PART = "PART"
 
@@ -51,12 +51,12 @@ def resource_from_url(url):
         if m:
             series_slug = m.group(1)
             if not pu.fragment:
-                return JNCResource(url, series_slug, True, RESOURCE_TYPE_NOVEL)
+                return JNCResource(url, series_slug, True, RESOURCE_TYPE_SERIES)
             m = re.match(v_re, pu.fragment)
             if m:
                 # tuple with volume
                 return JNCResource(
-                    url, (series_slug, m.group(1)), True, RESOURCE_TYPE_VOLUME
+                    url, (series_slug, int(m.group(1))), True, RESOURCE_TYPE_VOLUME
                 )
         else:
             m = re.match(c_re, pu.path)
@@ -85,4 +85,4 @@ def _to_const_legacy(req_type):
     elif req_type == "v":
         return RESOURCE_TYPE_VOLUME
     else:
-        return RESOURCE_TYPE_NOVEL
+        return RESOURCE_TYPE_SERIES
