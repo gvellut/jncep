@@ -85,17 +85,20 @@ class JNCLabsAPI:
         await self._call_labs_authenticated("POST", path)
         self.token = None
 
-    async def fetch_data(self, resource_type, slug_id, sub_resource=""):
+    async def fetch_data(self, resource_type, slug_id, sub_resource="", skip=None):
         # TODO add cache + wait if download already in progress
+        # can be useful for downloading covers since out of sequence
         # cf trio.Event
         if sub_resource:
             sub_resource = f"/{sub_resource}"
 
         path = f"{LABS_API_JNC_PATH_BASE}/{resource_type}/{slug_id}{sub_resource}"
         auth = self.labs_authentication()
-        params = COMMON_LABS_API_PARAMS
+        params = {**COMMON_LABS_API_PARAMS}
+        if skip is not None:
+            params.update(skip=skip)
 
-        logger.debug(f"LABS {path}")
+        logger.debug(f"LABS {path} skip={skip}")
 
         r = await self._call_authenticated(
             self.labs_api_session, "GET", path, auth, params=params
@@ -104,6 +107,22 @@ class JNCLabsAPI:
         d = Addict(r.json())
         d.freeze()
         return d
+
+    async def paginate(self, func):
+        skip = 0
+        while True:
+            j = await func(skip=skip)
+
+            pagination = Addict(j.pop("pagination"))
+
+            # besides pagination there is one other kv with the data we want
+            items = list(j.values())
+            for item in items[0]:
+                yield item
+
+            if pagination.lastPage:
+                break
+            skip += pagination.limit
 
     async def fetch_content(self, slug_id, content_type):
         path = f"/embed/{slug_id}/{content_type}"
@@ -145,30 +164,6 @@ class JNCLabsAPI:
         r.raise_for_status()
 
         return r
-
-    # TODO change to wrap existing fetch_... method
-    async def paginate(self, session, method, path, headers=None, **kwargs):
-        if "params" in kwargs:
-            params = kwargs.pop("params")
-        else:
-            params = {}
-
-        skip = 0
-        while True:
-            params.update(skip=skip)
-            r = await self._call_labs_authenticated(
-                session, method, path, headers=headers, params=params, **kwargs
-            )
-            r = r.json()
-
-            pagination = Addict(r.pop("pagination"))
-
-            # what is left : list of dicts
-            yield Addict(r)
-
-            if pagination.lastPage:
-                break
-            skip += pagination.limit
 
     async def fetch_follows(self):
         path = "/users/me"

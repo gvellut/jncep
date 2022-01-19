@@ -1,8 +1,10 @@
 from collections import defaultdict
 from functools import partial
 from html.parser import HTMLParser
+from itertools import groupby
 import json
 import logging
+from operator import attrgetter
 import os
 import re
 import time
@@ -153,7 +155,7 @@ def create_epub(output_filepath, book_details: "BookDetails", epub_generation_op
 
     book.set_cover("cover.jpg", book_details.cover_image.content, False)
 
-    # TODO externalize CSS
+    # TODO externalize CSS + option to epub + update
     style = """body {color: black;}
 h1 {page-break-before: always;}
 img {width: 100%; page-break-after: always; page-break-before: always; object-fit: contain;}
@@ -265,19 +267,6 @@ class BookDetails:
 def process_series(
     result: Result, options: core_epub.EpubGenerationOptions
 ) -> BookDetails:
-    pass
-
-
-def process_single_volume(
-    result: Result, options: core_epub.EpubGenerationOptions
-) -> BookDetails:
-    pass
-
-
-def process_single_part(
-    result: Result, options: core_epub.EpubGenerationOptions
-) -> BookDetails:
-
     part_data = result.get_by_dtype(DTYPE_PART)[0]
     part_id = part_data.did
     part = part_data.data
@@ -314,6 +303,113 @@ def process_single_part(
     return book_details
 
 
+def overwrite(array1, array2):
+    array1.splice(0, len(array1), array2)
+
+
+# TODO common with split by volume
+def process_single_volume(
+    result: Result, options: core_epub.EpubGenerationOptions
+) -> BookDetails:
+    volume_data = result.get_by_dtype(DTYPE_VOLUME)[0]
+    volume = volume_data.data
+
+    series = result.get_by_dtype(DTYPE_SERIES)[0].data
+    parts = [d.data for d in result.get_by_dtype(DTYPE_PART)]
+
+    contents = {}
+    for k, g in groupby(result.get_by_dtype(DTYPE_PART_XHTML), attrgetter("did")):
+        # one content for each part
+        contents.update({k: next(g).data})
+
+    images_data = result.get_by_dtype(DTYPE_PART_IMAGE)
+    images = [d.data for d in images_data]
+    images_by_part = {}
+    for k, g in groupby(sorted(images_data, key=attrgetter("did")), attrgetter("did")):
+        images_by_part.update({k: [d.data for d in g]})
+
+    parts_in_volume = result.get_by_dtype(DTYPE_VOLUME_PARTS)[0].data
+    volumes_in_series = result.get_by_dtype(DTYPE_SERIES_VOLUMES)[0].data
+
+    parts_indices = [
+        extract_part_index_in_volume(part.legacyId, parts_in_volume) for part in parts
+    ]
+    parts_with_indices = sorted(zip(parts_indices, parts), key=lambda x: x[0])
+    _, parts = zip(*parts_with_indices)
+
+    for part in parts:
+        part_id = part.legacyId
+
+        content_for_part = contents[part_id]
+        if not options.is_not_replace_chars:
+            content_for_part = replace_chars(content_for_part)
+
+        # some parts do not have an image
+        if part_id in images_by_part:
+            imgs = images_by_part[part_id]
+            content_for_part = replace_image_urls(content_for_part, imgs)
+
+        contents[part_id] = content_for_part
+
+    identifier = volume.slug + str(int(time.time()))
+    title = volume.title
+    author = extract_author(volume.creators)
+    index_in_series = extract_volume_index_in_series(volume.legacyId, volumes_in_series)
+    # TODO struct
+    collection = (series.legacyId, series.title, index_in_series + 1)
+    # FIXME placeholder
+    # FIXME resolive cover later
+    # make sure it has one
+    cover_image = images_by_part[parts[0].legacyId][0]
+    toc = [f"Part {i + 1}" for i, _ in enumerate(parts)]
+    contents = [contents[part.legacyId] for part in parts]
+
+    book_details = BookDetails(
+        identifier, title, author, collection, cover_image, toc, contents, images
+    )
+
+    return book_details
+
+
+def process_single_part(
+    result: Result, options: core_epub.EpubGenerationOptions
+) -> BookDetails:
+
+    part_data = result.get_by_dtype(DTYPE_PART)[0]
+    part = part_data.data
+
+    volume = result.get_by_dtype(DTYPE_VOLUME)[0].data
+    series = result.get_by_dtype(DTYPE_SERIES)[0].data
+    content = result.get_by_dtype(DTYPE_PART_XHTML)[0].data
+    images = [d.data for d in result.get_by_dtype(DTYPE_PART_IMAGE)]
+    parts_in_volume = result.get_by_dtype(DTYPE_VOLUME_PARTS)[0].data
+    volumes_in_series = result.get_by_dtype(DTYPE_SERIES_VOLUMES)[0].data
+
+    if not options.is_not_replace_chars:
+        # replace chars...
+        content = replace_chars(content)
+    content = replace_image_urls(content, images)
+
+    identifier = part.slug + str(int(time.time()))
+    title = part.title
+    author = extract_author(volume.creators)
+    index_in_series = extract_volume_index_in_series(volume.legacyId, volumes_in_series)
+    # TODO struct
+    collection = (series.legacyId, series.title, index_in_series + 1)
+    # FIXME placeholder
+    # make sure it has one
+    cover_image = images[0]
+    index_in_volume = extract_part_index_in_volume(part.legacyId, parts_in_volume)
+    toc = [f"Part {index_in_volume + 1}"]
+    contents = [content]
+
+    book_details = BookDetails(
+        identifier, title, author, collection, cover_image, toc, contents, images
+    )
+
+    return book_details
+
+
 def extract_author(creators, default="Unknown Author"):
     for creator in creators:
         if creator.role == "AUTHOR":
@@ -338,17 +434,6 @@ def extract_volume_index_in_series(did, series_volumes):
     raise ValueError(f"Volume {did} not found in series volumes !")
 
 
-def find_with_did(result, did, only_one=False):
-    # did can be a slug for top level resource
-    values = []
-    for d in result.data:
-        if d.did == did:
-            values.append(d)
-            if only_one:
-                break
-    return values
-
-
 # TODO simplify. Really needs those funcs ???
 
 # TODO way to indicate failure of some kind
@@ -356,56 +441,78 @@ def find_with_did(result, did, only_one=False):
 
 
 async def fetch_series(api, series_id, result):
-    series_data = await api.fetch_data("series", series_id)
-    result.add(Data(DTYPE_SERIES, series_data.legacyId, series_data))
-    return series_data
+    series = await api.fetch_data("series", series_id)
+    result.add(Data(DTYPE_SERIES, series.legacyId, series))
+    return series
 
 
 async def fetch_volume(api: JNCLabsAPI, volume_id, result):
-    volume_data = await api.fetch_data("volumes", volume_id)
-    result.add(Data(DTYPE_VOLUME, volume_data.legacyId, volume_data))
-    return volume_data
+    volume = await api.fetch_data("volumes", volume_id)
+    result.add(Data(DTYPE_VOLUME, volume.legacyId, volume))
+    return volume
 
 
 async def fetch_part(api: JNCLabsAPI, part_id, result):
-    part_data = await api.fetch_data("parts", part_id)
-    result.add(Data(DTYPE_PART, part_data.legacyId, part_data))
-    return part_data
+    part = await api.fetch_data("parts", part_id)
+    result.add(Data(DTYPE_PART, part.legacyId, part))
+    return part
 
 
 async def fetch_series_for_volume(api: JNCLabsAPI, volume_id, result):
-    series_data = await api.fetch_data("volumes", volume_id, "serie")
-    result.add(Data(DTYPE_SERIES, series_data.legacyId, series_data))
-    return series_data
+    series = await api.fetch_data("volumes", volume_id, "serie")
+    result.add(Data(DTYPE_SERIES, series.legacyId, series))
+    return series
 
 
 async def fetch_series_for_part(api: JNCLabsAPI, part_id, result):
-    series_data = await api.fetch_data("parts", part_id, "serie")
-    result.add(Data(DTYPE_SERIES, series_data.legacyId, series_data))
-    return series_data
+    series = await api.fetch_data("parts", part_id, "serie")
+    result.add(Data(DTYPE_SERIES, series.legacyId, series))
+    return series
 
 
 async def fetch_volume_for_part(api: JNCLabsAPI, part_id, result):
-    volume_data = await api.fetch_data("parts", part_id, "volume")
-    result.add(Data(DTYPE_VOLUME, volume_data.legacyId, volume_data))
-    return volume_data
+    volume = await api.fetch_data("parts", part_id, "volume")
+    result.add(Data(DTYPE_VOLUME, volume.legacyId, volume))
+    return volume
 
 
+async def fetch_volumes_for_series(api: JNCLabsAPI, series_id, result):
+    volumes = [
+        volume
+        async for volume in api.paginate(
+            partial(api.fetch_data, "series", series_id, "volumes")
+        )
+    ]
+    result.add(Data(DTYPE_SERIES_VOLUMES, series_id, volumes))
+    return volumes
+
+
+async def fetch_parts_for_volume(api: JNCLabsAPI, volume_id, result):
+    parts = [
+        part
+        async for part in api.paginate(
+            partial(api.fetch_data, "volumes", volume_id, "parts")
+        )
+    ]
+    result.add(Data(DTYPE_VOLUME_PARTS, volume_id, parts))
+    return parts
+
+
+# BEEUHH
 async def fetch_volume_parts_for_part(api: JNCLabsAPI, part_id, result):
-    volume_data = await fetch_volume_for_part(api, part_id, result)
-    volume_id = volume_data.legacyId
-    parts = await api.fetch_data("volumes", volume_id, "parts")
-    result.add(Data(DTYPE_VOLUME_PARTS, volume_id, parts.parts))
-    return parts.parts
+    volume = await fetch_volume_for_part(api, part_id, result)
+    volume_id = volume.legacyId
+
+    parts = await fetch_parts_for_volume(api, volume_id, result)
+    return parts
 
 
 async def fetch_series_volumes_for_part(api: JNCLabsAPI, part_id, result):
-    # TODO paginate
-    series_data = await fetch_series_for_part(api, part_id, result)
-    series_id = series_data.legacyId
-    volumes = await api.fetch_data("series", series_id, "volumes")
-    result.add(Data(DTYPE_SERIES_VOLUMES, series_id, volumes.volumes))
-    return volumes.volumes
+    series = await fetch_series_for_part(api, part_id, result)
+    series_id = series.legacyId
+
+    volumes = await fetch_volumes_for_series(api, series_id, result)
+    return volumes
 
 
 # TODO have a params struct that includes only_volumes
@@ -413,33 +520,38 @@ async def fetch_series_volumes_for_part(api: JNCLabsAPI, part_id, result):
 async def deep_fetch_volumes_for_series(
     api: JNCLabsAPI, nursery, series_id, result, only_volumes=None
 ):
-    # TODO paginate
     # TODO same content as /volumes/volumeId ? verif
-    volumes = await api.fetch_data("series", series_id, "volumes")
-    result.add(Data(DTYPE_SERIES_VOLUMES, series_id, volumes.volumes))
-    for i, volume_data in enumerate(volumes.volumes):
+    volumes = await fetch_volumes_for_series(api, series_id, result)
+
+    for i, volume_data in enumerate(volumes):
         volume_id = volume_data.legacyId
         result.add(Data(DTYPE_VOLUME, volume_id, volume_data))
 
         # TODO transform into spec for volume + part in volume
         volume_num = i + 1
         if not only_volumes or volume_num in only_volumes:
-            nursery.start_soon(partial(deep_fetch_parts_for_volume, volume_id))
+            nursery.start_soon(
+                partial(deep_fetch_parts_for_volume, api, nursery, volume_id, result)
+            )
 
 
 async def deep_fetch_parts_for_volume(api: JNCLabsAPI, nursery, volume_id, result):
-    # TODO paginate
-    parts = await api.fetch_data("volumes", volume_id, "parts")
-    result.add(Data(DTYPE_VOLUME_PARTS, volume_id, parts.parts))
-    for part_data in parts.parts:
+    parts = await fetch_parts_for_volume(api, volume_id, result)
+    for part_data in parts:
         part_id = part_data.legacyId
         result.add(Data(DTYPE_PART, part_id, part_data))
-        nursery.start_soon(partial(deep_fetch_content_for_part, part_id))
+        nursery.start_soon(
+            partial(deep_fetch_content_for_part, api, nursery, part_id, result)
+        )
 
 
 async def deep_fetch_part(api: JNCLabsAPI, nursery, part_id, result):
-    # TODO make obvious the fact that part_id is acutally the slug
+    # TODO make obvious the fact that part_id for deep_fetch_content_for_part
+    # must actually be the id and not just the slug (/embed endpoints)
     # and why we do the following first
+    # TODO or do that in deep_fetch_content_for_part ; verify
+    # if id or slug => fetch_part if needed
+    # cache for downloads ?
     part_data = await fetch_part(api, part_id, result)
     part_id = part_data.legacyId
     await deep_fetch_content_for_part(api, nursery, part_id, result)
@@ -559,7 +671,7 @@ async def fetch_volume_toplevel(api, jnc_resource, result):
                 )
             )
 
-        series = result.get(DTYPE_SERIES)[0]
+        series = result.get_by_dtype(DTYPE_SERIES)[0]
         series_id = series.did
         # not needed I think but done anyway in case I change something and forget
         result.normalize_slug(series_slug, series_id)
