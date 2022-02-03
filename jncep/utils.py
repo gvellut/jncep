@@ -1,5 +1,7 @@
 import logging
+import re
 import sys
+import unicodedata
 
 from colorama import Fore
 
@@ -49,3 +51,12 @@ def tryint(val):
 
 def to_yn(b):
     return "yes" if b else "no"
+
+
+def to_safe_filename(name):
+    name = "".join(
+        c for c in unicodedata.normalize("NFD", name) if unicodedata.category(c) != "Mn"
+    )
+    safe = re.sub(r"[^0-9a-zA-Z_]+", "_", name)
+    safe = safe.strip("_")
+    return safe

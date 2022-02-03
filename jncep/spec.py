@@ -19,23 +19,6 @@ END_OF_SERIES = "END_OF_SERIES"
 
 
 @attr.s
-class Identifier:
-    volume_id = attr.ib()
-    part_id = attr.ib()
-
-    def has_volume(self, _volume_num, volume_id) -> bool:
-        if self.volume_id:
-            return self.volume_id == volume_id
-        # no restriction on volume
-        return True
-
-    def has_part(self, _volume_num, _part_num, part_id) -> bool:
-        if self.part_id:
-            return self.part_id == part_id
-        return True
-
-
-@attr.s
 class Single:
     type_ = attr.ib()
     spec = attr.ib()
@@ -49,9 +32,8 @@ class Single:
         vn, _ = self.spec
         return volume_num == vn
 
-    def has_part(self, volume_num, part_num, _part_id=None) -> bool:
-        if not self.has_volume(volume_num):
-            return False
+    def has_part(self, _volume_num, part_num, _part_id=None) -> bool:
+        # assume has_volume is True if has_part is checked
         if self.type_ in (SERIES, VOLUME):
             return True
         # part
@@ -78,9 +60,6 @@ class Interval:
         return vn <= volume_num <= vn2
 
     def has_part(self, volume_num, part_num, _part_id=None) -> bool:
-        if not self.has_volume(volume_num):
-            return False
-
         if self.start == START_OF_SERIES:
             # spec is a part
             vn, pn = self.end.spec

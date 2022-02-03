@@ -13,6 +13,10 @@ RESOURCE_TYPE_VOLUME = "VOLUME"
 RESOURCE_TYPE_PART = "PART"
 
 
+class BadWebURLError(Exception):
+    pass
+
+
 @attr.s
 class JNCResource:
     url = attr.ib()
@@ -31,7 +35,7 @@ def resource_from_url(url):
     pu = urlparse(url)
 
     if pu.scheme == "":
-        raise ValueError(f"Not a URL: {url}")
+        raise BadWebURLError(f"Not a URL: {url}")
 
     # try legacy URL first
     # path is: /c/<slug>/...  or /v/<slug>/... or /s/<slug>/...
@@ -63,7 +67,7 @@ def resource_from_url(url):
             if m:
                 return JNCResource(url, m.group(1), True, RESOURCE_TYPE_PART)
 
-    raise ValueError(f"Invalid path for URL: {url}")
+    raise BadWebURLError(f"Invalid path for URL: {url}")
 
 
 def url_from_series_slug(series_slug):
