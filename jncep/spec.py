@@ -19,15 +19,92 @@ END_OF_SERIES = "END_OF_SERIES"
 
 
 @attr.s
+class Identifier:
+    volume_id = attr.ib()
+    part_id = attr.ib()
+
+    def has_volume(self, _volume_num, volume_id) -> bool:
+        if self.volume_id:
+            return self.volume_id == volume_id
+        # no restriction on volume
+        return True
+
+    def has_part(self, _volume_num, _part_num, part_id) -> bool:
+        if self.part_id:
+            return self.part_id == part_id
+        return True
+
+
+@attr.s
 class Single:
     type_ = attr.ib()
     spec = attr.ib()
+
+    def has_volume(self, volume_num, _volume_id=None) -> bool:
+        if self.type_ == SERIES:
+            return True
+        elif self.type_ == VOLUME:
+            return self.spec == volume_num
+        # part
+        vn, _ = self.spec
+        return volume_num == vn
+
+    def has_part(self, volume_num, part_num, _part_id=None) -> bool:
+        if not self.has_volume(volume_num):
+            return False
+        if self.type_ in (SERIES, VOLUME):
+            return True
+        # part
+        _, pn = self.spec
+        return part_num == pn
 
 
 @attr.s
 class Interval:
     start = attr.ib()
     end = attr.ib()
+
+    def has_volume(self, volume_num, _volume_id=None) -> bool:
+        if self.start == START_OF_SERIES:
+            # spec is a part (START_OF / END_OF cannot happen together)
+            vn, _ = self.end.spec
+            return volume_num <= vn
+
+        vn, _ = self.start.spec
+        if self.end == END_OF_SERIES:
+            return volume_num >= vn
+
+        vn2, _ = self.end.spec
+        return vn <= volume_num <= vn2
+
+    def has_part(self, volume_num, part_num, _part_id=None) -> bool:
+        if not self.has_volume(volume_num):
+            return False
+
+        if self.start == START_OF_SERIES:
+            # spec is a part
+            vn, pn = self.end.spec
+            if volume_num < vn:
+                return True
+            # same volume
+            return part_num <= pn
+
+        vn, pn = self.start.spec
+        if self.end == END_OF_SERIES:
+            if volume_num > vn:
+                return True
+            # same volume
+            return part_num >= pn
+
+        vn2, pn2 = self.end.spec
+        if vn < volume_num < vn2:
+            return True
+        if volume_num == vn and part_num >= pn:
+            return True
+        if volume_num == vn2 and part_num <= pn2:
+            return True
+
+        return False
 
 
 def to_relative_spec_from_part(part):
@@ -53,8 +130,7 @@ def analyze_part_specs(part_specs):
     return _analyze_volume_part_specs(part_specs)
 
 
-def _analyze_volume_part_specs(part_specs):  # noqa: C901
-    parts = []
+def _analyze_volume_part_specs(part_specs):
     sides = part_specs.split(RANGE_SEP)
     if len(sides) > 2:
         raise ValueError("Multiple ':' in part specs")
@@ -98,7 +174,7 @@ def _analyze_volume_part_specs(part_specs):  # noqa: C901
             fp = int(m1.group(2))
         else:
             fp = START_OF_VOLUME
-        start = Single(VOLUME, (fv, fp))
+        start = Single(PART, (fv, fp))
     else:
         start = START_OF_SERIES
 
@@ -108,8 +184,7 @@ def _analyze_volume_part_specs(part_specs):  # noqa: C901
             lp = int(m2.group(2))
         else:
             lp = END_OF_VOLUME
-        # this works too if ilp == -1
-        end = Single(VOLUME, (lv, lp))
+        end = Single(PART, (lv, lp))
     else:
         end = END_OF_SERIES
 

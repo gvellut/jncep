@@ -16,8 +16,9 @@ from ebooklib import epub
 import trio
 
 from . import options
-from .. import core, epub as core_epub, jncweb, spec
+from .. import epub as core_epub, jncweb, spec
 from ..jnclabs import JNCLabsAPI
+from ..spec import analyze_part_specs, Single
 from .common import CatchAllExceptionsCommand
 
 logger = logging.getLogger(__package__)
@@ -77,31 +78,33 @@ async def _main(
         logger.info(f"Login with email '{email}'...")
         await api.login(email, password)
 
+        # TODO download cover
+        # TODO handle exceptions
+        # TODO extract images
+        # TODO extract content
+        # TODO split by volume
+
+        result = Result()
         if part_specs:
             logger.info(f"Using part specification '{part_specs}' ")
-            epub_data = await fetch_for_specs(api, jnc_resource, part_specs)
+            part_spec_analyzed = analyze_part_specs(part_specs)
+            await fetch_for_specs_toplevel(
+                api, jnc_resource, part_spec_analyzed, result
+            )
         else:
-            # TODO cache + download cover
-            # TODO handle exceptions
-            # TODO extract images
-            # TODO extract content
-            # TODO split by volume
-            result = Result()
             if jnc_resource.resource_type == jncweb.RESOURCE_TYPE_SERIES:
                 await fetch_series_toplevel(api, jnc_resource, result)
-                book_details = process_series(result, epub_generation_options)
             elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_VOLUME:
                 await fetch_volume_toplevel(api, jnc_resource, result)
-                book_details = process_single_volume(result, epub_generation_options)
             elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_PART:
                 await fetch_part_toplevel(api, jnc_resource, result)
-                book_details = process_single_part(result, epub_generation_options)
 
+        book_details = process_downloaded(result, epub_generation_options)
         output_filename = _to_safe_filename(book_details.title) + ".epub"
         output_filepath = os.path.join(
             epub_generation_options.output_dirpath, output_filename
         )
-        create_epub(output_filepath, book_details, epub_generation_options)
+        create_epub(output_filepath, book_details)
 
     finally:
         if api.is_logged_in:
@@ -112,14 +115,7 @@ async def _main(
                 pass
 
 
-async def fetch_for_specs(api, jnc_resource, part_specs):
-    part_spec = spec.analyze_part_specs(part_specs)
-
-
-# TODO core_epub.EpubGenerationOptions not needed
-
-
-def create_epub(output_filepath, book_details: "BookDetails", epub_generation_options):
+def create_epub(output_filepath, book_details: "BookDetails"):
     lang = "en"
     book = epub.EpubBook()
     book.set_identifier(book_details.identifier)
@@ -128,19 +124,18 @@ def create_epub(output_filepath, book_details: "BookDetails", epub_generation_op
     book.add_author(book_details.author)
 
     # metadata for series GH issue #9
-    # TODO struct
-    collection_id, collection_title, volume_position = book_details.collection
+    collection_meta = book_details.collection
     book.add_metadata(
         "OPF",
         "belongs-to-collection",
-        collection_title,
-        {"property": "belongs-to-collection", "id": collection_id},
+        collection_meta.collection_title,
+        {"property": "belongs-to-collection", "id": collection_meta.collection_id},
     )
     book.add_metadata(
         "OPF",
         "collection-type",
         "series",
-        {"property": "collection-type", "refines": f"#{collection_id}"},
+        {"property": "collection-type", "refines": f"#{collection_meta.collection_id}"},
     )
     # as position, set the volume number of the first part in the epub
     # in Calibre, display 1 (I) if not set so a bit better
@@ -149,8 +144,8 @@ def create_epub(output_filepath, book_details: "BookDetails", epub_generation_op
     book.add_metadata(
         "OPF",
         "group-position",
-        str(volume_position),
-        {"property": "group-position", "refines": f"#{collection_id}"},
+        str(collection_meta.position),
+        {"property": "group-position", "refines": f"#{collection_meta.collection_id}"},
     )
 
     book.set_cover("cover.jpg", book_details.cover_image.content, False)
@@ -158,7 +153,8 @@ def create_epub(output_filepath, book_details: "BookDetails", epub_generation_op
     # TODO externalize CSS + option to epub + update
     style = """body {color: black;}
 h1 {page-break-before: always;}
-img {width: 100%; page-break-after: always; page-break-before: always; object-fit: contain;}
+img {width: 100%; page-break-after: always; page-break-before: always;
+    object-fit: contain;}
 p {text-indent: 1.3em;}
 .centerp {text-align: center; text-indent: 0em;}
 .noindent {text-indent: 0em;}"""
@@ -181,7 +177,6 @@ p {text-indent: 1.3em;}
         img.content = image.content
         book.add_item(img)
 
-    # TODO extract inside body html like with previous API ?
     chapters = []
     for i, content in enumerate(book_details.contents):
         c = epub.EpubHtml(
@@ -218,6 +213,8 @@ DTYPE_PART_TOC = "TOC"
 class Result:
     data = attr.ib(factory=list)
     data_index_by_dtype = attr.ib(factory=lambda: defaultdict(list))
+    data_fetch = attr.ib(factory=dict)
+
     # TODO add warnings : missing content, etc
 
     def normalize_slug(self, slug, did):
@@ -228,6 +225,23 @@ class Result:
     def add(self, data: "Data"):
         self.data.append(data)
         self.data_index_by_dtype[data.dtype].append(data)
+
+    def check_fetch(self, dtype, did):
+        key = (dtype, did)
+        if key in self.data_fetch:
+            # this data is being fetched or has already been fetched
+            event = self.data_fetch[key]
+            return event
+        else:
+            event = trio.Event()
+            self.data_fetch[key] = event
+            return None
+
+    def set_fetch(self, dtype, did):
+        key = (dtype, did)
+        if key in self.data_fetch:
+            event = self.data_fetch[key]
+            event.set()
 
     def get_by_dtype(self, dtype):
         if dtype in self.data_index_by_dtype:
@@ -264,58 +278,19 @@ class BookDetails:
     images = attr.ib()
 
 
-def process_series(
+@attr.s
+class CollectionMetadata:
+    collection_id = attr.ib()
+    collection_title = attr.ib()
+    position = attr.ib()
+
+
+def process_downloaded(
     result: Result, options: core_epub.EpubGenerationOptions
 ) -> BookDetails:
-    part_data = result.get_by_dtype(DTYPE_PART)[0]
-    part_id = part_data.did
-    part = part_data.data
-
-    volume = result.get_by_dtype(DTYPE_VOLUME)[0].data
-    series = result.get_by_dtype(DTYPE_SERIES)[0].data
-    content = result.get_by_dtype(DTYPE_PART_XHTML)[0].data
-    images = [d.data for d in result.get_by_dtype(DTYPE_PART_IMAGE)]
-    parts_in_volume = result.get_by_dtype(DTYPE_VOLUME_PARTS)[0].data
-    volumes_in_series = result.get_by_dtype(DTYPE_SERIES_VOLUMES)[0].data
-
-    if not options.is_not_replace_chars:
-        # replace chars...
-        content = replace_chars(content)
-    content = replace_image_urls(content, images)
-
-    identifier = part.slug + str(int(time.time()))
-    title = part.title
-    author = extract_author(volume.creators)
-    index_in_series = extract_volume_index_in_series(volume.legacyId, volumes_in_series)
-    # TODO struct
-    collection = (series.legacyId, series.title, index_in_series + 1)
-    # FIXME placeholder
-    # make sure it has one
-    cover_image = images[0]
-    index_in_volume = extract_part_index_in_volume(part_id, parts_in_volume)
-    toc = [f"Part {index_in_volume + 1}"]
-    contents = [content]
-
-    book_details = BookDetails(
-        identifier, title, author, collection, cover_image, toc, contents, images
-    )
-
-    return book_details
-
-
-def overwrite(array1, array2):
-    array1.splice(0, len(array1), array2)
-
-
-# TODO common with split by volume
-def process_single_volume(
-    result: Result, options: core_epub.EpubGenerationOptions
-) -> BookDetails:
-    volume_data = result.get_by_dtype(DTYPE_VOLUME)[0]
-    volume = volume_data.data
-
-    series = result.get_by_dtype(DTYPE_SERIES)[0].data
     parts = [d.data for d in result.get_by_dtype(DTYPE_PART)]
+    volumes = [d.data for d in result.get_by_dtype(DTYPE_VOLUME)]
+    series = result.get_by_dtype(DTYPE_SERIES)[0].data
 
     contents = {}
     for k, g in groupby(result.get_by_dtype(DTYPE_PART_XHTML), attrgetter("did")):
@@ -328,12 +303,14 @@ def process_single_volume(
     for k, g in groupby(sorted(images_data, key=attrgetter("did")), attrgetter("did")):
         images_by_part.update({k: [d.data for d in g]})
 
-    parts_in_volume = result.get_by_dtype(DTYPE_VOLUME_PARTS)[0].data
     volumes_in_series = result.get_by_dtype(DTYPE_SERIES_VOLUMES)[0].data
+    parts_in_volumes = {d.did: d.data for d in result.get_by_dtype(DTYPE_VOLUME_PARTS)}
 
-    parts_indices = [
-        extract_part_index_in_volume(part.legacyId, parts_in_volume) for part in parts
-    ]
+    volumes_index = index_volumes_in_series_by_num(volumes_in_series)
+
+    # order parts according to position in series
+    nums_for_parts = compute_nums_for_parts(volumes_in_series, parts_in_volumes)
+    parts_indices = [nums_for_parts[part.legacyId] for part in parts]
     parts_with_indices = sorted(zip(parts_indices, parts), key=lambda x: x[0])
     _, parts = zip(*parts_with_indices)
 
@@ -351,57 +328,73 @@ def process_single_volume(
 
         contents[part_id] = content_for_part
 
-    identifier = volume.slug + str(int(time.time()))
-    title = volume.title
-    author = extract_author(volume.creators)
-    index_in_series = extract_volume_index_in_series(volume.legacyId, volumes_in_series)
-    # TODO struct
-    collection = (series.legacyId, series.title, index_in_series + 1)
+    # TODO suffix final complete : not in api but in web page for series
+    # data for React contains what is needed in JSON
+
+    # representative volume
+    repr_volume = volumes[0]
+    author = extract_author(repr_volume.creators)
+
+    # first part
+    repr_part = parts[0]
+    volume_num, part_num = nums_for_parts[repr_part.legacyId]
+    # TODO in case multiple volumes, do not set volume num? or do
+    # something else
+    collection = CollectionMetadata(series.legacyId, series.title, volume_num)
     # FIXME placeholder
     # FIXME resolive cover later
-    # make sure it has one
-    cover_image = images_by_part[parts[0].legacyId][0]
-    toc = [f"Part {i + 1}" for i, _ in enumerate(parts)]
+    cover_image = images_by_part[repr_part.legacyId][0]
+
     contents = [contents[part.legacyId] for part in parts]
 
-    book_details = BookDetails(
-        identifier, title, author, collection, cover_image, toc, contents, images
-    )
+    if len(parts) == 1:
+        # single part
+        part = parts[0]
+        volume_num, part_num = nums_for_parts[part.legacyId]
 
-    return book_details
+        identifier_base = part.slug
+        title = f"{part.title}"
+        # single part => single volume: part numbers relative to
+        # that volume
+        toc = [f"Part {part_num}"]
+    else:
+        volume_index = set()
+        volumes = []
+        for part in parts:
+            volume_num, part_num = nums_for_parts[part.legacyId]
+            if volume_num in volume_index:
+                continue
+            volume_index.add(volume_num)
+            volume = volumes_index[volume_num]
+            volumes.append(volume)
 
+        if len(volumes) > 1:
+            volume_nums = sorted(list(volume_index))
+            volume_nums = [str(vn) for vn in volume_nums]
+            volume_nums = ", ".join(volume_nums[:-1]) + " & " + volume_nums[-1]
+            title_base = f"{series.title}: Volumes {volume_nums}"
 
-def process_single_part(
-    result: Result, options: core_epub.EpubGenerationOptions
-) -> BookDetails:
+            volume_num0, part_num0 = nums_for_parts[parts[0].legacyId]
+            volume_num1, part_num1 = nums_for_parts[parts[-1].legacyId]
 
-    part_data = result.get_by_dtype(DTYPE_PART)[0]
-    part = part_data.data
+            part_nums = f"Parts {volume_num0}.{part_num0} to {volume_num1}.{part_num1}"
 
-    volume = result.get_by_dtype(DTYPE_VOLUME)[0].data
-    series = result.get_by_dtype(DTYPE_SERIES)[0].data
-    content = result.get_by_dtype(DTYPE_PART_XHTML)[0].data
-    images = [d.data for d in result.get_by_dtype(DTYPE_PART_IMAGE)]
-    parts_in_volume = result.get_by_dtype(DTYPE_VOLUME_PARTS)[0].data
-    volumes_in_series = result.get_by_dtype(DTYPE_SERIES_VOLUMES)[0].data
+            toc = [part.title for part in parts]
+            title = f"{title_base} [{part_nums}]"
+        else:
+            volume = volumes[0]
+            title_base = volume.title
 
-    if not options.is_not_replace_chars:
-        # replace chars...
-        content = replace_chars(content)
-    content = replace_image_urls(content, images)
+            toc = [f"Part {nums_for_parts[part.legacyId][1]}" for part in parts]
 
-    identifier = part.slug + str(int(time.time()))
-    title = part.title
-    author = extract_author(volume.creators)
-    index_in_series = extract_volume_index_in_series(volume.legacyId, volumes_in_series)
-    # TODO struct
-    collection = (series.legacyId, series.title, index_in_series + 1)
-    # FIXME placeholder
-    # make sure it has one
-    cover_image = images[0]
-    index_in_volume = extract_part_index_in_volume(part.legacyId, parts_in_volume)
-    toc = [f"Part {index_in_volume + 1}"]
-    contents = [content]
+            _, part_num0 = nums_for_parts[parts[0].legacyId]
+            _, part_num1 = nums_for_parts[parts[-1].legacyId]
+
+            title = f"{title_base} [Parts {part_num0} to {part_num1}]"
+
+        identifier_base = series.slug
+
+    identifier = identifier_base + str(int(time.time()))
 
     book_details = BookDetails(
         identifier, title, author, collection, cover_image, toc, contents, images
@@ -417,15 +410,6 @@ def extract_author(creators, default="Unknown Author"):
     return default
 
 
-def extract_part_index_in_volume(did, volume_parts):
-    for i, part in enumerate(volume_parts):
-        if part.legacyId == did:
-            return i
-
-    # TODO custom exception
-    raise ValueError(f"Part {did} not found in volume parts !")
-
-
 def extract_volume_index_in_series(did, series_volumes):
     for i, volume in enumerate(series_volumes):
         if volume.legacyId == did:
@@ -434,144 +418,31 @@ def extract_volume_index_in_series(did, series_volumes):
     raise ValueError(f"Volume {did} not found in series volumes !")
 
 
-# TODO simplify. Really needs those funcs ???
+def index_volumes_in_series_by_num(volumes_in_series):
+    volumes_index = {}
+    for index_volume, volume in enumerate(volumes_in_series):
+        volumes_index[index_volume + 1] = volume
+
+    return volumes_index
+
+
+def compute_nums_for_parts(volumes_in_series, parts_in_volumes):
+    parts_index = {}
+    for index_volume, volume in enumerate(volumes_in_series):
+        for volume_id, volume_parts in parts_in_volumes.items():
+            if volume.legacyId == volume_id:
+                for index_part, part in enumerate(volume_parts):
+                    vol_part_key = (index_volume + 1, index_part + 1)
+                    parts_index[part.legacyId] = vol_part_key
+
+    return parts_index
+
 
 # TODO way to indicate failure of some kind
 # TODO timeout for the API requests
 
 
-async def fetch_series(api, series_id, result):
-    series = await api.fetch_data("series", series_id)
-    result.add(Data(DTYPE_SERIES, series.legacyId, series))
-    return series
-
-
-async def fetch_volume(api: JNCLabsAPI, volume_id, result):
-    volume = await api.fetch_data("volumes", volume_id)
-    result.add(Data(DTYPE_VOLUME, volume.legacyId, volume))
-    return volume
-
-
-async def fetch_part(api: JNCLabsAPI, part_id, result):
-    part = await api.fetch_data("parts", part_id)
-    result.add(Data(DTYPE_PART, part.legacyId, part))
-    return part
-
-
-async def fetch_series_for_volume(api: JNCLabsAPI, volume_id, result):
-    series = await api.fetch_data("volumes", volume_id, "serie")
-    result.add(Data(DTYPE_SERIES, series.legacyId, series))
-    return series
-
-
-async def fetch_series_for_part(api: JNCLabsAPI, part_id, result):
-    series = await api.fetch_data("parts", part_id, "serie")
-    result.add(Data(DTYPE_SERIES, series.legacyId, series))
-    return series
-
-
-async def fetch_volume_for_part(api: JNCLabsAPI, part_id, result):
-    volume = await api.fetch_data("parts", part_id, "volume")
-    result.add(Data(DTYPE_VOLUME, volume.legacyId, volume))
-    return volume
-
-
-async def fetch_volumes_for_series(api: JNCLabsAPI, series_id, result):
-    volumes = [
-        volume
-        async for volume in api.paginate(
-            partial(api.fetch_data, "series", series_id, "volumes")
-        )
-    ]
-    result.add(Data(DTYPE_SERIES_VOLUMES, series_id, volumes))
-    return volumes
-
-
-async def fetch_parts_for_volume(api: JNCLabsAPI, volume_id, result):
-    parts = [
-        part
-        async for part in api.paginate(
-            partial(api.fetch_data, "volumes", volume_id, "parts")
-        )
-    ]
-    result.add(Data(DTYPE_VOLUME_PARTS, volume_id, parts))
-    return parts
-
-
-# BEEUHH
-async def fetch_volume_parts_for_part(api: JNCLabsAPI, part_id, result):
-    volume = await fetch_volume_for_part(api, part_id, result)
-    volume_id = volume.legacyId
-
-    parts = await fetch_parts_for_volume(api, volume_id, result)
-    return parts
-
-
-async def fetch_series_volumes_for_part(api: JNCLabsAPI, part_id, result):
-    series = await fetch_series_for_part(api, part_id, result)
-    series_id = series.legacyId
-
-    volumes = await fetch_volumes_for_series(api, series_id, result)
-    return volumes
-
-
-# TODO have a params struct that includes only_volumes
-# TODO have params struct that indicate to go deep (instead of the name)
-async def deep_fetch_volumes_for_series(
-    api: JNCLabsAPI, nursery, series_id, result, only_volumes=None
-):
-    # TODO same content as /volumes/volumeId ? verif
-    volumes = await fetch_volumes_for_series(api, series_id, result)
-
-    for i, volume_data in enumerate(volumes):
-        volume_id = volume_data.legacyId
-        result.add(Data(DTYPE_VOLUME, volume_id, volume_data))
-
-        # TODO transform into spec for volume + part in volume
-        volume_num = i + 1
-        if not only_volumes or volume_num in only_volumes:
-            nursery.start_soon(
-                partial(deep_fetch_parts_for_volume, api, nursery, volume_id, result)
-            )
-
-
-async def deep_fetch_parts_for_volume(api: JNCLabsAPI, nursery, volume_id, result):
-    parts = await fetch_parts_for_volume(api, volume_id, result)
-    for part_data in parts:
-        part_id = part_data.legacyId
-        result.add(Data(DTYPE_PART, part_id, part_data))
-        nursery.start_soon(
-            partial(deep_fetch_content_for_part, api, nursery, part_id, result)
-        )
-
-
-async def deep_fetch_part(api: JNCLabsAPI, nursery, part_id, result):
-    # TODO make obvious the fact that part_id for deep_fetch_content_for_part
-    # must actually be the id and not just the slug (/embed endpoints)
-    # and why we do the following first
-    # TODO or do that in deep_fetch_content_for_part ; verify
-    # if id or slug => fetch_part if needed
-    # cache for downloads ?
-    part_data = await fetch_part(api, part_id, result)
-    part_id = part_data.legacyId
-    await deep_fetch_content_for_part(api, nursery, part_id, result)
-
-
-async def deep_fetch_content_for_part(api: JNCLabsAPI, nursery, part_id, result):
-    # TODO handle unavailable content (not preview + not catchup)
-    # TODO handle errors
-    content = await api.fetch_content(part_id, "data.xhtml")
-
-    result.add(Data(DTYPE_PART_XHTML, part_id, content))
-    img_urls = _img_urls(content)
-    if len(img_urls) > 0:
-        # TODO handle failures
-        for img_url in img_urls:
-            nursery.start_soon(partial(download_image, api, part_id, img_url, result))
-
-
 async def fetch_toc_for_part(api: JNCLabsAPI, part_id, result):
-    # TODO paginate ?
     content = await api.fetch_xhtml(part_id)
     toc = Addict(json.loads(content))
     result.add(Data(DTYPE_PART_TOC, part_id, toc))
@@ -580,6 +451,10 @@ async def fetch_toc_for_part(api: JNCLabsAPI, part_id, result):
 async def download_image(api: JNCLabsAPI, part_id, img_url, result):
     img_bytes = await api.fetch_image_from_cdn(img_url)
     result.add(Data(DTYPE_PART_IMAGE, part_id, Image(img_url, img_bytes)))
+
+
+def overwrite(array1, array2):
+    array1.splice(0, len(array1), array2)
 
 
 class ImgUrlParser(HTMLParser):
@@ -636,6 +511,37 @@ def replace_image_urls(content, images):
     return content
 
 
+async def fetch_for_specs_toplevel(api, jnc_resource, part_spec, result):
+    async with trio.open_nursery() as nursery:
+        if jnc_resource.resource_type == jncweb.RESOURCE_TYPE_SERIES:
+            series_slug = jnc_resource.slug
+            nursery.start_soon(partial(fetch_series, api, series_slug, result))
+        elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_VOLUME:
+            if jnc_resource.is_new_website:
+                series_slug, _ = jnc_resource.slug
+                nursery.start_soon(partial(fetch_series, api, series_slug, result))
+            else:
+                volume_slug = jnc_resource.slug
+                series = await fetch_series_for_volume(api, volume_slug, result)
+                series_slug = series.slug
+        elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_PART:
+            part_slug = jnc_resource.slug
+            # slightly inefficient
+            series = await fetch_series_for_part(api, part_slug, result)
+            series_slug = series.slug
+
+        nursery.start_soon(
+            partial(
+                deep_fetch_volumes_for_series,
+                api,
+                nursery,
+                series_slug,
+                part_spec,
+                result,
+            )
+        )
+
+
 async def fetch_series_toplevel(api, jnc_resource, result):
     series_slug = jnc_resource.slug
     async with trio.open_nursery() as nursery:
@@ -650,26 +556,57 @@ async def fetch_series_toplevel(api, jnc_resource, result):
     result.normalize_slug(series_slug, series_id)
 
 
+async def fetch_series(api, series_id, result):
+    series = await api.fetch_data("series", series_id)
+    result.add(Data(DTYPE_SERIES, series.legacyId, series))
+    return series
+
+
+async def deep_fetch_volumes_for_series(
+    api: JNCLabsAPI, nursery, series_id, part_spec, result
+):
+    volumes = await fetch_volumes_for_series(api, series_id, result)
+
+    for i, volume_data in enumerate(volumes):
+        volume_id = volume_data.legacyId
+        volume_num = i + 1
+        if not part_spec.has_volume(volume_num, volume_id):
+            continue
+
+        volume_id = volume_data.legacyId
+        result.add(Data(DTYPE_VOLUME, volume_id, volume_data))
+
+        nursery.start_soon(
+            partial(
+                deep_fetch_parts_for_volume,
+                api,
+                nursery,
+                volume_id,
+                volume_num,
+                part_spec,
+                result,
+            )
+        )
+
+
+async def fetch_volumes_for_series(api: JNCLabsAPI, series_id, result):
+    volumes = [
+        volume
+        async for volume in api.paginate(
+            partial(api.fetch_data, "series", series_id, "volumes")
+        )
+    ]
+    result.add(Data(DTYPE_SERIES_VOLUMES, series_id, volumes))
+    return volumes
+
+
 async def fetch_volume_toplevel(api, jnc_resource, result):
     if jnc_resource.is_new_website:
         # for volume on new website => where is a tuple (series_slug, volume num)
         series_slug, volume_number = jnc_resource.slug
 
-        # first fetch series since we have the slug for it
-        # will fetch metadata of all volumes + parts for this volume
-        only_volumes = [volume_number]
-        async with trio.open_nursery() as nursery:
-            nursery.start_soon(partial(fetch_series, api, series_slug, result))
-            nursery.start_soon(
-                partial(
-                    deep_fetch_volumes_for_series,
-                    api,
-                    nursery,
-                    series_slug,
-                    result,
-                    only_volumes,
-                )
-            )
+        volume_spec = Single(spec.VOLUME, (volume_number,))
+        await fetch_for_specs_toplevel(api, jnc_resource, volume_spec, result)
 
         series = result.get_by_dtype(DTYPE_SERIES)[0]
         series_id = series.did
@@ -690,19 +627,119 @@ async def fetch_volume_toplevel(api, jnc_resource, result):
         volume_id = volume.did
         result.normalize_slug(volume_slug, volume_id)
 
-        # FIXME finish.
-        # TODO still needed ? not a lot of work anyway
+
+async def fetch_volume(api: JNCLabsAPI, volume_id, result):
+    volume = await api.fetch_data("volumes", volume_id)
+    result.add(Data(DTYPE_VOLUME, volume.legacyId, volume))
+    return volume
+
+
+async def deep_fetch_parts_for_volume(
+    api: JNCLabsAPI, nursery, volume_id, volume_num, part_spec, result
+):
+    parts = await fetch_parts_for_volume(api, volume_id, result)
+    for i, part_data in enumerate(parts):
+        part_id = part_data.legacyId
+        part_num = i + 1
+        if not part_spec.has_part(volume_num, part_num, part_id):
+            continue
+
+        part_id = part_data.legacyId
+        result.add(Data(DTYPE_PART, part_id, part_data))
+
+        nursery.start_soon(
+            partial(deep_fetch_content_for_part, api, nursery, part_id, result)
+        )
+
+
+async def fetch_series_for_volume(api: JNCLabsAPI, volume_id, result):
+    series = await api.fetch_data("volumes", volume_id, "serie")
+    result.add(Data(DTYPE_SERIES, series.legacyId, series))
+    return series
+
+
+async def fetch_parts_for_volume(api: JNCLabsAPI, volume_id, result):
+    parts = [
+        part
+        async for part in api.paginate(
+            partial(api.fetch_data, "volumes", volume_id, "parts")
+        )
+    ]
+    result.add(Data(DTYPE_VOLUME_PARTS, volume_id, parts))
+    return parts
 
 
 async def fetch_part_toplevel(api, jnc_resource, result):
     part_slug = jnc_resource.slug
     async with trio.open_nursery() as nursery:
+        # to get the part number in volume
         nursery.start_soon(partial(fetch_volume_parts_for_part, api, part_slug, result))
+        # to get the volume number
         nursery.start_soon(
             partial(fetch_series_volumes_for_part, api, part_slug, result)
         )
+        # get the content we need
         nursery.start_soon(partial(deep_fetch_part, api, nursery, part_slug, result))
 
     part = result.get_by_dtype(DTYPE_PART)[0]
     part_id = part.did
     result.normalize_slug(part_slug, part_id)
+
+
+async def fetch_part(api: JNCLabsAPI, part_id, result):
+    part = await api.fetch_data("parts", part_id)
+    result.add(Data(DTYPE_PART, part.legacyId, part))
+    return part
+
+
+async def deep_fetch_part(api: JNCLabsAPI, nursery, part_id, result):
+    # TODO make obvious the fact that part_id for deep_fetch_content_for_part
+    # must actually be the id and not just the slug (/embed endpoints)
+    # and why we do the following first
+    # TODO or do that in deep_fetch_content_for_part ; verify
+    # if id or slug => fetch_part if needed
+    # cache for downloads ?
+    part_data = await fetch_part(api, part_id, result)
+    part_id = part_data.legacyId
+    await deep_fetch_content_for_part(api, nursery, part_id, result)
+
+
+async def deep_fetch_content_for_part(api: JNCLabsAPI, nursery, part_id, result):
+    # TODO handle unavailable content (not preview + not catchup)
+    # TODO handle errors
+    content = await api.fetch_content(part_id, "data.xhtml")
+
+    result.add(Data(DTYPE_PART_XHTML, part_id, content))
+    img_urls = _img_urls(content)
+    if len(img_urls) > 0:
+        # TODO handle failures
+        for img_url in img_urls:
+            nursery.start_soon(partial(download_image, api, part_id, img_url, result))
+
+
+async def fetch_volume_parts_for_part(api: JNCLabsAPI, part_id, result):
+    volume = await fetch_volume_for_part(api, part_id, result)
+    volume_id = volume.legacyId
+
+    parts = await fetch_parts_for_volume(api, volume_id, result)
+    return parts
+
+
+async def fetch_series_volumes_for_part(api: JNCLabsAPI, part_id, result):
+    series = await fetch_series_for_part(api, part_id, result)
+    series_id = series.legacyId
+
+    volumes = await fetch_volumes_for_series(api, series_id, result)
+    return volumes
+
+
+async def fetch_series_for_part(api: JNCLabsAPI, part_id, result):
+    series = await api.fetch_data("parts", part_id, "serie")
+    result.add(Data(DTYPE_SERIES, series.legacyId, series))
+    return series
+
+
+async def fetch_volume_for_part(api: JNCLabsAPI, part_id, result):
+    volume = await api.fetch_data("parts", part_id, "volume")
+    result.add(Data(DTYPE_VOLUME, volume.legacyId, volume))
+    return volume
