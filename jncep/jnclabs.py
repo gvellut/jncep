@@ -1,12 +1,11 @@
 import json
 import logging
-from os import PathLike
 
 from addict import Dict as Addict
 import asks
-import attr
 
 from . import jncweb
+from .utils import with_cache
 
 logger = logging.getLogger(__name__)
 
@@ -21,29 +20,7 @@ COMMON_API_HEADERS = {"accept": "application/json", "content-type": "application
 COMMON_LABS_API_PARAMS = {"format": "json"}
 
 
-@attr.s
-class Series:
-    id_ = attr.ib()
-    title = attr.ib()
-    volumes = attr.ib(default=None)
-
-
-@attr.s
-class Volume:
-    id_ = attr.ib()
-    title = attr.ib()
-    num = attr.ib(default=None)
-    series = attr.ib(default=None)
-
-
-@attr.s
-class Part:
-    id_ = attr.ib()
-    title = attr.ib()
-    num_in_volume = attr.ib(default=None)
-    content = attr.ib(default=None)
-    volume = attr.ib(default=None)
-    series = attr.ib(default=None)
+# TODO timeout for the API requests
 
 
 class JNCLabsAPI:
@@ -85,10 +62,8 @@ class JNCLabsAPI:
         await self._call_labs_authenticated("POST", path)
         self.token = None
 
+    @with_cache
     async def fetch_data(self, resource_type, slug_id, sub_resource="", skip=None):
-        # TODO add cache + wait if download already in progress
-        # can be useful for downloading covers since out of sequence
-        # cf trio.Event
         if sub_resource:
             sub_resource = f"/{sub_resource}"
 
@@ -108,10 +83,10 @@ class JNCLabsAPI:
         d.freeze()
         return d
 
-    async def paginate(self, func):
+    async def paginate(self, func, *args):
         skip = 0
         while True:
-            j = await func(skip=skip)
+            j = await func(*args, skip=skip)
 
             pagination = Addict(j.pop("pagination"))
 
@@ -124,6 +99,7 @@ class JNCLabsAPI:
                 break
             skip += pagination.limit
 
+    @with_cache
     async def fetch_content(self, slug_id, content_type):
         path = f"/embed/{slug_id}/{content_type}"
         auth = self.labs_authentication()
@@ -207,7 +183,9 @@ class JNCLabsAPI:
         r = await self._call_api_authenticated("POST", path, json=payload)
         r.raise_for_status()
 
-    async def fetch_image_from_cdn(self, url):
+    @with_cache
+    async def fetch_url(self, url):
+        # for CDN images
         logger.debug(f"IMAGE {url}")
         r = await asks.get(url)
         r.raise_for_status()

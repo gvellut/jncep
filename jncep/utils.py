@@ -1,9 +1,11 @@
+from functools import wraps
 import logging
 import re
 import sys
 import unicodedata
 
 from colorama import Fore
+import trio
 
 # specify colors for different logging levels
 LOG_COLORS = {
@@ -60,3 +62,39 @@ def to_safe_filename(name):
     safe = re.sub(r"[^0-9a-zA-Z_]+", "_", name)
     safe = safe.strip("_")
     return safe
+
+
+def with_cache(f):
+    cache = {}
+    events = {}
+
+    @wraps(f)
+    async def wrapper(*args, **kwargs):
+        key = (*args, *kwargs.items())
+        if key in events:
+            # query running
+            # wait for it to finish
+            event = events[key]
+            await event.wait()
+            if key in cache:
+                return cache[key]
+            # possibly error
+            # retry : call wrapper in case
+            # multiple are waiting
+            return wrapper(*args, **kwargs)
+
+        event = trio.Event()
+        events[key] = event
+
+        try:
+            response = await f(*args, **kwargs)
+            cache[key] = response
+            return response
+        except Exception:
+            del events[key]
+            raise
+        finally:
+            # wake up the tasks waiting
+            event.set()
+
+    return wrapper

@@ -23,7 +23,7 @@ class JNCResource:
     slug = attr.ib()
     is_new_website = attr.ib()
     resource_type = attr.ib()
-    raw_metadata = attr.ib(default=None)
+    raw_metadata = attr.ib(None)
 
     def __str__(self):
         pu = urlparse(self.url)

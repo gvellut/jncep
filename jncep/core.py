@@ -1,20 +1,16 @@
-from collections import defaultdict
-from functools import partial
 from html.parser import HTMLParser
-from itertools import groupby
-import json
 import logging
-from operator import attrgetter
 import os
 import re
 import time
+from typing import List
 
-from addict import Dict as Addict
 import attr
 import trio
 
 from . import epub, jncweb, spec
 from .jnclabs import JNCLabsAPI
+from .model import Image, Part, Series, Volume
 from .utils import to_safe_filename
 
 logger = logging.getLogger(__package__)
@@ -24,81 +20,11 @@ class NoRequestedPartAvailableError(Exception):
     pass
 
 
-DTYPE_SERIES = "SERIES"
-DTYPE_SERIES_VOLUMES = "SERIES_VOLUMES"
-DTYPE_VOLUME = "VOLUME"
-DTYPE_VOLUME_PARTS = "VOLUME_PARTS"
-DTYPE_PART = "PART"
-DTYPE_PART_XHTML = "XHTML"
-DTYPE_PART_IMAGE = "IMAGE"
-DTYPE_PART_TOC = "TOC"
-
-
-@attr.s
-class Result:
-    data = attr.ib(factory=list)
-    data_index_by_dtype = attr.ib(factory=lambda: defaultdict(list))
-    data_index = attr.ib(factory=lambda: defaultdict(list))
-    data_fetch = attr.ib(factory=dict)
-
-    # TODO add warnings : missing content, etc
-
-    def normalize_slug(self, slug, did):
-        for value in self.data:
-            if value.did == slug:
-                value.did = did
-
-    def add(self, data: "Data"):
-        # TODO replace data_index with data_fetch
-        data_key = (data.dtype, data.did)
-        if data_key in self.data_index:
-            # already fetched ; assumes hasn't changed
-            return
-        self.data.append(data)
-        self.data_index_by_dtype[data.dtype].append(data)
-        self.data_index[data_key] = data
-
-    def merge(self, result: "Result"):
-        for data in result.data:
-            self.add(data)
-
-    # FIXME use
-    def check_fetch(self, dtype, did):
-        key = (dtype, did)
-        if key in self.data_fetch:
-            # this data is being fetched or has already been fetched
-            event = self.data_fetch[key]
-            return event
-        else:
-            event = trio.Event()
-            self.data_fetch[key] = event
-            return None
-
-    def set_fetch(self, dtype, did):
-        key = (dtype, did)
-        if key in self.data_fetch:
-            event = self.data_fetch[key]
-            event.set()
-
-    def get_by_dtype(self, dtype):
-        if dtype in self.data_index_by_dtype:
-            return self.data_index_by_dtype[dtype]
-        else:
-            return []
-
-
-@attr.s
-class Data:
-    dtype = attr.ib()
-    did = attr.ib()
-    data = attr.ib()
-
-
 @attr.s
 class IdentifierSpec:
     type_ = attr.ib()
-    volume_id = attr.ib(default=None)
-    part_id = attr.ib(default=None)
+    volume_id = attr.ib(None)
+    part_id = attr.ib(None)
 
     def has_volume(self, _volume_num, volume_id) -> bool:
         if self.type_ == spec.SERIES:
@@ -114,125 +40,285 @@ class IdentifierSpec:
         return self.part_id == part_id
 
 
-def process_downloaded(
-    result: Result, options: epub.EpubGenerationOptions
-) -> epub.BookDetails:
-    # TODO split in 2 : separate by volume + other func to handle the details
-    # if volumes are merged
-    # TODO or handled split by volume
-    parts = [d.data for d in result.get_by_dtype(DTYPE_PART)]
-    volumes = [d.data for d in result.get_by_dtype(DTYPE_VOLUME)]
-    series = result.get_by_dtype(DTYPE_SERIES)[0].data
+class JNCEPSession:
+    def __init__(self, email, password):
+        self.api = JNCLabsAPI()
+        self.email = email
+        self.password = password
+        self.series_content = {}
+        self.series_covers = {}
 
-    contents = {}
-    for k, g in groupby(result.get_by_dtype(DTYPE_PART_XHTML), attrgetter("did")):
-        # one content for each part
-        contents.update({k: next(g).data})
+    async def __aenter__(self) -> "JNCEPSession":
+        await self.login(self.email, self.password)
+        return self
 
-    images_data = result.get_by_dtype(DTYPE_PART_IMAGE)
-    images = [d.data for d in images_data]
-    images_by_part = {}
-    for k, g in groupby(sorted(images_data, key=attrgetter("did")), attrgetter("did")):
-        images_by_part.update({k: [d.data for d in g]})
+    async def __aexit__(self, exc_type, exc, tb):
+        await self.logout()
+        return False
 
-    volumes_in_series = result.get_by_dtype(DTYPE_SERIES_VOLUMES)[0].data
-    parts_in_volumes = {d.did: d.data for d in result.get_by_dtype(DTYPE_VOLUME_PARTS)}
+    async def login(self, email, password):
+        logger.info(f"Login with email '{email}'...")
+        return await self.api.login(email, password)
 
-    volumes_index = _index_volumes_in_series_by_num(volumes_in_series)
+    async def logout(self):
+        if self.api.is_logged_in:
+            try:
+                logger.info("Logout...")
+                await self.apiapi.logout()
+            except Exception:
+                pass
 
-    # order parts according to position in series
-    nums_for_parts = _compute_nums_for_parts(volumes_in_series, parts_in_volumes)
-    parts_indices = [nums_for_parts[part.legacyId] for part in parts]
-    parts_with_indices = sorted(zip(parts_indices, parts), key=lambda x: x[0])
-    _, parts = zip(*parts_with_indices)
+    def series_slugs(self):
+        return list(self.series_content.keys())
 
-    for part in parts:
-        part_id = part.legacyId
+    async def to_part_spec(self, jnc_resource):
+        if jnc_resource.resource_type == jncweb.RESOURCE_TYPE_SERIES:
+            return IdentifierSpec(spec.SERIES)
 
-        content_for_part = contents[part_id]
-        if not options.is_not_replace_chars:
-            content_for_part = _replace_chars(content_for_part)
+        elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_VOLUME:
+            if jnc_resource.is_new_website:
+                # for volume on new website => where is a tuple (series_slug,
+                # volume num)
+                series_slug, volume_number = jnc_resource.slug
 
-        # some parts do not have an image
-        if part_id in images_by_part:
-            imgs = images_by_part[part_id]
-            content_for_part = _replace_image_urls(content_for_part, imgs)
+                volumes = await _fetch_volumes_for_series(self.api, series_slug)
 
-        contents[part_id] = content_for_part
+                volume_index = volume_number - 1
+                if volume_index not in range(len(volumes)):
+                    raise jncweb.BadWebURLError(
+                        f"Incorrect volume number in URL: {jnc_resource.url}"
+                    )
 
-    # TODO suffix final complete : not in api but in web page for series
-    # data for React contains what is needed in JSON
+                volume = volumes[volume_index]
+            else:
+                volume_slug = jnc_resource.slug
+                volume = await self.api.fetch_data("volumes", volume_slug)
 
-    # representative volume
-    repr_volume = volumes[0]
-    author = _extract_author(repr_volume.creators)
+            return IdentifierSpec(spec.VOLUME, volume.legacyId)
 
-    # first part
-    repr_part = parts[0]
-    volume_num, part_num = nums_for_parts[repr_part.legacyId]
-    # TODO in case multiple volumes, do not set volume num? or do
-    # something else
-    collection = epub.CollectionMetadata(series.legacyId, series.title, volume_num)
-    # FIXME placeholder
-    # FIXME resolive cover later
-    cover_image = images_by_part[repr_part.legacyId][0]
+        elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_PART:
+            with AsyncCollector() as c:
+                async with trio.open_nursery() as nursery:
+                    nursery.start_soon(
+                        c.collect(
+                            "part", self.api.fetch_data, "parts", jnc_resource.slug
+                        )
+                    )
+                    nursery.start_soon(
+                        c.collect(
+                            "volume",
+                            self.api.fetch_data,
+                            "parts",
+                            jnc_resource.slug,
+                            "volume",
+                        )
+                    )
 
-    contents = [contents[part.legacyId] for part in parts]
+                part = c.results["part"]
+                volume = c.results["volume"]
+                return IdentifierSpec(spec.PART, volume.legacyId, part.legacyId)
 
-    if len(parts) == 1:
-        # single part
-        part = parts[0]
-        volume_num, part_num = nums_for_parts[part.legacyId]
+    async def fetch_for_specs(self, jnc_resource, part_spec):
+        with AsyncCollector() as c:
+            async with trio.open_nursery() as nursery:
+                if jnc_resource.resource_type == jncweb.RESOURCE_TYPE_SERIES:
+                    series_slug = jnc_resource.slug
+                    nursery.start_soon(
+                        c.collect("series", self.api.fetch_data, "series", series_slug)
+                    )
+                elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_VOLUME:
+                    if jnc_resource.is_new_website:
+                        series_slug, _ = jnc_resource.slug
+                        nursery.start_soon(
+                            c.collect(
+                                "series", self.api.fetch_data, "series", series_slug
+                            )
+                        )
+                    else:
+                        volume_slug = jnc_resource.slug
+                        series_raw_data = await self.api.fetch_data(
+                            "volumes", volume_slug, "serie"
+                        )
+                        series_slug = series_raw_data.slug
+                elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_PART:
+                    part_slug = jnc_resource.slug
+                    series_raw_data = await self.api.fetch_data(
+                        "parts", part_slug, "serie"
+                    )
+                    series_slug = series_raw_data.slug
 
-        identifier_base = part.slug
-        title = f"{part.title}"
-        # single part => single volume: part numbers relative to
-        # that volume
-        toc = [f"Part {part_num}"]
-    else:
-        volume_index = set()
-        volumes = []
+                nursery.start_soon(
+                    c.collect(
+                        "series_deep",
+                        _deep_fetch_volumes_for_series,
+                        self.api,
+                        series_slug,
+                        part_spec,
+                    )
+                )
+
+                # TODO cover deep
+
+            if "series" in c.results:
+                # some branches fetch the raw data as async
+                series_raw_data = c.results["series"]
+
+            volumes = c.results["series_deep"]
+            series = Series(series_raw_data, volumes)
+            series.raw_data = series_raw_data
+            self.series_content[series_slug] = series
+
+            return series
+
+    def process_downloaded(
+        self, series_slug, options: epub.EpubGenerationOptions
+    ) -> epub.BookDetails:
+
+        series = self.series_content[series_slug]
+
+        # TODO handle split by volume here
+        volumes = _dl_volumes(series)
+        parts = _dl_parts(series)
+
+        # prepare content
         for part in parts:
-            volume_num, part_num = nums_for_parts[part.legacyId]
-            if volume_num in volume_index:
-                continue
-            volume_index.add(volume_num)
-            volume = volumes_index[volume_num]
-            volumes.append(volume)
+            content_for_part = part.content
+            if not options.is_not_replace_chars:
+                content_for_part = _replace_chars(content_for_part)
 
-        if len(volumes) > 1:
-            volume_nums = sorted(list(volume_index))
-            volume_nums = [str(vn) for vn in volume_nums]
-            volume_nums = ", ".join(volume_nums[:-1]) + " & " + volume_nums[-1]
-            title_base = f"{series.title}: Volumes {volume_nums}"
+            # some parts do not have an image
+            if part.images:
+                imgs = part.images
+                content_for_part = _replace_image_urls(content_for_part, imgs)
 
-            volume_num0, part_num0 = nums_for_parts[parts[0].legacyId]
-            volume_num1, part_num1 = nums_for_parts[parts[-1].legacyId]
+            part.pub_content = content_for_part
 
-            part_nums = f"Parts {volume_num0}.{part_num0} to {volume_num1}.{part_num1}"
+        # TODO suffix final complete : not in api but in web page for series
+        # data for React contains what is needed in JSON
 
-            toc = [part.title for part in parts]
-            title = f"{title_base} [{part_nums}]"
+        # representative volume
+        repr_volume = volumes[0]
+        author = _extract_author(repr_volume.raw_data.creators)
+
+        # TODO external func
+        # first part
+        repr_part = parts[0]
+        volume_num = repr_part.volume.num
+        part_num = repr_part.num_in_volume
+
+        # TODO in case multiple volumes, do not set volume num? or do
+        # something else
+        collection = epub.CollectionMetadata(
+            series.raw_data.legacyId, series.raw_data.title, volume_num
+        )
+        # FIXME placeholder
+        # FIXME resolive cover later
+        cover_image = repr_part.images[0]
+
+        contents = [part.pub_content for part in parts]
+
+        if len(parts) == 1:
+            # single part
+            part = parts[0]
+            volume_num = part.volume.num
+            part_num = part.num_in_volume
+
+            title = f"{part.raw_data.title}"
+            # single part => single volume: part numbers relative to
+            # that volume
+            toc = [f"Part {part_num}"]
         else:
-            volume = volumes[0]
-            title_base = volume.title
+            volume_index = set([v.num for v in volumes])
+            if len(volume_index) > 1:
+                volume_nums = sorted(list(volume_index))
+                volume_nums = [str(vn) for vn in volume_nums]
+                volume_nums = ", ".join(volume_nums[:-1]) + " & " + volume_nums[-1]
+                title_base = f"{series.raw_data.title}: Volumes {volume_nums}"
 
-            toc = [f"Part {nums_for_parts[part.legacyId][1]}" for part in parts]
+                volume_num0 = parts[0].volume.num
+                part_num0 = parts[0].num_in_volume
+                volume_num1 = parts[-1].volume.num
+                part_num1 = parts[-1].num_in_volume
 
-            _, part_num0 = nums_for_parts[parts[0].legacyId]
-            _, part_num1 = nums_for_parts[parts[-1].legacyId]
+                part_nums = (
+                    f"Parts {volume_num0}.{part_num0} to {volume_num1}.{part_num1}"
+                )
 
-            title = f"{title_base} [Parts {part_num0} to {part_num1}]"
+                toc = [part.raw_data.title for part in parts]
+                title = f"{title_base} [{part_nums}]"
+            else:
+                volume = volumes[0]
+                title_base = volume.raw_data.title
 
-        identifier_base = series.slug
+                toc = [f"Part {part.num_in_volume}" for part in parts]
 
-    identifier = identifier_base + str(int(time.time()))
+                part_num0 = parts[0].num_in_volume
+                part_num1 = parts[-1].num_in_volume
 
-    book_details = epub.BookDetails(
-        identifier, title, author, collection, cover_image, toc, contents, images
-    )
+                title = f"{title_base} [Parts {part_num0} to {part_num1}]"
 
-    return book_details
+        identifier = series.raw_data.slug + str(int(time.time()))
+        images = _dl_images(parts)
+
+        book_details = epub.BookDetails(
+            identifier, title, author, collection, cover_image, toc, contents, images
+        )
+
+        return book_details
+
+    async def extract_images(self, series_slug, epub_generation_options):
+        # FIXME will not work for when cover gets downloaded
+
+        series = self.series_content[series_slug]
+
+        async with trio.open_nursery() as nursery:
+            for part in _dl_parts(series):
+                images = part.images
+                _compute_order_of_images(part.content, images)
+
+                for image in images:
+                    # change filename to something more readable since visible to
+                    # user
+                    _, ext = os.path.splitext(image.local_filename)
+                    img_filename = (
+                        to_safe_filename(part.raw_data.title)
+                        # extension at the end
+                        + f"_Image_{image.order_in_part}{ext}"
+                    )
+                    img_filepath = os.path.join(
+                        epub_generation_options.output_dirpath, img_filename
+                    )
+                    nursery.start_soon(_write_bytes, img_filepath, image.content)
+
+    async def extract_content(self, series_slug, epub_generation_options):
+        series = self.series_content[series_slug]
+        parts = _dl_parts(series)
+        async with trio.open_nursery() as nursery:
+            for part in parts:
+                content = part.content
+                content_filename = to_safe_filename(part.raw_data.title) + ".html"
+                content_filepath = os.path.join(
+                    epub_generation_options.output_dirpath, content_filename
+                )
+                nursery.start_soon(_write_str, content_filepath, content)
+
+
+class AsyncCollector:
+    def __init__(self):
+        self.results = {}
+
+    def collect(self, name, afunc, *args):
+        async def wrapper():
+            res = await afunc(*args)
+            self.results[name] = res
+
+        return wrapper
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exception_type, exception_value, exception_traceback):
+        return False
 
 
 def _extract_author(creators, default="Unknown Author"):
@@ -242,43 +328,178 @@ def _extract_author(creators, default="Unknown Author"):
     return default
 
 
-def _index_volumes_in_series_by_num(volumes_in_series):
-    volumes_index = {}
-    for index_volume, volume in enumerate(volumes_in_series):
-        volumes_index[index_volume + 1] = volume
-
-    return volumes_index
-
-
-def _compute_nums_for_parts(volumes_in_series, parts_in_volumes):
-    parts_index = {}
-    for index_volume, volume in enumerate(volumes_in_series):
-        for volume_id, volume_parts in parts_in_volumes.items():
-            if volume.legacyId == volume_id:
-                for index_part, part in enumerate(volume_parts):
-                    vol_part_key = (index_volume + 1, index_part + 1)
-                    parts_index[part.legacyId] = vol_part_key
-
-    return parts_index
+def _replace_chars(content):
+    # both the chars to replace and replacement are hardcoded
+    # U+2671 => East Syriac Cross
+    # U+25C6 => Black Diamond
+    # U+1F3F6 => Black Rosette
+    # U+25C7 => White Diamond
+    # U+2605 => Black star
+    chars_to_replace = ["\u2671", "\u25C6", "\U0001F3F6", "\u25C7", "\u2605"]
+    replacement_char = "**"
+    regex = "|".join(chars_to_replace)
+    content = re.sub(regex, replacement_char, content)
+    return content
 
 
-# TODO way to indicate failure of some kind
-# TODO timeout for the API requests
+def _replace_image_urls(content, images: List[Image]):
+    for image in images:
+        # the filename relative to the epub content root
+        # file will be added to the Epub archive
+        # ext is almost always .jpg but sometimes it is .jpeg
+        # splitext  works fine with a url
+        root, ext = os.path.splitext(image.url)
+        new_local_filename = to_safe_filename(root) + ext
+        image.local_filename = new_local_filename
+        content = content.replace(image.url, new_local_filename)
+
+    return content
 
 
-async def _fetch_toc_for_part(api: JNCLabsAPI, part_id, result):
-    content = await api.fetch_xhtml(part_id)
-    toc = Addict(json.loads(content))
-    result.add(Data(DTYPE_PART_TOC, part_id, toc))
+def _compute_order_of_images(content, images: List[Image]):
+
+    # FIXME compute the position during the downloads (analysis of images to dl)
+    # compute also position of image (first will have special role)
+    # for cover
+    images_with_pos = [(image, content.find(image.url)) for image in images]
+    images_with_pos = sorted(images_with_pos, key=lambda x: x[1])
+
+    image_order = 1
+    for image, _ in images_with_pos:
+        image.order_in_part = image_order
+        image_order += 1
 
 
-async def _download_image(api: JNCLabsAPI, part_id, img_url, result):
-    img_bytes = await api.fetch_image_from_cdn(img_url)
-    result.add(Data(DTYPE_PART_IMAGE, part_id, epub.Image(img_url, img_bytes)))
+def _dl_parts(series):
+    parts = [p for v in _dl_volumes(series) for p in v.parts if p.is_dl]
+    return parts
 
 
-def _overwrite(array1, array2):
-    array1.splice(0, len(array1), array2)
+def _dl_volumes(series):
+    volumes = [v for v in series.volumes if v.is_dl]
+    return volumes
+
+
+def _dl_images(parts):
+    images = [i for part in parts for i in part.images]
+    return images
+
+
+async def _deep_fetch_volumes_for_series(api: JNCLabsAPI, series_id, part_spec):
+    volumes_data = await _fetch_volumes_for_series(api, series_id)
+    volumes = []
+
+    with AsyncCollector() as c:
+        async with trio.open_nursery() as nursery:
+            for i, volume_data in enumerate(volumes_data):
+                volume_id = volume_data.legacyId
+                volume_num = i + 1
+
+                volume = Volume(volume_data, volume_id, volume_num)
+                volumes.append(volume)
+
+                if not part_spec.has_volume(volume_num, volume_id):
+                    # volume parts will be empty for that one
+                    continue
+                volume.is_dl = True
+
+                nursery.start_soon(
+                    c.collect(
+                        volume_id,
+                        _deep_fetch_parts_for_volume,
+                        api,
+                        volume,
+                        part_spec,
+                    )
+                )
+
+        for volume in volumes:
+            if not volume.is_dl:
+                continue
+            volume.parts = c.results[volume.volume_id]
+
+    return volumes
+
+
+async def _fetch_volumes_for_series(api: JNCLabsAPI, series_id):
+    volumes = [
+        volume
+        async for volume in api.paginate(
+            api.fetch_data,
+            "series",
+            series_id,
+            "volumes",
+        )
+    ]
+    return volumes
+
+
+async def _deep_fetch_parts_for_volume(api: JNCLabsAPI, volume, part_spec):
+    parts_data = await _fetch_parts_for_volume(api, volume)
+    parts = []
+    with AsyncCollector() as c:
+        async with trio.open_nursery() as nursery:
+            for i, part_data in enumerate(parts_data):
+                part_id = part_data.legacyId
+                part_num = i + 1
+                part = Part(part_data, volume, part_id, part_num)
+                parts.append(part)
+
+                if not part_spec.has_part(volume.num, part_num, part_id):
+                    continue
+                part.is_dl = True
+
+                # TODO handle unavailable content (not preview + not catchup)
+
+                nursery.start_soon(
+                    c.collect(part_id, _deep_fetch_content_for_part, api, part)
+                )
+
+        for part in parts:
+            if not part.is_dl:
+                continue
+            content, images = c.results[part.part_id]
+            part.content = content
+            part.images = images
+
+    return parts
+
+
+async def _fetch_parts_for_volume(api: JNCLabsAPI, volume):
+    parts = [
+        part
+        async for part in api.paginate(
+            api.fetch_data,
+            "volumes",
+            volume.volume_id,
+            "parts",
+        )
+    ]
+    return parts
+
+
+async def _deep_fetch_content_for_part(api: JNCLabsAPI, part):
+    # TODO handle errors
+    content = await api.fetch_content(part.part_id, "data.xhtml")
+    img_urls = _img_urls(content)
+    if len(img_urls) > 0:
+        # TODO handle image dl failures
+        with AsyncCollector() as c:
+            async with trio.open_nursery() as nursery:
+                for img_url in img_urls:
+                    nursery.start_soon(
+                        c.collect(img_url, _fetch_image, api, part, img_url)
+                    )
+
+            return content, list(c.results.values())
+
+    return content, []
+
+
+async def _fetch_image(api: JNCLabsAPI, part, img_url):
+    img_bytes = await api.fetch_url(img_url)
+    image = Image(img_url, part, img_bytes)
+    return image
 
 
 class ImgUrlParser(HTMLParser):
@@ -302,217 +523,11 @@ def _img_urls(content):
     return parser.img_urls
 
 
-def _replace_chars(content):
-    # both the chars to replace and replacement are hardcoded
-    # U+2671 => East Syriac Cross
-    # U+25C6 => Black Diamond
-    # U+1F3F6 => Black Rosette
-    # U+25C7 => White Diamond
-    # U+2605 => Black star
-    chars_to_replace = ["\u2671", "\u25C6", "\U0001F3F6", "\u25C7", "\u2605"]
-    replacement_char = "**"
-    regex = "|".join(chars_to_replace)
-    content = re.sub(regex, replacement_char, content)
-    return content
+async def _write_bytes(filepath, content):
+    async with await trio.open_file(filepath, "wb") as img_f:
+        await img_f.write(content)
 
 
-def _replace_image_urls(content, images):
-    for image in images:
-        # the filename relative to the epub content root
-        # file will be added to the Epub archive
-        # ext is almost always .jpg but sometimes it is .jpeg
-        # splitext  works fine with a url
-        root, ext = os.path.splitext(image.url)
-        new_local_filename = to_safe_filename(root) + ext
-        image.local_filename = new_local_filename
-        content = content.replace(image.url, new_local_filename)
-
-    return content
-
-
-async def fetch_for_specs(api, jnc_resource, part_spec, result):
-    async with trio.open_nursery() as nursery:
-        if jnc_resource.resource_type == jncweb.RESOURCE_TYPE_SERIES:
-            series_slug = jnc_resource.slug
-            nursery.start_soon(partial(_fetch_series, api, series_slug, result))
-        elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_VOLUME:
-            if jnc_resource.is_new_website:
-                series_slug, _ = jnc_resource.slug
-                nursery.start_soon(partial(_fetch_series, api, series_slug, result))
-            else:
-                volume_slug = jnc_resource.slug
-                series = await _fetch_series_for_volume(api, volume_slug, result)
-                series_slug = series.slug
-        elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_PART:
-            part_slug = jnc_resource.slug
-            # slightly inefficient
-            series = await _fetch_series_for_part(api, part_slug, result)
-            series_slug = series.slug
-
-        nursery.start_soon(
-            partial(
-                _deep_fetch_volumes_for_series,
-                api,
-                nursery,
-                series_slug,
-                part_spec,
-                result,
-            )
-        )
-
-
-async def to_part_spec(api, jnc_resource, result: Result):
-    if jnc_resource.resource_type == jncweb.RESOURCE_TYPE_SERIES:
-        return IdentifierSpec(spec.SERIES)
-
-    elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_VOLUME:
-        if jnc_resource.is_new_website:
-            # for volume on new website => where is a tuple (series_slug, volume num)
-            series_slug, volume_number = jnc_resource.slug
-
-            volumes = await _fetch_volumes_for_series(api, series_slug, result)
-
-            volume_index = volume_number - 1
-            if volume_index not in range(len(volumes)):
-                raise jncweb.BadWebURLError(
-                    f"Incorrect volume number in URL: {jnc_resource.url}"
-                )
-
-            volume = volumes[volume_index]
-        else:
-            volume_slug = jnc_resource.slug
-            volume = await _fetch_volume(api, volume_slug)
-
-        return IdentifierSpec(spec.VOLUME, volume.legacyId)
-
-    elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_PART:
-        local_result = Result()
-        async with trio.open_nursery() as nursery:
-            nursery.start_soon(
-                partial(_fetch_part, api, jnc_resource.slug, local_result)
-            )
-            nursery.start_soon(
-                partial(_fetch_volume_for_part, api, jnc_resource.slug, local_result)
-            )
-        part = local_result.get_by_dtype(DTYPE_PART)[0].data
-        volume = local_result.get_by_dtype(DTYPE_VOLUME)[0].data
-
-        result.merge(local_result)
-
-        return IdentifierSpec(spec.PART, volume.legacyId, part.legacyId)
-
-
-async def _fetch_series(api, series_id, result):
-    series = await api.fetch_data("series", series_id)
-    result.add(Data(DTYPE_SERIES, series.legacyId, series))
-    return series
-
-
-async def _deep_fetch_volumes_for_series(
-    api: JNCLabsAPI, nursery, series_id, part_spec, result
-):
-    volumes = await _fetch_volumes_for_series(api, series_id, result)
-
-    for i, volume_data in enumerate(volumes):
-        volume_id = volume_data.legacyId
-        volume_num = i + 1
-        if not part_spec.has_volume(volume_num, volume_id):
-            continue
-
-        volume_id = volume_data.legacyId
-        result.add(Data(DTYPE_VOLUME, volume_id, volume_data))
-
-        nursery.start_soon(
-            partial(
-                _deep_fetch_parts_for_volume,
-                api,
-                nursery,
-                volume_id,
-                volume_num,
-                part_spec,
-                result,
-            )
-        )
-
-
-async def _fetch_volumes_for_series(api: JNCLabsAPI, series_id, result):
-    volumes = [
-        volume
-        async for volume in api.paginate(
-            partial(api.fetch_data, "series", series_id, "volumes")
-        )
-    ]
-    result.add(Data(DTYPE_SERIES_VOLUMES, series_id, volumes))
-    return volumes
-
-
-async def _fetch_volume(api: JNCLabsAPI, volume_id, result):
-    volume = await api.fetch_data("volumes", volume_id)
-    result.add(Data(DTYPE_VOLUME, volume.legacyId, volume))
-    return volume
-
-
-async def _deep_fetch_parts_for_volume(
-    api: JNCLabsAPI, nursery, volume_id, volume_num, part_spec, result
-):
-    parts = await _fetch_parts_for_volume(api, volume_id, result)
-    for i, part_data in enumerate(parts):
-        part_id = part_data.legacyId
-        part_num = i + 1
-        if not part_spec.has_part(volume_num, part_num, part_id):
-            continue
-
-        part_id = part_data.legacyId
-        result.add(Data(DTYPE_PART, part_id, part_data))
-
-        nursery.start_soon(
-            partial(_deep_fetch_content_for_part, api, nursery, part_id, result)
-        )
-
-
-async def _fetch_series_for_volume(api: JNCLabsAPI, volume_id, result):
-    series = await api.fetch_data("volumes", volume_id, "serie")
-    result.add(Data(DTYPE_SERIES, series.legacyId, series))
-    return series
-
-
-async def _fetch_parts_for_volume(api: JNCLabsAPI, volume_id, result: Result):
-    parts = [
-        part
-        async for part in api.paginate(
-            partial(api.fetch_data, "volumes", volume_id, "parts")
-        )
-    ]
-    result.add(Data(DTYPE_VOLUME_PARTS, volume_id, parts))
-    return parts
-
-
-async def _fetch_part(api: JNCLabsAPI, part_id, result):
-    part = await api.fetch_data("parts", part_id)
-    result.add(Data(DTYPE_PART, part.legacyId, part))
-    return part
-
-
-async def _deep_fetch_content_for_part(api: JNCLabsAPI, nursery, part_id, result):
-    # TODO handle unavailable content (not preview + not catchup)
-    # TODO handle errors
-    content = await api.fetch_content(part_id, "data.xhtml")
-
-    result.add(Data(DTYPE_PART_XHTML, part_id, content))
-    img_urls = _img_urls(content)
-    if len(img_urls) > 0:
-        # TODO handle failures
-        for img_url in img_urls:
-            nursery.start_soon(partial(_download_image, api, part_id, img_url, result))
-
-
-async def _fetch_series_for_part(api: JNCLabsAPI, part_id, result):
-    series = await api.fetch_data("parts", part_id, "serie")
-    result.add(Data(DTYPE_SERIES, series.legacyId, series))
-    return series
-
-
-async def _fetch_volume_for_part(api: JNCLabsAPI, part_id, result):
-    volume = await api.fetch_data("parts", part_id, "volume")
-    result.add(Data(DTYPE_VOLUME, volume.legacyId, volume))
-    return volume
+async def _write_str(filepath, content):
+    async with await trio.open_file(filepath, "w", encoding="utf-8") as img_f:
+        await img_f.write(content)

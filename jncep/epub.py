@@ -4,6 +4,8 @@ import logging
 import attr
 from ebooklib import epub
 
+from .model import Image
+
 logger = logging.getLogger(__package__)
 
 
@@ -17,15 +19,6 @@ EpubGenerationOptions = namedtuple(
         "is_not_replace_chars",
     ],
 )
-
-
-@attr.s
-class Image:
-    url = attr.ib()
-    content = attr.ib()
-    local_filename = attr.ib(None)
-    # TODO for the cover
-    dimensions = attr.ib(None)
 
 
 @attr.s
@@ -100,7 +93,7 @@ p {text-indent: 1.3em;}
     cover_page.add_item(css)
     book.add_item(cover_page)
 
-    image: "Image"
+    image: Image
     for image in book_details.images:
         img = epub.EpubImage()
         img.file_name = image.local_filename
