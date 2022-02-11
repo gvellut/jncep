@@ -5,15 +5,31 @@ from pathlib import Path
 
 from addict import Dict as Addict
 from atomicwrites import atomic_write
+import attr
 import dateutil.parser
 
-from . import jncapi_legacy, jncweb, spec
+from . import jncweb, spec
+from .core import dl_parts_volume, dl_volumes, FetchOptions
+from .jncweb import resource_from_url
 from .utils import green
 
 logger = logging.getLogger(__package__)
 
 
+# TODO change => in App folder for windows + config file there too
 CONFIG_DIRPATH = Path.home() / ".jncep"
+
+
+@attr.s
+class LastPartSpec:
+    def has_volume(self, ref_volume) -> bool:
+        index_volume = ref_volume.volume_num
+        return index_volume == ref_volume.num_volumes
+
+    def has_part(self, ref_part) -> bool:
+        # assumes has_volume already checked
+        index_part = ref_part.part_num
+        return index_part == ref_part.num_parts_in_volume
 
 
 def read_tracked_series():
@@ -31,7 +47,7 @@ def read_tracked_series():
 def canonical_series(jnc_url, email, password):
     token = None
     try:
-        jnc_resource = jncweb.resource_from_url(jnc_url)
+        jnc_resource = resource_from_url(jnc_url)
 
         logger.info(f"Login with email '{email}'...")
         token = jncapi_legacy.login(email, password)
@@ -97,40 +113,52 @@ def tracking_series_metadata(token, jnc_resource):
     return series, series_url
 
 
-def process_series_for_tracking(tracked_series, series, series_url):
+async def process_series_for_tracking(session, tracked_series, series_url):
+    jnc_resource = resource_from_url(series_url)
+    part_spec = LastPartSpec()
+    fetch_options = FetchOptions(is_download_content=False, is_download_cover=False)
+    series = await session.fetch_for_specs(jnc_resource, part_spec, fetch_options)
+
+    volumes = dl_volumes(series)
+    last_part = None
+    if volumes:
+        piv = dl_parts_volume(volumes[-1])
+        if piv:
+            last_part = piv[-1]
+
     # record current last part + name
-    if len(series.parts) == 0:
+    if not last_part:
         # no parts yet
         pn = 0
         # 0000-... not a valid date so 1111-...
         pdate = "1111-11-11T11:11:11.111Z"
-    else:
-        pn = spec.to_relative_spec_from_part(series.parts[-1])
-        pdate = series.parts[-1].raw_part.launchDate
 
-    tracked_series[series_url] = {
-        "part_date": pdate,
-        "part": pn,  # now just for show
-        "name": series.raw_series.title,
-    }
-
-    if len(series.parts) == 0:
         logger.info(
             green(
-                f"The series '{series.raw_series.title}' is now tracked, starting "
+                f"The series '{series.raw_data.title}' is now tracked, starting "
                 f"from the beginning"
             )
         )
     else:
-        relative_part = spec.to_relative_spec_from_part(series.parts[-1])
-        part_date = dateutil.parser.parse(series.parts[-1].raw_part.launchDate)
+        last_part = dl_parts_volume(volumes[-1])[-1]
+        pn = spec.to_relative_spec_from_part(last_part)
+        pdate = last_part.raw_data.launch
+
+        relative_part = spec.to_relative_spec_from_part(last_part)
+        part_date = dateutil.parser.parse(last_part.raw_data.launch)
         part_date_formatted = part_date.strftime("%b %d, %Y")
         logger.info(
             green(
-                f"The series '{series.raw_series.title}' is now tracked, starting "
+                f"The series '{series.raw_data.title}' is now tracked, starting "
                 f"after part {relative_part} [{part_date_formatted}]"
             )
         )
+
+    tracked_series[series_url] = {
+        "part_date": pdate,
+        "part": pn,  # now just for show
+        "name": series.raw_data.title,
+    }
 
 
 def sync_series_forward(token, follows, tracked_series, is_delete):

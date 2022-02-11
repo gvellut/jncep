@@ -38,10 +38,10 @@ logger = logging.getLogger(__name__)
 @options.raw_content_option
 @options.no_replace_chars_option
 def generate_epub(*args, **kwargs):
-    trio.run(partial(_main, *args, **kwargs))
+    trio.run(partial(_generate_epub, *args, **kwargs))
 
 
-async def _main(
+async def _generate_epub(
     jnc_url,
     email,
     password,
@@ -72,8 +72,11 @@ async def _main(
         else:
             part_spec_analyzed = await session.to_part_spec(jnc_resource)
 
+        fetch_otions = core.FetchOptions(
+            is_by_volume=epub_generation_options.is_by_volume, is_download_content=True
+        )
         series = await session.fetch_for_specs(
-            jnc_resource, part_spec_analyzed, epub_generation_options
+            jnc_resource, part_spec_analyzed, fetch_otions
         )
 
         # array (to handle split by volume)
@@ -90,7 +93,8 @@ async def _main(
             output_filepath = os.path.join(
                 epub_generation_options.output_dirpath, output_filename
             )
-            # TODO write to memory then async fs write here ? (use epublib which is sync)
+            # TODO write to memory then async fs write here ? (uses epublib
+            # which is sync anyway)
             epub.create_epub(output_filepath, book_details_i)
 
             logger.info(green(f"Success! EPUB generated in '{output_filepath}'!"))

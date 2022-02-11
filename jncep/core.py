@@ -1,4 +1,5 @@
 from collections import defaultdict
+from functools import partial
 from html.parser import HTMLParser
 import logging
 import os
@@ -22,23 +23,31 @@ class NoRequestedPartAvailableError(Exception):
 
 
 @attr.s
+class FetchOptions:
+    is_by_volume = attr.ib(False)
+    is_download_content = attr.ib(True)
+    is_download_images = attr.ib(True)
+    is_download_cover = attr.ib(True)
+
+
+@attr.s
 class IdentifierSpec:
     type_ = attr.ib()
     volume_id = attr.ib(None)
     part_id = attr.ib(None)
 
-    def has_volume(self, _volume_num, volume_id) -> bool:
+    def has_volume(self, ref_volume) -> bool:
         if self.type_ == spec.SERIES:
             return True
 
-        return self.volume_id == volume_id
+        return self.volume_id == ref_volume.volume_id
 
-    def has_part(self, _volume_num, _part_num, part_id) -> bool:
+    def has_part(self, ref_part) -> bool:
         # assumes has_volume already checked with the volume_id
         if self.type_ in (spec.SERIES, spec.VOLUME):
             return True
 
-        return self.part_id == part_id
+        return self.part_id == ref_part.part_id
 
 
 class JNCEPSession:
@@ -117,35 +126,33 @@ class JNCEPSession:
                 volume = c.results["volume"]
                 return IdentifierSpec(spec.PART, volume.legacyId, part.legacyId)
 
-    async def fetch_for_specs(self, jnc_resource, part_spec, epub_generation_options):
-        # epub_generation_options for is_by_volume => for the covers to fetch
+    def lazy_resolve_series(self, jnc_resource):
+        if jnc_resource.resource_type == jncweb.RESOURCE_TYPE_SERIES:
+            series_slug = jnc_resource.slug
+            return series_slug, partial(self.api.fetch_data, "series", series_slug)
+        elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_VOLUME:
+            if jnc_resource.is_new_website:
+                series_slug, _ = jnc_resource.slug
+                return series_slug, partial(self.api.fetch_data, "series", series_slug)
+            else:
+                volume_slug = jnc_resource.slug
+                return None, partial(
+                    self.api.fetch_data, "volumes", volume_slug, "serie"
+                )
+        elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_PART:
+            part_slug = jnc_resource.slug
+            return None, partial(self.api.fetch_data, "parts", part_slug, "serie")
+
+    async def fetch_for_specs(self, jnc_resource, part_spec, fetch_options):
         with AsyncCollector() as c:
             async with trio.open_nursery() as nursery:
-                if jnc_resource.resource_type == jncweb.RESOURCE_TYPE_SERIES:
-                    series_slug = jnc_resource.slug
-                    nursery.start_soon(
-                        c.collect("series", self.api.fetch_data, "series", series_slug)
-                    )
-                elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_VOLUME:
-                    if jnc_resource.is_new_website:
-                        series_slug, _ = jnc_resource.slug
-                        nursery.start_soon(
-                            c.collect(
-                                "series", self.api.fetch_data, "series", series_slug
-                            )
-                        )
-                    else:
-                        volume_slug = jnc_resource.slug
-                        series_raw_data = await self.api.fetch_data(
-                            "volumes", volume_slug, "serie"
-                        )
-                        series_slug = series_raw_data.slug
-                elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_PART:
-                    part_slug = jnc_resource.slug
-                    series_raw_data = await self.api.fetch_data(
-                        "parts", part_slug, "serie"
-                    )
+                series_slug, func_resolve = self.lazy_resolve_series(jnc_resource)
+                if not series_slug:
+                    series_raw_data = await func_resolve()
                     series_slug = series_raw_data.slug
+                else:
+                    # don't need the raw data right away
+                    nursery.start_soon(c.collect("series", func_resolve))
 
                 nursery.start_soon(
                     c.collect(
@@ -154,20 +161,21 @@ class JNCEPSession:
                         self.api,
                         series_slug,
                         part_spec,
+                        fetch_options,
                     )
                 )
 
-                is_only_first_volume = not epub_generation_options.is_by_volume
-                nursery.start_soon(
-                    c.collect_catch(
-                        "covers",
-                        _fetch_covers,
-                        self.api,
-                        series_slug,
-                        part_spec,
-                        is_only_first_volume,
+                if fetch_options.is_download_cover:
+                    nursery.start_soon(
+                        c.collect_catch(
+                            "covers",
+                            _fetch_covers,
+                            self.api,
+                            series_slug,
+                            part_spec,
+                            fetch_options,
+                        )
                     )
-                )
 
             if "series" in c.results:
                 # some branches fetch the raw data as async
@@ -175,10 +183,8 @@ class JNCEPSession:
 
             volumes = c.results["series_deep"]
             series = Series(series_raw_data, volumes)
-            series.raw_data = series_raw_data
 
             if "covers" in c.results:
-                # some branches fetch the raw data as async
                 error = c.errors.get("covers")
                 if error:
                     logger.warning(f"Issue fetching cover for {series_slug}!")
@@ -194,7 +200,7 @@ class JNCEPSession:
         self, series, options: epub.EpubGenerationOptions
     ) -> epub.BookDetails:
 
-        parts = _dl_parts(series)
+        parts = dl_parts(series)
 
         # prepare content
         for part in parts:
@@ -209,11 +215,11 @@ class JNCEPSession:
 
             part.epub_content = content_for_part
 
-        volumes = _dl_volumes(series)
+        volumes = dl_volumes(series)
         if options.is_by_volume:
             book_details = []
             for volume in volumes:
-                volume_parts = _dl_parts_volume(volume)
+                volume_parts = dl_parts_volume(volume)
                 volume_details = self._process_single_epub_content(
                     series, [volume], volume_parts
                 )
@@ -290,7 +296,7 @@ class JNCEPSession:
                 title = f"{title_base} [Parts {part_num0} to {part_num1}]"
 
         identifier = series.raw_data.slug + str(int(time.time()))
-        images = _dl_images(parts)
+        images = dl_images(parts)
 
         book_details = epub.BookDetails(
             identifier, title, author, collection, cover_image, toc, contents, images
@@ -300,7 +306,7 @@ class JNCEPSession:
 
     async def extract_images(self, series, epub_generation_options):
         async with trio.open_nursery() as nursery:
-            for part in _dl_parts(series):
+            for part in dl_parts(series):
                 images = part.images
                 _compute_order_of_images(part.content, images)
 
@@ -319,7 +325,7 @@ class JNCEPSession:
                     nursery.start_soon(_write_bytes, img_filepath, image.content)
 
     async def extract_content(self, series, epub_generation_options):
-        parts = _dl_parts(series)
+        parts = dl_parts(series)
         async with trio.open_nursery() as nursery:
             for part in parts:
                 content = part.content
@@ -404,58 +410,53 @@ def _compute_order_of_images(content, images: List[Image]):
         image_order += 1
 
 
-def _dl_parts(series):
-    parts = [p for v in _dl_volumes(series) for p in v.parts if p.is_dl]
+def dl_parts(series):
+    parts = [p for v in dl_volumes(series) for p in v.parts if p.is_dl]
     return parts
 
 
-def _dl_parts_volume(volume):
+def dl_parts_volume(volume):
     parts = [p for p in volume.parts if p.is_dl]
     return parts
 
 
-def _dl_volumes(series):
+def dl_volumes(series):
     volumes = [v for v in series.volumes if v.is_dl]
     return volumes
 
 
-def _dl_images(parts):
+def dl_images(parts):
     images = [i for part in parts for i in part.images]
     return images
 
 
-async def _deep_fetch_volumes_for_series(api: JNCLabsAPI, series_id, part_spec):
+async def _deep_fetch_volumes_for_series(
+    api: JNCLabsAPI, series_id, part_spec, fetch_options
+):
     volumes_data = await _fetch_volumes_for_series(api, series_id)
     volumes = []
 
-    with AsyncCollector() as c:
-        async with trio.open_nursery() as nursery:
-            for i, volume_data in enumerate(volumes_data):
-                volume_id = volume_data.legacyId
-                volume_num = i + 1
+    async with trio.open_nursery() as nursery:
+        for i, volume_data in enumerate(volumes_data):
+            volume_id = volume_data.legacyId
+            volume_num = i + 1
 
-                volume = Volume(volume_data, volume_id, volume_num)
-                volumes.append(volume)
+            volume = Volume(volume_data, volume_id, volume_num)
+            volumes.append(volume)
 
-                if not part_spec.has_volume(volume_num, volume_id):
-                    # volume parts will be empty for that one
-                    continue
-                volume.is_dl = True
-
-                nursery.start_soon(
-                    c.collect(
-                        volume_id,
-                        _deep_fetch_parts_for_volume,
-                        api,
-                        volume,
-                        part_spec,
-                    )
-                )
-
-        for volume in volumes:
-            if not volume.is_dl:
+            ref_volume = spec.RefVolume(volume_id, volume_num, len(volumes_data))
+            if not part_spec.has_volume(ref_volume):
+                # volume parts will be empty for that one
                 continue
-            volume.parts = c.results[volume.volume_id]
+            volume.is_dl = True
+
+            nursery.start_soon(
+                _deep_fetch_parts_for_volume,
+                api,
+                volume,
+                part_spec,
+                fetch_options,
+            )
 
     return volumes
 
@@ -473,35 +474,33 @@ async def _fetch_volumes_for_series(api: JNCLabsAPI, series_id):
     return volumes
 
 
-async def _deep_fetch_parts_for_volume(api: JNCLabsAPI, volume, part_spec):
+async def _deep_fetch_parts_for_volume(
+    api: JNCLabsAPI, volume, part_spec, fetch_options
+):
     parts_data = await _fetch_parts_for_volume(api, volume)
     parts = []
-    with AsyncCollector() as c:
-        async with trio.open_nursery() as nursery:
-            for i, part_data in enumerate(parts_data):
-                part_id = part_data.legacyId
-                part_num = i + 1
-                part = Part(part_data, volume, part_id, part_num)
-                parts.append(part)
 
-                if not part_spec.has_part(volume.num, part_num, part_id):
-                    continue
-                part.is_dl = True
+    async with trio.open_nursery() as nursery:
+        for i, part_data in enumerate(parts_data):
+            part_id = part_data.legacyId
+            part_num = i + 1
+            part = Part(part_data, volume, part_id, part_num)
+            parts.append(part)
 
-                # TODO handle unavailable content (not preview + not catchup)
-
-                nursery.start_soon(
-                    c.collect(part_id, _deep_fetch_content_for_part, api, part)
-                )
-
-        for part in parts:
-            if not part.is_dl:
+            ref_part = spec.RefPart(volume.num, part_num, part_id, len(parts_data))
+            if not part_spec.has_part(ref_part):
                 continue
-            content, images = c.results[part.part_id]
-            part.content = content
-            part.images = images
 
-    return parts
+            part.is_dl = True
+
+            if not fetch_options.is_download_content:
+                continue
+
+            # TODO handle unavailable content (not preview + not catchup)
+
+            nursery.start_soon(_deep_fetch_content_for_part, api, part, fetch_options)
+
+    volume.parts = parts
 
 
 async def _fetch_parts_for_volume(api: JNCLabsAPI, volume):
@@ -517,11 +516,11 @@ async def _fetch_parts_for_volume(api: JNCLabsAPI, volume):
     return parts
 
 
-async def _deep_fetch_content_for_part(api: JNCLabsAPI, part):
+async def _deep_fetch_content_for_part(api: JNCLabsAPI, part, fetch_options):
     # TODO handle errors
-    content = await api.fetch_content(part.part_id, "data.xhtml")
-    img_urls = _img_urls(content)
-    if len(img_urls) > 0:
+    part.content = await api.fetch_content(part.part_id, "data.xhtml")
+    img_urls = _img_urls(part.content)
+    if fetch_options.is_download_images and len(img_urls) > 0:
         # TODO handle image dl failures
         with AsyncCollector() as c:
             async with trio.open_nursery() as nursery:
@@ -530,9 +529,9 @@ async def _deep_fetch_content_for_part(api: JNCLabsAPI, part):
                         c.collect(img_url, _fetch_image, api, part, img_url)
                     )
 
-            return content, list(c.results.values())
-
-    return content, []
+            part.images = list(c.results.values())
+    else:
+        part.images = []
 
 
 async def _fetch_image(api: JNCLabsAPI, part, img_url):
@@ -562,7 +561,7 @@ def _img_urls(content):
     return parser.img_urls
 
 
-async def _fetch_covers(api: JNCLabsAPI, series_id, part_spec, is_only_first_volume):
+async def _fetch_covers(api: JNCLabsAPI, series_id, part_spec, fetch_options):
     # should be cached
     volumes_data = await _fetch_volumes_for_series(api, series_id)
 
@@ -574,7 +573,8 @@ async def _fetch_covers(api: JNCLabsAPI, series_id, part_spec, is_only_first_vol
                 volume_id = volume_data.legacyId
                 volume_num = i + 1
 
-                if not part_spec.has_volume(volume_num, volume_id):
+                ref_volume = spec.RefVolume(volume_id, volume_num, len(volumes_data))
+                if not part_spec.has_volume(ref_volume):
                     continue
 
                 cover_url = volume_data.cover.coverUrl
@@ -585,7 +585,7 @@ async def _fetch_covers(api: JNCLabsAPI, series_id, part_spec, is_only_first_vol
                 )
                 # also process large covers (foud in part content)
 
-                if is_only_first_volume:
+                if not fetch_options.is_by_volume:
                     # just the first found volume
                     break
 

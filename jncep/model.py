@@ -38,5 +38,3 @@ class Image:
     local_filename = attr.ib(None)
 
     order_in_part = attr.ib(None)
-    # TODO for the cover
-    dimensions = attr.ib(None)
