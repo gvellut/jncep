@@ -157,15 +157,15 @@ class JNCEPSession:
                     )
                 )
 
-                # FIXME collect_catch
+                is_only_first_volume = not epub_generation_options.is_by_volume
                 nursery.start_soon(
-                    c.collect(
+                    c.collect_catch(
                         "covers",
                         _fetch_covers,
                         self.api,
                         series_slug,
                         part_spec,
-                        epub_generation_options.is_by_volume,
+                        is_only_first_volume,
                     )
                 )
 
@@ -194,8 +194,6 @@ class JNCEPSession:
         self, series, options: epub.EpubGenerationOptions
     ) -> epub.BookDetails:
 
-        # TODO handle split by volume here
-        volumes = _dl_volumes(series)
         parts = _dl_parts(series)
 
         # prepare content
@@ -209,8 +207,23 @@ class JNCEPSession:
                 imgs = part.images
                 content_for_part = _replace_image_urls(content_for_part, imgs)
 
-            part.pub_content = content_for_part
+            part.epub_content = content_for_part
 
+        volumes = _dl_volumes(series)
+        if options.is_by_volume:
+            book_details = []
+            for volume in volumes:
+                volume_parts = _dl_parts_volume(volume)
+                volume_details = self._process_single_epub_content(
+                    series, [volume], volume_parts
+                )
+                book_details.append(volume_details)
+        else:
+            book_details = [self._process_single_epub_content(series, volumes, parts)]
+
+        return book_details
+
+    def _process_single_epub_content(self, series, volumes, parts):
         # TODO suffix final complete : not in api but in web page for series
         # data for React contains what is needed in JSON
 
@@ -230,10 +243,11 @@ class JNCEPSession:
             series.raw_data.legacyId, series.raw_data.title, volume_num
         )
 
-        # handle problem with cover
+        # cover should always be there : error if problem with downloading
+        # TODO handle problem with missing cover => use dummy jpeg
         cover_image = repr_volume.cover
 
-        contents = [part.pub_content for part in parts]
+        contents = [part.epub_content for part in parts]
 
         if len(parts) == 1:
             # single part
@@ -392,6 +406,11 @@ def _compute_order_of_images(content, images: List[Image]):
 
 def _dl_parts(series):
     parts = [p for v in _dl_volumes(series) for p in v.parts if p.is_dl]
+    return parts
+
+
+def _dl_parts_volume(volume):
+    parts = [p for p in volume.parts if p.is_dl]
     return parts
 
 
@@ -556,7 +575,6 @@ async def _fetch_covers(api: JNCLabsAPI, series_id, part_spec, is_only_first_vol
                 volume_num = i + 1
 
                 if not part_spec.has_volume(volume_num, volume_id):
-                    # volume parts will be empty for that one
                     continue
 
                 cover_url = volume_data.cover.coverUrl
@@ -565,8 +583,9 @@ async def _fetch_covers(api: JNCLabsAPI, series_id, part_spec, is_only_first_vol
                         ("volume", volume_num), _fetch_image, api, None, cover_url
                     )
                 )
+                # also process large covers (foud in part content)
 
-                if not is_only_first_volume:
+                if is_only_first_volume:
                     # just the first found volume
                     break
 

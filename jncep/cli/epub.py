@@ -63,10 +63,7 @@ async def _main(
     async with core.JNCEPSession(email, password) as session:
         jnc_resource = jncweb.resource_from_url(jnc_url)
 
-        # TODO download cover
         # TODO handle exceptions
-        # TODO extract images
-        # TODO extract content
         # TODO split by volume
 
         if part_spec:
@@ -79,7 +76,7 @@ async def _main(
             jnc_resource, part_spec_analyzed, epub_generation_options
         )
 
-        # TODO process split in volume
+        # array (to handle split by volume)
         book_details = session.process_downloaded(series, epub_generation_options)
 
         if is_extract_content:
@@ -88,11 +85,12 @@ async def _main(
         if is_extract_images:
             await session.extract_images(series, epub_generation_options)
 
-        output_filename = core.to_safe_filename(book_details.title) + ".epub"
-        output_filepath = os.path.join(
-            epub_generation_options.output_dirpath, output_filename
-        )
-        # TODO write to memory then async fs write here ? (use epublib which is sync)
-        epub.create_epub(output_filepath, book_details)
+        for book_details_i in book_details:
+            output_filename = core.to_safe_filename(book_details_i.title) + ".epub"
+            output_filepath = os.path.join(
+                epub_generation_options.output_dirpath, output_filename
+            )
+            # TODO write to memory then async fs write here ? (use epublib which is sync)
+            epub.create_epub(output_filepath, book_details_i)
 
-        logger.info(green(f"Success! EPUB generated in '{output_filepath}'!"))
+            logger.info(green(f"Success! EPUB generated in '{output_filepath}'!"))

@@ -27,7 +27,7 @@ class Part:
     images = attr.ib(None)
     is_dl = attr.ib(False)
 
-    pub_content = attr.ib(None)
+    epub_content = attr.ib(None)
 
 
 @attr.s

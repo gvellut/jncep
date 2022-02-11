@@ -88,6 +88,7 @@ p {text-indent: 1.3em;}
     )
     book.add_item(css)
 
+    # TODO cf why not True ? above
     cover_page = epub.EpubHtml(title="Cover", file_name="cover.xhtml", lang=lang)
     cover_page.content = '<img src="cover.jpg" alt="cover" />'
     cover_page.add_item(css)
