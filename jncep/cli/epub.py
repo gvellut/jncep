@@ -10,7 +10,7 @@ from .. import core, epub, jncweb, spec
 from ..utils import green
 from .common import CatchAllExceptionsCommand
 
-logger = logging.getLogger(__package__)
+logger = logging.getLogger(__name__)
 
 
 @click.command(
@@ -75,19 +75,18 @@ async def _main(
         else:
             part_spec_analyzed = await session.to_part_spec(jnc_resource)
 
-        await session.fetch_for_specs(jnc_resource, part_spec_analyzed)
-
-        # only one series in session
-        series_slug = session.series_slugs()[0]
+        series = await session.fetch_for_specs(
+            jnc_resource, part_spec_analyzed, epub_generation_options
+        )
 
         # TODO process split in volume
-        book_details = session.process_downloaded(series_slug, epub_generation_options)
+        book_details = session.process_downloaded(series, epub_generation_options)
 
         if is_extract_content:
-            await session.extract_content(series_slug, epub_generation_options)
+            await session.extract_content(series, epub_generation_options)
 
         if is_extract_images:
-            await session.extract_images(series_slug, epub_generation_options)
+            await session.extract_images(series, epub_generation_options)
 
         output_filename = core.to_safe_filename(book_details.title) + ".epub"
         output_filepath = os.path.join(

@@ -1,3 +1,4 @@
+from collections import defaultdict
 from html.parser import HTMLParser
 import logging
 import os
@@ -13,7 +14,7 @@ from .jnclabs import JNCLabsAPI
 from .model import Image, Part, Series, Volume
 from .utils import to_safe_filename
 
-logger = logging.getLogger(__package__)
+logger = logging.getLogger(__name__)
 
 
 class NoRequestedPartAvailableError(Exception):
@@ -45,8 +46,6 @@ class JNCEPSession:
         self.api = JNCLabsAPI()
         self.email = email
         self.password = password
-        self.series_content = {}
-        self.series_covers = {}
 
     async def __aenter__(self) -> "JNCEPSession":
         await self.login(self.email, self.password)
@@ -118,7 +117,8 @@ class JNCEPSession:
                 volume = c.results["volume"]
                 return IdentifierSpec(spec.PART, volume.legacyId, part.legacyId)
 
-    async def fetch_for_specs(self, jnc_resource, part_spec):
+    async def fetch_for_specs(self, jnc_resource, part_spec, epub_generation_options):
+        # epub_generation_options for is_by_volume => for the covers to fetch
         with AsyncCollector() as c:
             async with trio.open_nursery() as nursery:
                 if jnc_resource.resource_type == jncweb.RESOURCE_TYPE_SERIES:
@@ -157,7 +157,17 @@ class JNCEPSession:
                     )
                 )
 
-                # TODO cover deep
+                # FIXME collect_catch
+                nursery.start_soon(
+                    c.collect(
+                        "covers",
+                        _fetch_covers,
+                        self.api,
+                        series_slug,
+                        part_spec,
+                        epub_generation_options.is_by_volume,
+                    )
+                )
 
             if "series" in c.results:
                 # some branches fetch the raw data as async
@@ -166,15 +176,23 @@ class JNCEPSession:
             volumes = c.results["series_deep"]
             series = Series(series_raw_data, volumes)
             series.raw_data = series_raw_data
-            self.series_content[series_slug] = series
+
+            if "covers" in c.results:
+                # some branches fetch the raw data as async
+                error = c.errors.get("covers")
+                if error:
+                    logger.warning(f"Issue fetching cover for {series_slug}!")
+                else:
+                    covers_data = c.results["covers"]
+                    for volume in series.volumes:
+                        if volume.num in covers_data:
+                            volume.cover = covers_data[volume.num]
 
             return series
 
     def process_downloaded(
-        self, series_slug, options: epub.EpubGenerationOptions
+        self, series, options: epub.EpubGenerationOptions
     ) -> epub.BookDetails:
-
-        series = self.series_content[series_slug]
 
         # TODO handle split by volume here
         volumes = _dl_volumes(series)
@@ -211,9 +229,9 @@ class JNCEPSession:
         collection = epub.CollectionMetadata(
             series.raw_data.legacyId, series.raw_data.title, volume_num
         )
-        # FIXME placeholder
-        # FIXME resolive cover later
-        cover_image = repr_part.images[0]
+
+        # handle problem with cover
+        cover_image = repr_volume.cover
 
         contents = [part.pub_content for part in parts]
 
@@ -266,11 +284,7 @@ class JNCEPSession:
 
         return book_details
 
-    async def extract_images(self, series_slug, epub_generation_options):
-        # FIXME will not work for when cover gets downloaded
-
-        series = self.series_content[series_slug]
-
+    async def extract_images(self, series, epub_generation_options):
         async with trio.open_nursery() as nursery:
             for part in _dl_parts(series):
                 images = part.images
@@ -290,8 +304,7 @@ class JNCEPSession:
                     )
                     nursery.start_soon(_write_bytes, img_filepath, image.content)
 
-    async def extract_content(self, series_slug, epub_generation_options):
-        series = self.series_content[series_slug]
+    async def extract_content(self, series, epub_generation_options):
         parts = _dl_parts(series)
         async with trio.open_nursery() as nursery:
             for part in parts:
@@ -306,11 +319,22 @@ class JNCEPSession:
 class AsyncCollector:
     def __init__(self):
         self.results = {}
+        self.errors = {}
 
     def collect(self, name, afunc, *args):
         async def wrapper():
             res = await afunc(*args)
             self.results[name] = res
+
+        return wrapper
+
+    def collect_catch(self, name, afunc, *args):
+        async def wrapper():
+            try:
+                res = await afunc(*args)
+                self.results[name] = res
+            except Exception as ex:
+                self.errors[name] = ex
 
         return wrapper
 
@@ -357,10 +381,6 @@ def _replace_image_urls(content, images: List[Image]):
 
 
 def _compute_order_of_images(content, images: List[Image]):
-
-    # FIXME compute the position during the downloads (analysis of images to dl)
-    # compute also position of image (first will have special role)
-    # for cover
     images_with_pos = [(image, content.find(image.url)) for image in images]
     images_with_pos = sorted(images_with_pos, key=lambda x: x[1])
 
@@ -521,6 +541,40 @@ def _img_urls(content):
     parser = ImgUrlParser()
     parser.feed(content)
     return parser.img_urls
+
+
+async def _fetch_covers(api: JNCLabsAPI, series_id, part_spec, is_only_first_volume):
+    # should be cached
+    volumes_data = await _fetch_volumes_for_series(api, series_id)
+
+    covers = defaultdict(list)
+
+    with AsyncCollector() as c:
+        async with trio.open_nursery() as nursery:
+            for i, volume_data in enumerate(volumes_data):
+                volume_id = volume_data.legacyId
+                volume_num = i + 1
+
+                if not part_spec.has_volume(volume_num, volume_id):
+                    # volume parts will be empty for that one
+                    continue
+
+                cover_url = volume_data.cover.coverUrl
+                nursery.start_soon(
+                    c.collect(
+                        ("volume", volume_num), _fetch_image, api, None, cover_url
+                    )
+                )
+
+                if not is_only_first_volume:
+                    # just the first found volume
+                    break
+
+        for key, value in c.results.items():
+            _, volume_num = key
+            covers[volume_num] = value
+
+    return covers
 
 
 async def _write_bytes(filepath, content):

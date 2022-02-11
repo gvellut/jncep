@@ -5,7 +5,7 @@ import traceback
 
 import dateutil.parser
 
-from . import epub, jncapi, jncweb, spec
+from . import epub, jncapi_legacy, jncweb, spec
 from .utils import green
 
 logger = logging.getLogger(__package__)
@@ -24,24 +24,24 @@ def analyze_metadata(jnc_resource: jncweb.JNCResource):
         jncweb.RESOURCE_TYPE_PART,
         jncweb.RESOURCE_TYPE_VOLUME,
     ):
-        series = jncapi.Series(jnc_resource.raw_metadata.serie)
+        series = jncapi_legacy.Series(jnc_resource.raw_metadata.serie)
     else:
-        series = jncapi.Series(jnc_resource.raw_metadata)
+        series = jncapi_legacy.Series(jnc_resource.raw_metadata)
 
     volumes = []
     volume_index = {}
     for raw_volume in series.raw_series.volumes:
         volume_num = len(volumes) + 1
-        volume = jncapi.Volume(raw_volume, raw_volume.id, volume_num)
+        volume = jncapi_legacy.Volume(raw_volume, raw_volume.id, volume_num)
         volume_index[volume.volume_id] = volume
         volumes.append(volume)
 
     is_warned = False
     for raw_part in series.raw_series.parts:
         volume_id = raw_part.volumeId
-        volume: jncapi.Volume = volume_index[volume_id]
+        volume: jncapi_legacy.Volume = volume_index[volume_id]
         num_in_volume = len(volume.parts) + 1
-        part = jncapi.Part(raw_part, volume, num_in_volume)
+        part = jncapi_legacy.Part(raw_part, volume, num_in_volume)
         volume.parts.append(part)
 
     parts = []
@@ -84,7 +84,7 @@ def update_url_series(
     jnc_resource = jncweb.resource_from_url(jnc_url)
 
     logger.info(f"Fetching metadata for '{jnc_resource}'...")
-    jncapi.fetch_metadata(token, jnc_resource)
+    jncapi_legacy.fetch_metadata(token, jnc_resource)
 
     series = analyze_metadata(jnc_resource)
 
@@ -140,7 +140,7 @@ def update_all_series(
             jnc_resource = jncweb.resource_from_url(series_url)
 
             logger.info(f"Fetching metadata for '{jnc_resource}'...")
-            jncapi.fetch_metadata(token, jnc_resource)
+            jncapi_legacy.fetch_metadata(token, jnc_resource)
 
             series = analyze_metadata(jnc_resource)
 

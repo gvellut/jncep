@@ -8,7 +8,7 @@ import requests_toolbelt.utils.dump
 
 from . import jncweb
 
-logger = logging.getLogger(__package__)
+logger = logging.getLogger(__name__)
 
 IMG_URL_BASE = "https://d2dq7ifhe7bu0f.cloudfront.net"
 API_JNC_URL_BASE = "https://api.j-novel.club"

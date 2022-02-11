@@ -7,7 +7,7 @@ from addict import Dict as Addict
 from atomicwrites import atomic_write
 import dateutil.parser
 
-from . import jncapi, jncweb, spec
+from . import jncapi_legacy, jncweb, spec
 from .utils import green
 
 logger = logging.getLogger(__package__)
@@ -34,14 +34,14 @@ def canonical_series(jnc_url, email, password):
         jnc_resource = jncweb.resource_from_url(jnc_url)
 
         logger.info(f"Login with email '{email}'...")
-        token = jncapi.login(email, password)
+        token = jncapi_legacy.login(email, password)
 
         return tracking_series_metadata(token, jnc_resource)
     finally:
         if token:
             try:
                 logger.info("Logout...")
-                jncapi.logout(token)
+                jncapi_legacy.logout(token)
             except Exception:
                 pass
 
@@ -88,7 +88,7 @@ def _ensure_config_dirpath_exists():
 
 def tracking_series_metadata(token, jnc_resource):
     logger.info(f"Fetching metadata for '{jnc_resource}'...")
-    jncapi.fetch_metadata(token, jnc_resource)
+    jncapi_legacy.fetch_metadata(token, jnc_resource)
 
     series = analyze_metadata(jnc_resource)
     series_slug = series.raw_series.titleslug
@@ -179,11 +179,11 @@ def sync_series_backward(token, follows, tracked_series, is_delete):
 
         jnc_resource = jncweb.resource_from_url(series_url)
         logger.info(f"Fetching metadata for '{jnc_resource}'...")
-        jncapi.fetch_metadata(token, jnc_resource)
+        jncapi_legacy.fetch_metadata(token, jnc_resource)
         series_id = jnc_resource.raw_metadata.id
         title = jnc_resource.raw_metadata.title
         logger.info(f"Follow '{title}'...")
-        jncapi.follow_series(token, series_id)
+        jncapi_legacy.follow_series(token, series_id)
 
         new_synced.append(series_url)
 
@@ -193,7 +193,7 @@ def sync_series_backward(token, follows, tracked_series, is_delete):
                 series_id = jnc_resource.raw_metadata.id
                 title = jnc_resource.raw_metadata.title
                 logger.warning(f"Unfollow '{title}'...")
-                jncapi.unfollow_series(token, series_id)
+                jncapi_legacy.unfollow_series(token, series_id)
 
                 del_synced.append(jnc_resource.url)
 

@@ -4,7 +4,7 @@ from urllib.parse import urlparse, urlunparse
 
 import attr
 
-logger = logging.getLogger(__package__)
+logger = logging.getLogger(__name__)
 
 JNC_URL_BASE = "https://j-novel.club"
 

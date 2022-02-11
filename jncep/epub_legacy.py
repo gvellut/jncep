@@ -8,7 +8,7 @@ import time
 
 from ebooklib import epub
 
-from . import jncapi, spec
+from . import jncapi_legacy, spec
 from .utils import green
 
 logger = logging.getLogger(__package__)
@@ -58,7 +58,7 @@ def create_epub(token, series, parts, epub_generation_options):
             break
         else:
             try:
-                cover_bytes = jncapi.fetch_image_from_cdn(cover_url)
+                cover_bytes = jncapi_legacy.fetch_image_from_cdn(cover_url)
                 break
             except Exception:
                 logger.warning(
@@ -127,7 +127,7 @@ def _get_book_content_and_images(
     raw_contents = []
     for part in parts_to_download:
         logger.info(f"Fetching part '{part.raw_part.title}'...")
-        content = jncapi.fetch_content(token, part.raw_part.id)
+        content = jncapi_legacy.fetch_content(token, part.raw_part.id)
         raw_contents.append(content)
 
         if not is_not_replace_chars:
@@ -154,7 +154,7 @@ def _get_book_content_and_images(
             for i, img_url in enumerate(img_urls):
                 logger.info(f"Image {i + 1}...")
                 try:
-                    img_bytes = jncapi.fetch_image_from_cdn(img_url)
+                    img_bytes = jncapi_legacy.fetch_image_from_cdn(img_url)
                 except Exception:
                     logger.error(
                         f"Unable to download image with URL: '{img_url}'. "
@@ -398,7 +398,7 @@ def _cover_url(raw_metadata):
         )
         if len(covers) > 0:
             cover = max(covers, key=lambda c: c.size)
-            return f"{jncapi.IMG_URL_BASE}/{cover.fullpath}"
+            return f"{jncapi_legacy.IMG_URL_BASE}/{cover.fullpath}"
     return None
 
 

@@ -3,9 +3,9 @@ import re
 
 import attr
 
-from . import jncapi
+from . import model
 
-logger = logging.getLogger(__package__)
+logger = logging.getLogger(__name__)
 
 RANGE_SEP = ":"
 
@@ -92,7 +92,7 @@ def to_relative_spec_from_part(part):
     return f"{volume_number}.{part_number}"
 
 
-def to_part_from_relative_spec(series, relpart_str) -> jncapi.Part:
+def to_part_from_relative_spec(series, relpart_str) -> model.Part:
     # there will be an error if the relpart does not not existe
     parts = _analyze_volume_part_specs(series, relpart_str)
     return parts[0]

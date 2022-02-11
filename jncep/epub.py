@@ -6,7 +6,7 @@ from ebooklib import epub
 
 from .model import Image
 
-logger = logging.getLogger(__package__)
+logger = logging.getLogger(__name__)
 
 
 EpubGenerationOptions = namedtuple(
@@ -62,10 +62,9 @@ def create_epub(output_filepath, book_details: "BookDetails"):
         "series",
         {"property": "collection-type", "refines": f"#{collection_meta.collection_id}"},
     )
+
     # as position, set the volume number of the first part in the epub
     # in Calibre, display 1 (I) if not set so a bit better
-    # TODO issue on KOBO: if 1, series is not displayed on device
-    # really matters?
     book.add_metadata(
         "OPF",
         "group-position",
@@ -73,6 +72,7 @@ def create_epub(output_filepath, book_details: "BookDetails"):
         {"property": "group-position", "refines": f"#{collection_meta.collection_id}"},
     )
 
+    # TODO why not True ?
     book.set_cover("cover.jpg", book_details.cover_image.content, False)
 
     # TODO externalize CSS + option to epub + update

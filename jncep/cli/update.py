@@ -3,11 +3,12 @@ import logging
 import click
 
 from . import options
-from .. import core, epub, jncapi, jncweb, spec
+from .. import core, epub, jncapi_legacy, jncweb, spec
 from ..utils import green
 from .common import CatchAllExceptionsCommand
 
-logger = logging.getLogger(__package__)
+# TODO replace
+logger = logging.getLogger(__name__)
 
 
 @click.command(
@@ -76,12 +77,12 @@ def update_tracked(
             return
 
         logger.info(f"Login with email '{email}'...")
-        token = jncapi.login(email, password)
+        token = jncapi_legacy.login(email, password)
 
         new_synced = None
         if is_sync:
             logger.info("Fetch followed series from J-Novel Club...")
-            follows = jncapi.fetch_follows(token)
+            follows = jncapi_legacy.fetch_follows(token)
             new_synced, _ = core.sync_series_forward(
                 token, follows, tracked_series, False
             )
@@ -120,7 +121,7 @@ def update_tracked(
         if token:
             try:
                 logger.info("Logout...")
-                jncapi.logout(token)
+                jncapi_legacy.logout(token)
             except Exception:
                 pass
 

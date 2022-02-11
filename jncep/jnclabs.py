@@ -1,11 +1,12 @@
+from functools import wraps
 import json
 import logging
 
 from addict import Dict as Addict
 import asks
+import trio
 
 from . import jncweb
-from .utils import with_cache
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,65 @@ COMMON_LABS_API_PARAMS = {"format": "json"}
 # TODO timeout for the API requests
 
 
+def with_cache(f):
+    cache = {}
+    events = {}
+
+    @wraps(f)
+    async def wrapper(*args, **kwargs):
+        key = (*args, *kwargs.items())
+        while True:
+            if key in events:
+                # query running
+                # wait for it to finish
+                logger.debug(f"{key} in events")
+                event = events[key]
+                await event.wait()
+                if key in cache:
+                    logger.debug(f"Cache hit {key}")
+                    return _copy_or_raw(cache[key])
+                # must have been error in the query
+                # retry from the beginning in case
+                # multiple are waiting
+                # TODO raise instead ?
+                continue
+
+            event = trio.Event()
+            events[key] = event
+
+            try:
+                response = await f(*args, **kwargs)
+                cache[key] = _copy_or_raw(response)
+                return response
+            except Exception:
+                del events[key]
+                raise
+            finally:
+                # wake up the tasks waiting
+                event.set()
+
+    return wrapper
+
+
+def _copy_or_raw(data):
+    if type(data) is Addict:
+        cp = data.deepcopy()
+        # alway refreeze : fine in this context
+        _deep_freeze(cp)
+        return cp
+    # an image content ; won't be modifed so can be shared
+    return data
+
+
+def _deep_freeze(data):
+    if type(data) is Addict:
+        data.freeze()
+        for value in data.values():
+            if type(value) is list:
+                for v in value:
+                    _deep_freeze(v)
+
+
 class JNCLabsAPI:
     def __init__(self, connections=20):
         self.jnc_api_session = asks.Session(
@@ -31,6 +91,7 @@ class JNCLabsAPI:
         self.labs_api_session = asks.Session(
             LABS_API_JNC_URL_BASE, connections=connections, headers=COMMON_API_HEADERS
         )
+        # TODO CDN session
 
         self.token = None
 
@@ -80,7 +141,7 @@ class JNCLabsAPI:
         )
 
         d = Addict(r.json())
-        d.freeze()
+        _deep_freeze(d)
         return d
 
     async def paginate(self, func, *args):

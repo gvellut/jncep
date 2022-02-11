@@ -6,11 +6,11 @@ from colorama import Fore
 import dateutil.parser
 
 from . import options
-from .. import core, jncapi, jncweb, track as core_track
+from .. import core, jncapi_legacy, jncweb, track as core_track
 from ..utils import colored, green, tryint
 from .common import CatchAllExceptionsCommand
 
-logger = logging.getLogger(__package__)
+logger = logging.getLogger(__name__)
 
 
 @click.group(name="track", help="Track updates to a series")
@@ -68,10 +68,10 @@ def sync_series(email, password, is_reverse, is_delete):
     token = None
     try:
         logger.info(f"Login with email '{email}'...")
-        token = jncapi.login(email, password)
+        token = jncapi_legacy.login(email, password)
 
         logger.info("Fetch followed series from J-Novel Club...")
-        follows: List[jncweb.JNCResource] = jncapi.fetch_follows(token)
+        follows: List[jncweb.JNCResource] = jncapi_legacy.fetch_follows(token)
 
         if is_reverse:
             core_track.sync_series_backward(token, follows, tracked_series, is_delete)
@@ -81,7 +81,7 @@ def sync_series(email, password, is_reverse, is_delete):
         if token:
             try:
                 logger.info("Logout...")
-                jncapi.logout(token)
+                jncapi_legacy.logout(token)
             except Exception:
                 pass
 

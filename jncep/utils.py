@@ -1,11 +1,13 @@
-from functools import wraps
+import inspect
 import logging
 import re
 import sys
 import unicodedata
 
 from colorama import Fore
-import trio
+
+logger = logging.getLogger(__name__)
+
 
 # specify colors for different logging levels
 LOG_COLORS = {
@@ -64,37 +66,9 @@ def to_safe_filename(name):
     return safe
 
 
-def with_cache(f):
-    cache = {}
-    events = {}
-
-    @wraps(f)
-    async def wrapper(*args, **kwargs):
-        key = (*args, *kwargs.items())
-        if key in events:
-            # query running
-            # wait for it to finish
-            event = events[key]
-            await event.wait()
-            if key in cache:
-                return cache[key]
-            # possibly error
-            # retry : call wrapper in case
-            # multiple are waiting
-            return wrapper(*args, **kwargs)
-
-        event = trio.Event()
-        events[key] = event
-
-        try:
-            response = await f(*args, **kwargs)
-            cache[key] = response
-            return response
-        except Exception:
-            del events[key]
-            raise
-        finally:
-            # wake up the tasks waiting
-            event.set()
-
-    return wrapper
+def module_info():
+    # for main module : its __name__ is __main__
+    # so find out its real name
+    frm = inspect.stack()[1]
+    mod = inspect.getmodule(frm[0])
+    return mod.__spec__.name
