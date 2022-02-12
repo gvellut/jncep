@@ -1,491 +1,647 @@
-from collections import OrderedDict
-import itertools
-import json
+from collections import defaultdict
+from datetime import datetime
+from functools import partial
+from html.parser import HTMLParser
 import logging
-import operator
-from pathlib import Path
-import traceback
+import os
+import re
+import sys
+import time
+from typing import List
 
-from addict import Dict as Addict
-from atomicwrites import atomic_write
-import dateutil.parser
+import attr
+import trio
 
-from . import epub, jncapi, jncweb, spec
-from .utils import green
+from . import epub, jncweb, spec
+from .jnclabs import JNCLabsAPI
+from .model import Image, Part, Series, Volume
+from .utils import green, to_safe_filename
 
-logger = logging.getLogger(__package__)
-
-CONFIG_DIRPATH = Path.home() / ".jncep"
+logger = logging.getLogger(__name__)
 
 
 class NoRequestedPartAvailableError(Exception):
     pass
 
 
-def analyze_metadata(jnc_resource: jncweb.JNCResource):
-    # takes order of parts as returned by API
-    # (irrespective of actual partNumber)
-    # reorder by volume ordering
-
-    if jnc_resource.resource_type in (
-        jncweb.RESOURCE_TYPE_PART,
-        jncweb.RESOURCE_TYPE_VOLUME,
-    ):
-        series = jncapi.Series(jnc_resource.raw_metadata.serie)
-    else:
-        series = jncapi.Series(jnc_resource.raw_metadata)
-
-    volumes = []
-    volume_index = {}
-    for raw_volume in series.raw_series.volumes:
-        volume_num = len(volumes) + 1
-        volume = jncapi.Volume(raw_volume, raw_volume.id, volume_num)
-        volume_index[volume.volume_id] = volume
-        volumes.append(volume)
-
-    is_warned = False
-    for raw_part in series.raw_series.parts:
-        volume_id = raw_part.volumeId
-        volume: jncapi.Volume = volume_index[volume_id]
-        num_in_volume = len(volume.parts) + 1
-        part = jncapi.Part(raw_part, volume, num_in_volume)
-        volume.parts.append(part)
-
-    parts = []
-    for volume in volumes:
-        for part in volume.parts:
-            # volume number ordering and part number ordering sometimes do not match
-            # actually just for Altina volume 8 / 9
-            # so set absolute num in sequential order according to volumes
-            part.absolute_num = len(parts) + 1
-            parts.append(part)
-
-            # some series have a gap in the part number ie index does not correspond
-            # to field partNumber e.g. economics of prophecy starting at part 10
-            # print warning
-            if part.absolute_num != part.raw_part.partNumber and not is_warned:
-                # not an issue in practice so leave it in debug mode only
-                logger.debug(
-                    f"Absolute part number returned by API doesn't correspond to "
-                    f"its actual position in series (corrected, starting at part "
-                    f"{part.raw_part.partNumber} found in volume {volume.num})"
-                )
-                is_warned = True
-
-    series.volumes = volumes
-    series.parts = parts
-
-    return series
+@attr.s
+class FetchOptions:
+    is_by_volume = attr.ib(False)
+    is_download_content = attr.ib(True)
+    is_download_images = attr.ib(True)
+    is_download_cover = attr.ib(True)
 
 
-def canonical_series(jnc_url, email, password):
-    token = None
-    try:
-        jnc_resource = jncweb.resource_from_url(jnc_url)
+@attr.s
+class IdentifierSpec:
+    type_ = attr.ib()
+    volume_id = attr.ib(None)
+    part_id = attr.ib(None)
 
+    def has_volume(self, ref_volume) -> bool:
+        if self.type_ == spec.SERIES:
+            return True
+
+        return self.volume_id == ref_volume.volume_id
+
+    def has_part(self, ref_part) -> bool:
+        # assumes has_volume already checked with the volume_id
+        if self.type_ in (spec.SERIES, spec.VOLUME):
+            return True
+
+        return self.part_id == ref_part.part_id
+
+
+# TODO replace with dumb object + functions
+class JNCEPSession:
+    def __init__(self, email, password):
+        self.api = JNCLabsAPI()
+        self.email = email
+        self.password = password
+
+    async def __aenter__(self) -> "JNCEPSession":
+        await self.login(self.email, self.password)
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        await self.logout()
+        return False
+
+    async def login(self, email, password):
         logger.info(f"Login with email '{email}'...")
-        token = jncapi.login(email, password)
+        return await self.api.login(email, password)
 
-        return tracking_series_metadata(token, jnc_resource)
-    finally:
-        if token:
+    async def logout(self):
+        if self.api.is_logged_in:
             try:
                 logger.info("Logout...")
-                jncapi.logout(token)
+                await self.apiapi.logout()
             except Exception:
                 pass
 
+    def series_slugs(self):
+        return list(self.series_content.keys())
 
-def read_tracked_series():
-    try:
-        with _tracked_series_filepath().open() as json_file:
-            # Explicit ordereddict (although should be fine without
-            # since Python >= 3.6 dicts are ordered ; spec since 3.7)
-            data = json.load(json_file, object_pairs_hook=OrderedDict)
-            return _convert_to_latest_format(Addict(data))
-    except FileNotFoundError:
-        # first run ?
-        return Addict({})
+    async def to_part_spec(self, jnc_resource):
+        if jnc_resource.resource_type == jncweb.RESOURCE_TYPE_SERIES:
+            return IdentifierSpec(spec.SERIES)
 
+        elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_VOLUME:
+            if jnc_resource.is_new_website:
+                # for volume on new website => where is a tuple (series_slug,
+                # volume num)
+                series_slug, volume_number = jnc_resource.slug
 
-def _convert_to_latest_format(data):
-    converted = {}
-    # while at it convert from old format
-    # legacy format for tracked parts : just the part instead of object
-    # with keys part, name
-    # key is slug
-    # TODO rename "name" field into "title"
-    for series_url_or_slug, value in data.items():
-        if not isinstance(value, dict):
-            series_slug = series_url_or_slug
-            series_url = jncweb.url_from_series_slug(series_slug)
-            # low effort way to get some title
-            name = series_slug.replace("-", " ").title()
-            value = Addict({"name": name, "part": value})
-            converted[series_url] = value
-        else:
-            converted[series_url_or_slug] = value
+                volumes = await _fetch_volumes_for_series(self.api, series_slug)
 
-    converted_b = {}
-    for legacy_series_url, value in converted.items():
-        new_series_url = jncweb.to_new_website_series_url(legacy_series_url)
-        converted_b[new_series_url] = value
+                volume_index = volume_number - 1
+                if volume_index not in range(len(volumes)):
+                    raise jncweb.BadWebURLError(
+                        f"Incorrect volume number in URL: {jnc_resource.url}"
+                    )
 
-    return converted_b
-
-
-def write_tracked_series(tracked):
-    _ensure_config_dirpath_exists()
-    with atomic_write(str(_tracked_series_filepath().resolve()), overwrite=True) as f:
-        f.write(json.dumps(tracked, sort_keys=True, indent=2))
-
-
-def _tracked_series_filepath():
-    return CONFIG_DIRPATH / "tracked.json"
-
-
-def _ensure_config_dirpath_exists():
-    CONFIG_DIRPATH.mkdir(parents=False, exist_ok=True)
-
-
-def tracking_series_metadata(token, jnc_resource):
-    logger.info(f"Fetching metadata for '{jnc_resource}'...")
-    jncapi.fetch_metadata(token, jnc_resource)
-
-    series = analyze_metadata(jnc_resource)
-    series_slug = series.raw_series.titleslug
-    series_url = jncweb.url_from_series_slug(series_slug)
-
-    return series, series_url
-
-
-def process_series_for_tracking(tracked_series, series, series_url):
-    # record current last part + name
-    if len(series.parts) == 0:
-        # no parts yet
-        pn = 0
-        # 0000-... not a valid date so 1111-...
-        pdate = "1111-11-11T11:11:11.111Z"
-    else:
-        pn = spec.to_relative_spec_from_part(series.parts[-1])
-        pdate = series.parts[-1].raw_part.launchDate
-
-    tracked_series[series_url] = {
-        "part_date": pdate,
-        "part": pn,  # now just for show
-        "name": series.raw_series.title,
-    }
-
-    if len(series.parts) == 0:
-        logger.info(
-            green(
-                f"The series '{series.raw_series.title}' is now tracked, starting "
-                f"from the beginning"
-            )
-        )
-    else:
-        relative_part = spec.to_relative_spec_from_part(series.parts[-1])
-        part_date = dateutil.parser.parse(series.parts[-1].raw_part.launchDate)
-        part_date_formatted = part_date.strftime("%b %d, %Y")
-        logger.info(
-            green(
-                f"The series '{series.raw_series.title}' is now tracked, starting "
-                f"after part {relative_part} [{part_date_formatted}]"
-            )
-        )
-
-
-def sync_series_forward(token, follows, tracked_series, is_delete):
-    # sync local tracked series based on remote follows
-    new_synced = []
-    del_synced = []
-    for jnc_resource in follows:
-        if jnc_resource.url in tracked_series:
-            continue
-        series, series_url = tracking_series_metadata(token, jnc_resource)
-        process_series_for_tracking(tracked_series, series, series_url)
-
-        new_synced.append(series_url)
-
-    if is_delete:
-        followed_index = {f.url: f for f in follows}
-        # to avoid dictionary changed size during iteration
-        for series_url, series_data in list(tracked_series.items()):
-            if series_url not in followed_index:
-                del tracked_series[series_url]
-
-                logger.warning(f"The series '{series_data.name}' is no longer tracked")
-
-                del_synced.append(series_url)
-
-    write_tracked_series(tracked_series)
-
-    if new_synced or del_synced:
-        logger.info(green("The list of tracked series has been sucessfully updated!"))
-    else:
-        logger.info(green("Everything is already synced!"))
-
-    return new_synced, del_synced
-
-
-def sync_series_backward(token, follows, tracked_series, is_delete):
-    # sync remote follows based on locally tracked series
-    new_synced = []
-    del_synced = []
-
-    followed_index = {f.url: f for f in follows}
-    for series_url in tracked_series:
-        # series_url is the latest URL format (same as the follows)
-        if series_url in followed_index:
-            continue
-
-        jnc_resource = jncweb.resource_from_url(series_url)
-        logger.info(f"Fetching metadata for '{jnc_resource}'...")
-        jncapi.fetch_metadata(token, jnc_resource)
-        series_id = jnc_resource.raw_metadata.id
-        title = jnc_resource.raw_metadata.title
-        logger.info(f"Follow '{title}'...")
-        jncapi.follow_series(token, series_id)
-
-        new_synced.append(series_url)
-
-    if is_delete:
-        for jnc_resource in follows:
-            if jnc_resource.url not in tracked_series:
-                series_id = jnc_resource.raw_metadata.id
-                title = jnc_resource.raw_metadata.title
-                logger.warning(f"Unfollow '{title}'...")
-                jncapi.unfollow_series(token, series_id)
-
-                del_synced.append(jnc_resource.url)
-
-    if new_synced or del_synced:
-        logger.info(green("The list of followed series has been sucessfully updated!"))
-    else:
-        logger.info(green("Everything is already synced!"))
-
-    return new_synced, del_synced
-
-
-def update_url_series(
-    token,
-    jnc_url,
-    epub_generation_options,
-    tracked_series,
-    updated_series,
-    is_sync,
-    new_synced,
-    is_whole_volume,
-):
-    jnc_resource = jncweb.resource_from_url(jnc_url)
-
-    logger.info(f"Fetching metadata for '{jnc_resource}'...")
-    jncapi.fetch_metadata(token, jnc_resource)
-
-    series = analyze_metadata(jnc_resource)
-
-    series_slug = series.raw_series.titleslug
-    series_url = jncweb.url_from_series_slug(series_slug)
-
-    if is_sync:
-        # not very useful but make it possible
-        # only consider newly synced series if --sync used
-        # to mirror case with no URL argument
-        if series_url not in new_synced:
-            logger.warning(
-                f"The series '{series.raw_series.title}' is not among the "
-                f"tracked series added from syncing. Use 'jncep update' "
-                "without --sync."
-            )
-            return
-        is_updated = _create_epub_from_beginning(token, series, epub_generation_options)
-
-    else:
-        if series_url not in tracked_series:
-            logger.warning(
-                f"The series '{series.raw_series.title}' is not tracked! "
-                f"Use the 'jncep track add' command first."
-            )
-            return
-
-        series_details = tracked_series[series_url]
-        is_updated = _create_updated_epub(
-            token, series, series_details, epub_generation_options, is_whole_volume
-        )
-
-    if is_updated:
-        logger.info(green(f"The series '{series.raw_series.title}' has been updated!"))
-        updated_series.append(series)
-
-
-def update_all_series(
-    token,
-    epub_generation_options,
-    tracked_series,
-    updated_series,
-    is_sync,
-    new_synced,
-    is_whole_volume,
-):
-    has_error = False
-    for series_url, series_details in tracked_series.items():
-        try:
-            if is_sync and series_url not in new_synced:
-                continue
-
-            jnc_resource = jncweb.resource_from_url(series_url)
-
-            logger.info(f"Fetching metadata for '{jnc_resource}'...")
-            jncapi.fetch_metadata(token, jnc_resource)
-
-            series = analyze_metadata(jnc_resource)
-
-            if is_sync:
-                is_updated = _create_epub_from_beginning(
-                    token, series, epub_generation_options
-                )
+                volume = volumes[volume_index]
             else:
-                is_updated = _create_updated_epub(
-                    token,
-                    series,
-                    series_details,
-                    epub_generation_options,
-                    is_whole_volume,
+                volume_slug = jnc_resource.slug
+                volume = await self.api.fetch_data("volumes", volume_slug)
+
+            return IdentifierSpec(spec.VOLUME, volume.legacyId)
+
+        elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_PART:
+            with AsyncCollector() as c:
+                async with trio.open_nursery() as nursery:
+                    nursery.start_soon(
+                        c.collect(
+                            "part", self.api.fetch_data, "parts", jnc_resource.slug
+                        )
+                    )
+                    nursery.start_soon(
+                        c.collect(
+                            "volume",
+                            self.api.fetch_data,
+                            "parts",
+                            jnc_resource.slug,
+                            "volume",
+                        )
+                    )
+
+                part = c.results["part"]
+                volume = c.results["volume"]
+                return IdentifierSpec(spec.PART, volume.legacyId, part.legacyId)
+
+    async def create_epub(self, series, epub_generation_options):
+        book_details = self.process_downloaded(series, epub_generation_options)
+
+        if epub_generation_options.is_extract_content:
+            await self.extract_content(series, epub_generation_options)
+
+        if epub_generation_options.is_extract_images:
+            await self.extract_images(series, epub_generation_options)
+
+        for book_details_i in book_details:
+            output_filename = to_safe_filename(book_details_i.title) + ".epub"
+            output_filepath = os.path.join(
+                epub_generation_options.output_dirpath, output_filename
+            )
+            # TODO write to memory then async fs write here ? (uses epublib
+            # which is sync anyway)
+            epub.create_epub(output_filepath, book_details_i)
+
+            logger.info(green(f"Success! EPUB generated in '{output_filepath}'!"))
+
+    def lazy_resolve_series(self, jnc_resource):
+        if jnc_resource.resource_type == jncweb.RESOURCE_TYPE_SERIES:
+            series_slug = jnc_resource.slug
+            return series_slug, partial(self.api.fetch_data, "series", series_slug)
+        elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_VOLUME:
+            if jnc_resource.is_new_website:
+                series_slug, _ = jnc_resource.slug
+                return series_slug, partial(self.api.fetch_data, "series", series_slug)
+            else:
+                volume_slug = jnc_resource.slug
+                return None, partial(
+                    self.api.fetch_data, "volumes", volume_slug, "serie"
+                )
+        elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_PART:
+            part_slug = jnc_resource.slug
+            return None, partial(self.api.fetch_data, "parts", part_slug, "serie")
+
+    async def fetch_for_specs(self, jnc_resource, part_spec, fetch_options):
+        # FIXME scrap that ; two parts => 1 retrieve all part metadata (Even if
+        # not needed) 2 download content if needed; much simpler
+        with AsyncCollector() as c:
+            async with trio.open_nursery() as nursery:
+                series_slug, func_resolve = self.lazy_resolve_series(jnc_resource)
+                if not series_slug:
+                    series_raw_data = await func_resolve()
+                    series_slug = series_raw_data.slug
+                else:
+                    # don't need the raw data right away
+                    nursery.start_soon(c.collect("series", func_resolve))
+
+                nursery.start_soon(
+                    c.collect(
+                        "series_deep",
+                        _deep_fetch_volumes_for_series,
+                        self.api,
+                        series_slug,
+                        part_spec,
+                        fetch_options,
+                    )
                 )
 
-            if is_updated:
-                logger.info(
-                    green(f"The series '{series.raw_series.title}' has been updated!")
+                if fetch_options.is_download_cover:
+                    nursery.start_soon(
+                        c.collect_catch(
+                            "covers",
+                            _fetch_covers,
+                            self.api,
+                            series_slug,
+                            part_spec,
+                            fetch_options,
+                        )
+                    )
+
+            if "series" in c.results:
+                # some branches fetch the raw data as async
+                series_raw_data = c.results["series"]
+
+            volumes = c.results["series_deep"]
+            series = Series(series_raw_data, volumes)
+            for volume in volumes:
+                volume.series = series
+
+            if "covers" in c.results:
+                error = c.errors.get("covers")
+                if error:
+                    logger.warning(f"Issue fetching cover for {series_slug}!")
+                else:
+                    covers_data = c.results["covers"]
+                    for volume in series.volumes:
+                        if volume.num in covers_data:
+                            volume.cover = covers_data[volume.num]
+
+            return series
+
+    def process_downloaded(
+        self, series, options: epub.EpubGenerationOptions
+    ) -> epub.BookDetails:
+
+        parts = dl_parts(series)
+
+        # prepare content
+        for part in parts:
+            content_for_part = part.content
+            if not options.is_not_replace_chars:
+                content_for_part = _replace_chars(content_for_part)
+
+            # some parts do not have an image
+            if part.images:
+                imgs = part.images
+                content_for_part = _replace_image_urls(content_for_part, imgs)
+
+            part.epub_content = content_for_part
+
+        volumes = dl_volumes(series)
+        if options.is_by_volume:
+            book_details = []
+            for volume in volumes:
+                volume_parts = dl_parts_volume(volume)
+                volume_details = self._process_single_epub_content(
+                    series, [volume], volume_parts
                 )
-                updated_series.append(series)
+                book_details.append(volume_details)
+        else:
+            book_details = [self._process_single_epub_content(series, volumes, parts)]
 
-        except Exception as ex:
-            has_error = True
-            logger.error("An error occured while updating the series:")
-            logger.error(str(ex))
-            logger.debug(traceback.format_exc())
+        return book_details
 
-    return has_error
+    def _process_single_epub_content(self, series, volumes, parts):
+        # TODO suffix final complete : not in api but in web page for series
+        # data for React contains what is needed in JSON
 
+        # representative volume
+        repr_volume = volumes[0]
+        author = _extract_author(repr_volume.raw_data.creators)
 
-def _create_epub_from_beginning(token, series, epub_generation_options):
-    if len(series.parts) == 0:
-        new_parts = None
-    else:
-        # complete series
-        new_parts = spec.analyze_part_specs(series, ":", True)
+        # TODO external func
+        # first part
+        repr_part = parts[0]
+        volume_num = repr_part.volume.num
+        part_num = repr_part.num_in_volume
 
-    if not new_parts:
-        # no new part
-        logger.warning(
-            f"The series '{series.raw_series.title}' has no parts available!",
+        # TODO in case multiple volumes, do not set volume num? or do
+        # something else
+        collection = epub.CollectionMetadata(
+            series.raw_data.legacyId, series.raw_data.title, volume_num
         )
+
+        # cover should always be there : error if problem with downloading
+        # TODO handle problem with missing cover => use dummy jpeg
+        cover_image = repr_volume.cover
+
+        contents = [part.epub_content for part in parts]
+
+        if len(parts) == 1:
+            # single part
+            part = parts[0]
+            volume_num = part.volume.num
+            part_num = part.num_in_volume
+
+            title = f"{part.raw_data.title}"
+            # single part => single volume: part numbers relative to
+            # that volume
+            toc = [f"Part {part_num}"]
+        else:
+            volume_index = set([v.num for v in volumes])
+            if len(volume_index) > 1:
+                volume_nums = sorted(list(volume_index))
+                volume_nums = [str(vn) for vn in volume_nums]
+                volume_nums = ", ".join(volume_nums[:-1]) + " & " + volume_nums[-1]
+                title_base = f"{series.raw_data.title}: Volumes {volume_nums}"
+
+                volume_num0 = parts[0].volume.num
+                part_num0 = parts[0].num_in_volume
+                volume_num1 = parts[-1].volume.num
+                part_num1 = parts[-1].num_in_volume
+
+                part_nums = (
+                    f"Parts {volume_num0}.{part_num0} to {volume_num1}.{part_num1}"
+                )
+
+                toc = [part.raw_data.title for part in parts]
+                title = f"{title_base} [{part_nums}]"
+            else:
+                volume = volumes[0]
+                title_base = volume.raw_data.title
+
+                toc = [f"Part {part.num_in_volume}" for part in parts]
+
+                part_num0 = parts[0].num_in_volume
+                part_num1 = parts[-1].num_in_volume
+
+                title = f"{title_base} [Parts {part_num0} to {part_num1}]"
+
+        identifier = series.raw_data.slug + str(int(time.time()))
+        images = dl_images(parts)
+
+        book_details = epub.BookDetails(
+            identifier, title, author, collection, cover_image, toc, contents, images
+        )
+
+        return book_details
+
+    async def extract_images(self, series, epub_generation_options):
+        async with trio.open_nursery() as nursery:
+            for part in dl_parts(series):
+                images = part.images
+                _compute_order_of_images(part.content, images)
+
+                for image in images:
+                    # change filename to something more readable since visible to
+                    # user
+                    _, ext = os.path.splitext(image.local_filename)
+                    img_filename = (
+                        to_safe_filename(part.raw_data.title)
+                        # extension at the end
+                        + f"_Image_{image.order_in_part}{ext}"
+                    )
+                    img_filepath = os.path.join(
+                        epub_generation_options.output_dirpath, img_filename
+                    )
+                    nursery.start_soon(_write_bytes, img_filepath, image.content)
+
+    async def extract_content(self, series, epub_generation_options):
+        parts = dl_parts(series)
+        async with trio.open_nursery() as nursery:
+            for part in parts:
+                content = part.content
+                content_filename = to_safe_filename(part.raw_data.title) + ".html"
+                content_filepath = os.path.join(
+                    epub_generation_options.output_dirpath, content_filename
+                )
+                nursery.start_soon(_write_str, content_filepath, content)
+
+
+# TODO repace with channels
+class AsyncCollector:
+    def __init__(self):
+        self.results = {}
+        self.errors = {}
+
+    # TODO use partial so no args
+    def collect(self, name, afunc, *args):
+        async def wrapper():
+            res = await afunc(*args)
+            self.results[name] = res
+
+        return wrapper
+
+    def collect_catch(self, name, afunc, *args):
+        async def wrapper():
+            try:
+                res = await afunc(*args)
+                self.results[name] = res
+            except Exception as ex:
+                self.errors[name] = ex
+
+        return wrapper
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exception_type, exception_value, exception_traceback):
         return False
 
-    return _create_epub_with_updated_parts(
-        token, series, new_parts, epub_generation_options
-    )
+
+def _extract_author(creators, default="Unknown Author"):
+    for creator in creators:
+        if creator.role == "AUTHOR":
+            return creator.name
+    return default
 
 
-def _create_updated_epub(
-    token, series, series_details, epub_generation_options, is_whole_volume
-):
-    if series_details.part == 0:
-        # special processing : means there was no part available when the
-        # series was started tracking
-
-        # still no part ?
-        if len(series.parts) == 0:
-            is_updated = False
-            # just to bind or pylint complains
-            new_parts = None
-        else:
-            is_updated = True
-            # complete series
-            new_parts = spec.analyze_part_specs(series, ":", True)
-    else:
-        # for others, look at the date if there
-        if not series_details.part_date:
-            # if not => old format, first lookup date of last part and use that
-            # TODO possible to do that for all ie no need to keep the date around
-            last_part = spec.to_part_from_relative_spec(series, series_details.part)
-            last_update_date = last_part.raw_part.launchDate
-        else:
-            last_update_date = series_details.part_date
-
-        new_parts = _parts_released_after_date(series, last_update_date)
-        is_updated = len(new_parts) > 0
-
-    if not is_updated:
-        # no new part
-        logger.warning(f"The series '{series.raw_series.title}' has not been updated!")
-        return False
-
-    parts_to_download = list(new_parts)
-    if is_whole_volume:
-        for part in new_parts:
-            for volpart in part.volume.parts:
-                if volpart not in parts_to_download:
-                    parts_to_download.append(volpart)
-        parts_to_download.sort(key=operator.attrgetter("absolute_num"))
-
-    return _create_epub_with_updated_parts(
-        token, series, parts_to_download, epub_generation_options
-    )
+def _replace_chars(content):
+    # both the chars to replace and replacement are hardcoded
+    # U+2671 => East Syriac Cross
+    # U+25C6 => Black Diamond
+    # U+1F3F6 => Black Rosette
+    # U+25C7 => White Diamond
+    # U+2605 => Black star
+    chars_to_replace = ["\u2671", "\u25C6", "\U0001F3F6", "\u25C7", "\u2605"]
+    replacement_char = "**"
+    regex = "|".join(chars_to_replace)
+    content = re.sub(regex, replacement_char, content)
+    return content
 
 
-def _parts_released_after_date(series, date):
-    parts = []
-    comparison_date = dateutil.parser.parse(date)
-    for part in series.parts:
-        # all date strings are in ISO format
-        # so no need to parse really
-        # parsing just to be safe
-        launch_date = dateutil.parser.parse(part.raw_part.launchDate)
-        if launch_date > comparison_date:
-            parts.append(part)
+def _replace_image_urls(content, images: List[Image]):
+    for image in images:
+        # the filename relative to the epub content root
+        # file will be added to the Epub archive
+        # ext is almost always .jpg but sometimes it is .jpeg
+        # splitext  works fine with a url
+        root, ext = os.path.splitext(image.url)
+        new_local_filename = to_safe_filename(root) + ext
+        image.local_filename = new_local_filename
+        content = content.replace(image.url, new_local_filename)
+
+    return content
+
+
+def _compute_order_of_images(content, images: List[Image]):
+    images_with_pos = [(image, content.find(image.url)) for image in images]
+    images_with_pos = sorted(images_with_pos, key=lambda x: x[1])
+
+    image_order = 1
+    for image, _ in images_with_pos:
+        image.order_in_part = image_order
+        image_order += 1
+
+
+def dl_parts(series):
+    parts = [p for v in dl_volumes(series) for p in v.parts if p.is_dl]
     return parts
 
 
-def _create_epub_with_updated_parts(token, series, new_parts, epub_generation_options):
-    # just wrap _create_epub_with_requested_parts but handle case where parts
-    # have expired
-    try:
-        create_epub_with_requested_parts(
-            token, series, new_parts, epub_generation_options
-        )
-        return True
-    except NoRequestedPartAvailableError:
-        logger.error("The parts that need to be updated have all expired!")
-        return False
+def dl_parts_volume(volume):
+    parts = [p for p in volume.parts if p.is_dl]
+    return parts
 
 
-def create_epub_with_requested_parts(
-    token, series, parts_to_download, epub_generation_options
+def dl_volumes(series):
+    # cond v.parts => some parts have expired
+    volumes = [v for v in series.volumes if v.is_dl and v.parts]
+    return volumes
+
+
+def dl_images(parts):
+    images = [i for part in parts for i in part.images]
+    return images
+
+
+def all_parts(series):
+    parts = [p for v in series.volumes if v.parts for p in v.parts]
+    return parts
+
+
+async def _deep_fetch_volumes_for_series(
+    api: JNCLabsAPI, series_id, part_spec, fetch_options
 ):
-    # preview => parts 1 of each volume, always available
-    # not expired => prepub
-    available_parts_to_download = list(
-        filter(
-            lambda p: p.raw_part.preview or not p.raw_part.expired, parts_to_download
+    volumes_data = await _fetch_volumes_for_series(api, series_id)
+    volumes = []
+
+    async with trio.open_nursery() as nursery:
+        for i, volume_data in enumerate(volumes_data):
+            volume_id = volume_data.legacyId
+            volume_num = i + 1
+
+            volume = Volume(volume_data, volume_id, volume_num)
+            volumes.append(volume)
+
+            ref_volume = spec.RefVolume(volume_id, volume_num, len(volumes_data))
+            if not part_spec.has_volume(ref_volume):
+                # volume parts will be empty for that one
+                continue
+            volume.is_dl = True
+
+            nursery.start_soon(
+                _deep_fetch_parts_for_volume,
+                api,
+                volume,
+                part_spec,
+                fetch_options,
+            )
+
+    return volumes
+
+
+async def _fetch_volumes_for_series(api: JNCLabsAPI, series_id):
+    volumes = [
+        volume
+        async for volume in api.paginate(
+            api.fetch_data,
+            "series",
+            series_id,
+            "volumes",
         )
-    )
+    ]
+    return volumes
 
-    if len(available_parts_to_download) == 0:
-        raise NoRequestedPartAvailableError(
-            "None of the requested parts are available for reading"
+
+async def _deep_fetch_parts_for_volume(
+    api: JNCLabsAPI, volume, part_spec, fetch_options
+):
+    parts_data = await _fetch_parts_for_volume(api, volume)
+    parts = []
+
+    now = datetime.utcnow().isoformat() + "Z"
+
+    async with trio.open_nursery() as nursery:
+        for i, part_data in enumerate(parts_data):
+            part_id = part_data.legacyId
+            part_num = i + 1
+            part = Part(part_data, volume, part_id, part_num)
+            parts.append(part)
+
+            ref_part = spec.RefPart(volume.num, part_num, part_id, len(parts_data))
+            if not part_spec.has_part(ref_part):
+                continue
+
+            if not fetch_options.is_download_content:
+                continue
+
+            if part_data.expiration < now:
+                # TODO signal this
+                continue
+
+            part.is_dl = True
+
+            nursery.start_soon(_deep_fetch_content_for_part, api, part, fetch_options)
+
+    volume.parts = parts
+
+
+async def _fetch_parts_for_volume(api: JNCLabsAPI, volume):
+    parts = [
+        part
+        async for part in api.paginate(
+            api.fetch_data,
+            "volumes",
+            volume.volume_id,
+            "parts",
         )
+    ]
+    return parts
 
-    if len(available_parts_to_download) != len(parts_to_download):
-        logger.warning("Some of the requested parts are not available for reading !")
 
-    if epub_generation_options.is_by_volume:
-        for _, g in itertools.groupby(
-            available_parts_to_download, lambda p: p.volume.volume_id
-        ):
-            parts = list(g)
-            epub.create_epub(token, series, parts, epub_generation_options)
+async def _deep_fetch_content_for_part(api: JNCLabsAPI, part, fetch_options):
+    part.content = await api.fetch_content(part.part_id, "data.xhtml")
+    img_urls = _img_urls(part.content)
+    if fetch_options.is_download_images and len(img_urls) > 0:
+        # TODO handle image dl failures
+        with AsyncCollector() as c:
+            async with trio.open_nursery() as nursery:
+                for img_url in img_urls:
+                    nursery.start_soon(
+                        c.collect(img_url, _fetch_image, api, part, img_url)
+                    )
+
+            part.images = list(c.results.values())
     else:
-        epub.create_epub(
-            token, series, available_parts_to_download, epub_generation_options
-        )
+        part.images = []
+
+
+async def _fetch_image(api: JNCLabsAPI, part, img_url):
+    try:
+        img_bytes = await api.fetch_url(img_url)
+        image = Image(img_url, part, img_bytes)
+        return image
+    except Exception as ex:
+        logger.debug(f"Error downloading image : {ex}", exc_info=sys.exc_inf())
+
+
+class ImgUrlParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.img_urls = []
+
+    def handle_starttag(self, tag, tag_attrs):
+        if tag != "img":
+            return
+
+        for tag_attr in tag_attrs:
+            if tag_attr[0] == "src":
+                self.img_urls.append(tag_attr[1])
+                break
+
+
+def _img_urls(content):
+    parser = ImgUrlParser()
+    parser.feed(content)
+    return parser.img_urls
+
+
+async def _fetch_covers(api: JNCLabsAPI, series_id, part_spec, fetch_options):
+    # should be cached
+    volumes_data = await _fetch_volumes_for_series(api, series_id)
+
+    covers = defaultdict(list)
+
+    with AsyncCollector() as c:
+        async with trio.open_nursery() as nursery:
+            for i, volume_data in enumerate(volumes_data):
+                volume_id = volume_data.legacyId
+                volume_num = i + 1
+
+                ref_volume = spec.RefVolume(volume_id, volume_num, len(volumes_data))
+                if not part_spec.has_volume(ref_volume):
+                    continue
+
+                cover_url = volume_data.cover.coverUrl
+                nursery.start_soon(
+                    c.collect(
+                        ("volume", volume_num), _fetch_image, api, None, cover_url
+                    )
+                )
+                # also process large covers (foud in part content)
+
+                if not fetch_options.is_by_volume:
+                    # just the first found volume
+                    break
+
+        for key, value in c.results.items():
+            _, volume_num = key
+            covers[volume_num] = value
+
+    return covers
+
+
+async def _write_bytes(filepath, content):
+    async with await trio.open_file(filepath, "wb") as img_f:
+        await img_f.write(content)
+
+
+async def _write_str(filepath, content):
+    async with await trio.open_file(filepath, "w", encoding="utf-8") as img_f:
+        await img_f.write(content)

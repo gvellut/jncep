@@ -342,4 +342,20 @@ Report issues at https://github.com/gvellut/jncep/issues
 
 - self-contained executable for macOS and Windows with PyInstaller
 - config file for account
-- async IO for faster downloads
+
+# TODO
+
+epub
+if spec
+if not spec
+
+not spec:
+series => volumes => parts
+image for volume => first image of part 1 ? or find one with patter _cvr like before
+volume => serie + parts
+part => serie
+For cover need to download the part to get URL / or guess pattern (no) => download all part in order until finf pattern cvr or cover in the text of the part
+
+spec:
+series from URL
+analyze => 

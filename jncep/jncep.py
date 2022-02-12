@@ -2,12 +2,12 @@ import logging
 
 import click
 
-from ..utils import setup_logging
-from .epub import generate_epub
-from .track import track_series
-from .update import update_tracked
+from .cli.epub import generate_epub
+from .cli.track import track_series
+from .cli.update import update_tracked
+from .utils import module_info, setup_logging
 
-logger = logging.getLogger(__package__)
+logger = logging.getLogger(module_info())
 
 
 @click.group(

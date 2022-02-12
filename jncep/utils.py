@@ -1,7 +1,15 @@
+from functools import partial, wraps
+import inspect
 import logging
+import re
 import sys
+import unicodedata
 
 from colorama import Fore
+import trio
+
+logger = logging.getLogger(__name__)
+
 
 # specify colors for different logging levels
 LOG_COLORS = {
@@ -49,3 +57,28 @@ def tryint(val):
 
 def to_yn(b):
     return "yes" if b else "no"
+
+
+def to_safe_filename(name):
+    name = "".join(
+        c for c in unicodedata.normalize("NFD", name) if unicodedata.category(c) != "Mn"
+    )
+    safe = re.sub(r"[^0-9a-zA-Z_]+", "_", name)
+    safe = safe.strip("_")
+    return safe
+
+
+def module_info():
+    # for main module : its __name__ is __main__
+    # so find out its real name
+    frm = inspect.stack()[1]
+    mod = inspect.getmodule(frm[0])
+    return mod.__spec__.name
+
+
+def coro(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        return trio.run(partial(f, *args, **kwargs))
+
+    return wrapper

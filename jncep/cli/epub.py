@@ -1,13 +1,14 @@
 import logging
+import os
 
 import click
 
 from . import options
-from .. import core, epub as core_epub, jncapi, jncweb, spec
-from ..utils import to_yn
+from .. import core, epub, jncweb, spec
+from ..utils import coro, green
 from .common import CatchAllExceptionsCommand
 
-logger = logging.getLogger(__package__)
+logger = logging.getLogger(__name__)
 
 
 @click.command(
@@ -22,7 +23,7 @@ logger = logging.getLogger(__package__)
 @click.option(
     "-s",
     "--parts",
-    "part_specs",
+    "part_spec",
     help=(
         "Specification of a range of parts to download in the form of "
         "<vol>[.part]:<vol>[.part] [default: All the content linked by "
@@ -30,33 +31,23 @@ logger = logging.getLogger(__package__)
         "or the whole series]"
     ),
 )
-@click.option(
-    "-a",
-    "--absolute",
-    "is_absolute",
-    is_flag=True,
-    help=(
-        "Flag to indicate that the --parts option specifies part numbers "
-        "globally, instead of relative to a volume i.e. <part>:<part>"
-    ),
-)
 @options.byvolume_option
 @options.images_option
 @options.raw_content_option
 @options.no_replace_chars_option
-def generate_epub(
+@coro
+async def generate_epub(
     jnc_url,
     email,
     password,
-    part_specs,
-    is_absolute,
+    part_spec,
     output_dirpath,
     is_by_volume,
     is_extract_images,
     is_extract_content,
     is_not_replace_chars,
 ):
-    epub_generation_options = core_epub.EpubGenerationOptions(
+    epub_generation_options = epub.EpubGenerationOptions(
         output_dirpath,
         is_by_volume,
         is_extract_images,
@@ -64,34 +55,23 @@ def generate_epub(
         is_not_replace_chars,
     )
 
-    token = None
-    try:
+    async with core.JNCEPSession(email, password) as session:
         jnc_resource = jncweb.resource_from_url(jnc_url)
 
-        logger.info(f"Login with email '{email}'...")
-        token = jncapi.login(email, password)
+        # TODO handle exceptions
+        # TODO split by volume
 
-        logger.info(f"Fetching metadata for '{jnc_resource}'...")
-        jncapi.fetch_metadata(token, jnc_resource)
-
-        series = core.analyze_metadata(jnc_resource)
-
-        if part_specs:
-            logger.info(
-                f"Using part specification '{part_specs}' "
-                f"(absolute={to_yn(is_absolute)})..."
-            )
-            parts_to_download = spec.analyze_part_specs(series, part_specs, is_absolute)
+        if part_spec:
+            logger.info(f"Using part specification '{part_spec}' ")
+            part_spec_analyzed = spec.analyze_part_specs(part_spec)
         else:
-            parts_to_download = spec.analyze_requested(jnc_resource, series)
+            part_spec_analyzed = await session.to_part_spec(jnc_resource)
 
-        core.create_epub_with_requested_parts(
-            token, series, parts_to_download, epub_generation_options
+        fetch_otions = core.FetchOptions(
+            is_by_volume=epub_generation_options.is_by_volume, is_download_content=True
         )
-    finally:
-        if token:
-            try:
-                logger.info("Logout...")
-                jncapi.logout(token)
-            except Exception:
-                pass
+        series = await session.fetch_for_specs(
+            jnc_resource, part_spec_analyzed, fetch_otions
+        )
+
+        await session.create_epub(series, epub_generation_options)

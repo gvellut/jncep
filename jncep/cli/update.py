@@ -3,11 +3,12 @@ import logging
 import click
 
 from . import options
-from .. import core, epub, jncapi, jncweb, spec
-from ..utils import green
+from .. import core, epub, jncweb, spec, track, update
+from ..utils import coro, green
 from .common import CatchAllExceptionsCommand
 
-logger = logging.getLogger(__package__)
+# TODO replace
+logger = logging.getLogger(__name__)
 
 
 @click.command(
@@ -44,7 +45,8 @@ logger = logging.getLogger(__package__)
         "new part is detected during the update"
     ),
 )
-def update_tracked(
+@coro
+async def update_tracked(
     jnc_url,
     email,
     password,
@@ -64,10 +66,9 @@ def update_tracked(
         is_not_replace_chars,
     )
 
-    token = None
-    updated_series = []
-    try:
-        tracked_series = core.read_tracked_series()
+    # TODO move most of this to update
+    async with core.JNCEPSession(email, password) as session:
+        tracked_series = track.read_tracked_series()
         if len(tracked_series) == 0:
             logger.warning(
                 "There are no tracked series! Use the 'jncep track add' command "
@@ -75,65 +76,58 @@ def update_tracked(
             )
             return
 
-        logger.info(f"Login with email '{email}'...")
-        token = jncapi.login(email, password)
-
         new_synced = None
         if is_sync:
-            logger.info("Fetch followed series from J-Novel Club...")
-            follows = jncapi.fetch_follows(token)
-            new_synced, _ = core.sync_series_forward(
-                token, follows, tracked_series, False
-            )
+            # logger.info("Fetch followed series from J-Novel Club...")
+            # follows = await session.api.fetch_follows()
+            # new_synced, _ = core.sync_series_forward(
+            #     token, follows, tracked_series, False
+            # )
+            raise NotImplementedError("is_sync LABS")
 
         if jnc_url:
-            core.update_url_series(
-                token,
+            updated_series = await update.update_url_series(
+                session,
                 jnc_url,
                 epub_generation_options,
                 tracked_series,
-                updated_series,
-                is_sync,
-                new_synced,
-            )
-            if len(updated_series) == 0:
-                return
-        else:
-            has_error = core.update_all_series(
-                token,
-                epub_generation_options,
-                tracked_series,
-                updated_series,
                 is_sync,
                 new_synced,
                 is_whole_volume,
             )
 
-            if has_error:
+            if len(updated_series) == 0:
+                return
+
+        else:
+            updated_series, error_series = await update.update_all_series(
+                session,
+                epub_generation_options,
+                tracked_series,
+                is_sync,
+                new_synced,
+                is_whole_volume,
+            )
+
+            if error_series:
                 logger.error("Some series could not be updated!")
 
             if len(updated_series) == 0:
-                # TODO case all in error ?
+                # FIXME case all in error ? handle
                 logger.info(green("All series are already up to date!"))
                 return
-    finally:
-        if token:
-            try:
-                logger.info("Logout...")
-                jncapi.logout(token)
-            except Exception:
-                pass
 
-    if len(updated_series) > 0:
-        # update tracking config JSON
-        for series in updated_series:
-            pn = spec.to_relative_spec_from_part(series.parts[-1])
-            pdate = series.parts[-1].raw_part.launchDate
-            tracked_series[jncweb.url_from_series_slug(series.raw_series.titleslug)] = {
-                "part_date": pdate,
-                "part": pn,
-                "name": series.raw_series.title,
-            }
-        core.write_tracked_series(tracked_series)
+        if len(updated_series) > 0:
+            # update tracking config JSON
+            for _, last_part in updated_series.items():
+                pn = spec.to_relative_spec_from_part(last_part)
+                pdate = last_part.raw_data.launch
+                series = last_part.volume.series
+                tracked_series[jncweb.url_from_series_slug(series.raw_data.slug)] = {
+                    "part_date": pdate,
+                    "part": pn,
+                    "name": series.raw_data.title,
+                }
+            track.write_tracked_series(tracked_series)
 
-        logger.info(green(f"{len(updated_series)} series sucessfully updated!"))
+            logger.info(green(f"{len(updated_series)} series sucessfully updated!"))

@@ -4,13 +4,17 @@ from urllib.parse import urlparse, urlunparse
 
 import attr
 
-logger = logging.getLogger(__package__)
+logger = logging.getLogger(__name__)
 
 JNC_URL_BASE = "https://j-novel.club"
 
-RESOURCE_TYPE_NOVEL = "NOVEL"
+RESOURCE_TYPE_SERIES = "SERIES"
 RESOURCE_TYPE_VOLUME = "VOLUME"
 RESOURCE_TYPE_PART = "PART"
+
+
+class BadWebURLError(Exception):
+    pass
 
 
 @attr.s
@@ -19,7 +23,7 @@ class JNCResource:
     slug = attr.ib()
     is_new_website = attr.ib()
     resource_type = attr.ib()
-    raw_metadata = attr.ib(default=None)
+    raw_metadata = attr.ib(None)
 
     def __str__(self):
         pu = urlparse(self.url)
@@ -31,7 +35,7 @@ def resource_from_url(url):
     pu = urlparse(url)
 
     if pu.scheme == "":
-        raise ValueError(f"Not a URL: {url}")
+        raise BadWebURLError(f"Not a URL: {url}")
 
     # try legacy URL first
     # path is: /c/<slug>/...  or /v/<slug>/... or /s/<slug>/...
@@ -51,19 +55,19 @@ def resource_from_url(url):
         if m:
             series_slug = m.group(1)
             if not pu.fragment:
-                return JNCResource(url, series_slug, True, RESOURCE_TYPE_NOVEL)
+                return JNCResource(url, series_slug, True, RESOURCE_TYPE_SERIES)
             m = re.match(v_re, pu.fragment)
             if m:
                 # tuple with volume
                 return JNCResource(
-                    url, (series_slug, m.group(1)), True, RESOURCE_TYPE_VOLUME
+                    url, (series_slug, int(m.group(1))), True, RESOURCE_TYPE_VOLUME
                 )
         else:
             m = re.match(c_re, pu.path)
             if m:
                 return JNCResource(url, m.group(1), True, RESOURCE_TYPE_PART)
 
-    raise ValueError(f"Invalid path for URL: {url}")
+    raise BadWebURLError(f"Invalid path for URL: {url}")
 
 
 def url_from_series_slug(series_slug):
@@ -85,4 +89,4 @@ def _to_const_legacy(req_type):
     elif req_type == "v":
         return RESOURCE_TYPE_VOLUME
     else:
-        return RESOURCE_TYPE_NOVEL
+        return RESOURCE_TYPE_SERIES

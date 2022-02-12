@@ -1,16 +1,15 @@
 import logging
-from typing import List
 
 import click
 from colorama import Fore
 import dateutil.parser
 
 from . import options
-from .. import core, jncapi, jncweb
-from ..utils import colored, green, tryint
+from .. import core, jncweb, track
+from ..utils import colored, coro, green, tryint
 from .common import CatchAllExceptionsCommand
 
-logger = logging.getLogger(__package__)
+logger = logging.getLogger(__name__)
 
 
 @click.group(name="track", help="Track updates to a series")
@@ -24,17 +23,30 @@ def track_series():
 @click.argument("jnc_url", metavar="JNOVEL_CLUB_URL", required=True)
 @options.login_option
 @options.password_option
-def add_track_series(jnc_url, email, password):
-    series, series_url = core.canonical_series(jnc_url, email, password)
-    tracked_series = core.read_tracked_series()
+@coro
+async def add_track_series(jnc_url, email, password):
+    async with core.JNCEPSession(email, password) as session:
+        jnc_resource = jncweb.resource_from_url(jnc_url)
+        series_slug, func_resolve = session.lazy_resolve_series(jnc_resource)
+        if not series_slug:
+            series_raw_data = await func_resolve()
+            series_slug = series_raw_data.slug
 
-    if series_url in tracked_series:
-        logger.warning(f"The series '{series.raw_series.title}' is already tracked!")
-        return
+        # TODO async read
+        tracked_series = track.read_tracked_series()
+        series_url = jncweb.url_from_series_slug(series_slug)
 
-    core.process_series_for_tracking(tracked_series, series, series_url)
+        if series_url in tracked_series:
+            series_raw_data = await resolve_func()
+            logger.warning(
+                f"The series '{series_raw_data.raw_series.title}' is already tracked!"
+            )
+            return
 
-    core.write_tracked_series(tracked_series)
+        await track.process_series_for_tracking(session, tracked_series, series_url)
+
+        # TOO async write
+        track.write_tracked_series(tracked_series)
 
 
 @track_series.command(
@@ -62,28 +74,31 @@ def add_track_series(jnc_url, email, password):
     is_flag=True,
     help="Flag to delete series not found on the sync source",
 )
-def sync_series(email, password, is_reverse, is_delete):
-    tracked_series = core.read_tracked_series()
+@coro
+async def sync_series(email, password, is_reverse, is_delete):
+    raise NotImplementedError("sync_series LABS")
 
-    token = None
-    try:
-        logger.info(f"Login with email '{email}'...")
-        token = jncapi.login(email, password)
+    # tracked_series = core.read_tracked_series()
 
-        logger.info("Fetch followed series from J-Novel Club...")
-        follows: List[jncweb.JNCResource] = jncapi.fetch_follows(token)
+    # token = None
+    # try:
+    #     logger.info(f"Login with email '{email}'...")
+    #     token = jncapi_legacy.login(email, password)
 
-        if is_reverse:
-            core.sync_series_backward(token, follows, tracked_series, is_delete)
-        else:
-            core.sync_series_forward(token, follows, tracked_series, is_delete)
-    finally:
-        if token:
-            try:
-                logger.info("Logout...")
-                jncapi.logout(token)
-            except Exception:
-                pass
+    #     logger.info("Fetch followed series from J-Novel Club...")
+    #     follows: List[jncweb.JNCResource] = jncapi_legacy.fetch_follows(token)
+
+    #     if is_reverse:
+    #         track.sync_series_backward(token, follows, tracked_series, is_delete)
+    #     else:
+    #         track.sync_series_forward(token, follows, tracked_series, is_delete)
+    # finally:
+    #     if token:
+    #         try:
+    #             logger.info("Logout...")
+    #             jncapi_legacy.logout(token)
+    #         except Exception:
+    #             pass
 
 
 @track_series.command(
@@ -92,9 +107,9 @@ def sync_series(email, password, is_reverse, is_delete):
 @click.argument("jnc_url_or_index", metavar="JNOVEL_CLUB_URL_OR_INDEX", required=True)
 @options.login_option
 @options.password_option
-def rm_track_series(jnc_url_or_index, email, password):
-    tracked_series = core.read_tracked_series()
-
+@coro
+async def rm_track_series(jnc_url_or_index, email, password):
+    tracked_series = track.read_tracked_series()
     index = tryint(jnc_url_or_index)
     if index is not None:
         index0 = index - 1
@@ -103,21 +118,28 @@ def rm_track_series(jnc_url_or_index, email, password):
             return
         series_url_list = list(tracked_series.keys())
         series_url = series_url_list[index0]
-        series_name = tracked_series[series_url].name
     else:
-        series, series_url = core.canonical_series(jnc_url_or_index, email, password)
-        series_name = series.raw_series.title
+        async with core.JNCEPSession(email, password) as session:
+            jnc_resource = jncweb.resource_from_url(jnc_url_or_index)
+            series_slug, func_resolve = session.lazy_resolve_series(jnc_resource)
+            if not series_slug:
+                series_raw_data = await func_resolve()
+                series_slug = series_raw_data.slug
+            series_url = jncweb.url_from_series_slug(series_slug)
 
-        if series_url not in tracked_series:
-            logger.warning(
-                f"The series '{series_name}' is not tracked! "
-                "(Use 'track list --details')"
-            )
-            return
+            if series_url not in tracked_series:
+                series_raw_data = await resolve_func()
+                logger.warning(
+                    f"The series '{series_raw_data.title}' is not tracked! "
+                    "(Use 'track list --details')"
+                )
+                return
+
+    series_name = tracked_series[series_url].name
 
     del tracked_series[series_url]
 
-    core.write_tracked_series(tracked_series)
+    track.write_tracked_series(tracked_series)
 
     logger.info(green(f"The series '{series_name}' is no longer tracked"))
 
@@ -133,7 +155,8 @@ def rm_track_series(jnc_url_or_index, email, password):
     help="Flag to list the details of the tracked series (URL, date of last release)",
 )
 def list_track_series(is_detail):
-    tracked_series = core.read_tracked_series()
+    # TODO async ? zero utility
+    tracked_series = track.read_tracked_series()
     if len(tracked_series) > 0:
         logger.info(f"{len(tracked_series)} series are tracked:")
         for index, (ser_url, ser_details) in enumerate(tracked_series.items()):
