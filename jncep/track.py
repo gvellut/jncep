@@ -9,7 +9,7 @@ import attr
 import dateutil.parser
 
 from . import jncweb, spec
-from .core import dl_parts_volume, dl_volumes, FetchOptions
+from .core import all_parts, FetchOptions
 from .jncweb import resource_from_url
 from .utils import green
 
@@ -42,24 +42,6 @@ def read_tracked_series():
     except FileNotFoundError:
         # first run ?
         return Addict({})
-
-
-def canonical_series(jnc_url, email, password):
-    token = None
-    try:
-        jnc_resource = resource_from_url(jnc_url)
-
-        logger.info(f"Login with email '{email}'...")
-        token = jncapi_legacy.login(email, password)
-
-        return tracking_series_metadata(token, jnc_resource)
-    finally:
-        if token:
-            try:
-                logger.info("Logout...")
-                jncapi_legacy.logout(token)
-            except Exception:
-                pass
 
 
 def _convert_to_latest_format(data):
@@ -115,16 +97,15 @@ def tracking_series_metadata(token, jnc_resource):
 
 async def process_series_for_tracking(session, tracked_series, series_url):
     jnc_resource = resource_from_url(series_url)
+    # TODO change ; combine LastpartSpec+ fetch_options
     part_spec = LastPartSpec()
     fetch_options = FetchOptions(is_download_content=False, is_download_cover=False)
     series = await session.fetch_for_specs(jnc_resource, part_spec, fetch_options)
 
-    volumes = dl_volumes(series)
+    parts = all_parts(series)
     last_part = None
-    if volumes:
-        piv = dl_parts_volume(volumes[-1])
-        if piv:
-            last_part = piv[-1]
+    if parts:
+        last_part = parts[-1]
 
     # record current last part + name
     if not last_part:
@@ -140,7 +121,6 @@ async def process_series_for_tracking(session, tracked_series, series_url):
             )
         )
     else:
-        last_part = dl_parts_volume(volumes[-1])[-1]
         pn = spec.to_relative_spec_from_part(last_part)
         pdate = last_part.raw_data.launch
 

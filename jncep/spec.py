@@ -4,8 +4,6 @@ import re
 
 import attr
 
-from . import model
-
 logger = logging.getLogger(__name__)
 
 RANGE_SEP = ":"
@@ -17,6 +15,10 @@ START_OF_VOLUME = "START_OF_VOLUME"
 END_OF_VOLUME = "END_OF_VOLUME"
 START_OF_SERIES = "START_OF_SERIES"
 END_OF_SERIES = "END_OF_SERIES"
+
+
+# TODO something more generic that blends the spec + the ref
+# use cases => mix of the two
 
 # fields a bit arbitrary : What is needed for the use case
 RefVolume = namedtuple("RefVolume", ("volume_id volume_num num_volumes"))
@@ -95,15 +97,6 @@ def to_relative_spec_from_part(part):
     volume_number = part.volume.num
     part_number = part.num_in_volume
     return f"{volume_number}.{part_number}"
-
-
-def to_part_from_relative_spec(series, relpart_str) -> model.Part:
-    # FIXME still necessary ?
-    # there will be an error if the relpart does not not existe
-    spec = _analyze_volume_part_specs(relpart_str)
-    for volume in series.volumes:
-        if not volume.is_dl:
-            continue
 
 
 def analyze_part_specs(part_specs):

@@ -15,6 +15,7 @@ class Volume:
     parts = attr.ib(None)
     is_dl = attr.ib(False)
     cover = attr.ib(None)
+    series = attr.ib(None)
 
 
 @attr.s

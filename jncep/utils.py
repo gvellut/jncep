@@ -1,3 +1,4 @@
+from functools import partial, wraps
 import inspect
 import logging
 import re
@@ -5,6 +6,7 @@ import sys
 import unicodedata
 
 from colorama import Fore
+import trio
 
 logger = logging.getLogger(__name__)
 
@@ -72,3 +74,11 @@ def module_info():
     frm = inspect.stack()[1]
     mod = inspect.getmodule(frm[0])
     return mod.__spec__.name
+
+
+def coro(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        return trio.run(partial(f, *args, **kwargs))
+
+    return wrapper

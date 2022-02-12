@@ -1,13 +1,11 @@
-from functools import partial
 import logging
 import os
 
 import click
-import trio
 
 from . import options
 from .. import core, epub, jncweb, spec
-from ..utils import green
+from ..utils import coro, green
 from .common import CatchAllExceptionsCommand
 
 logger = logging.getLogger(__name__)
@@ -37,11 +35,8 @@ logger = logging.getLogger(__name__)
 @options.images_option
 @options.raw_content_option
 @options.no_replace_chars_option
-def generate_epub(*args, **kwargs):
-    trio.run(partial(_generate_epub, *args, **kwargs))
-
-
-async def _generate_epub(
+@coro
+async def generate_epub(
     jnc_url,
     email,
     password,
@@ -79,22 +74,4 @@ async def _generate_epub(
             jnc_resource, part_spec_analyzed, fetch_otions
         )
 
-        # array (to handle split by volume)
-        book_details = session.process_downloaded(series, epub_generation_options)
-
-        if is_extract_content:
-            await session.extract_content(series, epub_generation_options)
-
-        if is_extract_images:
-            await session.extract_images(series, epub_generation_options)
-
-        for book_details_i in book_details:
-            output_filename = core.to_safe_filename(book_details_i.title) + ".epub"
-            output_filepath = os.path.join(
-                epub_generation_options.output_dirpath, output_filename
-            )
-            # TODO write to memory then async fs write here ? (uses epublib
-            # which is sync anyway)
-            epub.create_epub(output_filepath, book_details_i)
-
-            logger.info(green(f"Success! EPUB generated in '{output_filepath}'!"))
+        await session.create_epub(series, epub_generation_options)

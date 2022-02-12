@@ -1,9 +1,11 @@
 from collections import defaultdict
+from datetime import datetime
 from functools import partial
 from html.parser import HTMLParser
 import logging
 import os
 import re
+import sys
 import time
 from typing import List
 
@@ -13,7 +15,7 @@ import trio
 from . import epub, jncweb, spec
 from .jnclabs import JNCLabsAPI
 from .model import Image, Part, Series, Volume
-from .utils import to_safe_filename
+from .utils import green, to_safe_filename
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +52,7 @@ class IdentifierSpec:
         return self.part_id == ref_part.part_id
 
 
+# TODO replace with dumb object + functions
 class JNCEPSession:
     def __init__(self, email, password):
         self.api = JNCLabsAPI()
@@ -126,6 +129,26 @@ class JNCEPSession:
                 volume = c.results["volume"]
                 return IdentifierSpec(spec.PART, volume.legacyId, part.legacyId)
 
+    async def create_epub(self, series, epub_generation_options):
+        book_details = self.process_downloaded(series, epub_generation_options)
+
+        if epub_generation_options.is_extract_content:
+            await self.extract_content(series, epub_generation_options)
+
+        if epub_generation_options.is_extract_images:
+            await self.extract_images(series, epub_generation_options)
+
+        for book_details_i in book_details:
+            output_filename = to_safe_filename(book_details_i.title) + ".epub"
+            output_filepath = os.path.join(
+                epub_generation_options.output_dirpath, output_filename
+            )
+            # TODO write to memory then async fs write here ? (uses epublib
+            # which is sync anyway)
+            epub.create_epub(output_filepath, book_details_i)
+
+            logger.info(green(f"Success! EPUB generated in '{output_filepath}'!"))
+
     def lazy_resolve_series(self, jnc_resource):
         if jnc_resource.resource_type == jncweb.RESOURCE_TYPE_SERIES:
             series_slug = jnc_resource.slug
@@ -144,6 +167,8 @@ class JNCEPSession:
             return None, partial(self.api.fetch_data, "parts", part_slug, "serie")
 
     async def fetch_for_specs(self, jnc_resource, part_spec, fetch_options):
+        # FIXME scrap that ; two parts => 1 retrieve all part metadata (Even if
+        # not needed) 2 download content if needed; much simpler
         with AsyncCollector() as c:
             async with trio.open_nursery() as nursery:
                 series_slug, func_resolve = self.lazy_resolve_series(jnc_resource)
@@ -183,6 +208,8 @@ class JNCEPSession:
 
             volumes = c.results["series_deep"]
             series = Series(series_raw_data, volumes)
+            for volume in volumes:
+                volume.series = series
 
             if "covers" in c.results:
                 error = c.errors.get("covers")
@@ -336,11 +363,13 @@ class JNCEPSession:
                 nursery.start_soon(_write_str, content_filepath, content)
 
 
+# TODO repace with channels
 class AsyncCollector:
     def __init__(self):
         self.results = {}
         self.errors = {}
 
+    # TODO use partial so no args
     def collect(self, name, afunc, *args):
         async def wrapper():
             res = await afunc(*args)
@@ -421,13 +450,19 @@ def dl_parts_volume(volume):
 
 
 def dl_volumes(series):
-    volumes = [v for v in series.volumes if v.is_dl]
+    # cond v.parts => some parts have expired
+    volumes = [v for v in series.volumes if v.is_dl and v.parts]
     return volumes
 
 
 def dl_images(parts):
     images = [i for part in parts for i in part.images]
     return images
+
+
+def all_parts(series):
+    parts = [p for v in series.volumes if v.parts for p in v.parts]
+    return parts
 
 
 async def _deep_fetch_volumes_for_series(
@@ -480,6 +515,8 @@ async def _deep_fetch_parts_for_volume(
     parts_data = await _fetch_parts_for_volume(api, volume)
     parts = []
 
+    now = datetime.utcnow().isoformat() + "Z"
+
     async with trio.open_nursery() as nursery:
         for i, part_data in enumerate(parts_data):
             part_id = part_data.legacyId
@@ -491,12 +528,14 @@ async def _deep_fetch_parts_for_volume(
             if not part_spec.has_part(ref_part):
                 continue
 
-            part.is_dl = True
-
             if not fetch_options.is_download_content:
                 continue
 
-            # TODO handle unavailable content (not preview + not catchup)
+            if part_data.expiration < now:
+                # TODO signal this
+                continue
+
+            part.is_dl = True
 
             nursery.start_soon(_deep_fetch_content_for_part, api, part, fetch_options)
 
@@ -517,7 +556,6 @@ async def _fetch_parts_for_volume(api: JNCLabsAPI, volume):
 
 
 async def _deep_fetch_content_for_part(api: JNCLabsAPI, part, fetch_options):
-    # TODO handle errors
     part.content = await api.fetch_content(part.part_id, "data.xhtml")
     img_urls = _img_urls(part.content)
     if fetch_options.is_download_images and len(img_urls) > 0:
@@ -535,9 +573,12 @@ async def _deep_fetch_content_for_part(api: JNCLabsAPI, part, fetch_options):
 
 
 async def _fetch_image(api: JNCLabsAPI, part, img_url):
-    img_bytes = await api.fetch_url(img_url)
-    image = Image(img_url, part, img_bytes)
-    return image
+    try:
+        img_bytes = await api.fetch_url(img_url)
+        image = Image(img_url, part, img_bytes)
+        return image
+    except Exception as ex:
+        logger.debug(f"Error downloading image : {ex}", exc_info=sys.exc_inf())
 
 
 class ImgUrlParser(HTMLParser):
