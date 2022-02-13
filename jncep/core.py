@@ -10,6 +10,7 @@ import time
 from typing import List
 
 import attr
+import dateutil
 import trio
 
 from . import epub, jncweb, spec
@@ -515,7 +516,7 @@ async def _deep_fetch_parts_for_volume(
     parts_data = await _fetch_parts_for_volume(api, volume)
     parts = []
 
-    now = datetime.utcnow().isoformat() + "Z"
+    now = datetime.utcnow()
 
     async with trio.open_nursery() as nursery:
         for i, part_data in enumerate(parts_data):
@@ -531,7 +532,10 @@ async def _deep_fetch_parts_for_volume(
             if not fetch_options.is_download_content:
                 continue
 
-            if part_data.expiration < now:
+            # could compare now in iso format but can cause problmen in case
+            # string has ms part. Could substring too... but this is easier
+            expiration_data = dateutil.parser.parse(part_data.expiration)
+            if expiration_data < now:
                 # TODO signal this
                 continue
 
@@ -567,7 +571,7 @@ async def _deep_fetch_content_for_part(api: JNCLabsAPI, part, fetch_options):
                         c.collect(img_url, _fetch_image, api, part, img_url)
                     )
 
-            part.images = list(c.results.values())
+            part.images = list(filter(None, c.results.values()))
     else:
         part.images = []
 

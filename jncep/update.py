@@ -2,6 +2,7 @@ import logging
 import sys
 
 import attr
+import dateutil
 import trio
 
 from . import core, jncweb, spec
@@ -236,13 +237,12 @@ async def _create_epub_for_new_parts(
         else:
             last_update_date = series_details.part_date
 
-        parts_to_download = []
         toc = await session.api.fetch_data("parts", last_part.part_id, "toc")
         # weird struct for the response : toc.parts has pagination struct (but all
         # parts seem to be there anyway) and parts property in turn
-        for entry in toc.parts.parts:
-            if entry.launch > last_update_date:
-                parts_to_download.append(entry.legacyId)
+        parts_to_download = _parts_released_after_date(
+            toc.parts.parts, last_update_date
+        )
 
         if not parts_to_download:
             is_updated = False
@@ -288,3 +288,16 @@ async def _create_epub_for_new_parts(
 
         is_updated = True
         return is_updated, series
+
+
+def _parts_released_after_date(parts, date):
+    parts = []
+    comparison_date = dateutil.parser.parse(date)
+    for part in parts:
+        # all date strings are in ISO format
+        # so no need to parse really
+        # parsing just to be safe
+        # in case different shape like ms part or not (which throws str comp off)
+        launch_date = dateutil.parser.parse(part.launch)
+        if launch_date > comparison_date:
+            parts.append(part)
