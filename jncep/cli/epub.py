@@ -71,7 +71,7 @@ async def generate_epub(
         # TODO log that part is unavailable to show user
         def part_filter(part):
             return part_spec_analyzed.has_part(part) and core.is_part_available(
-                part, session.now
+                session.now, part
             )
 
         (
@@ -79,7 +79,7 @@ async def generate_epub(
             parts_to_download,
         ) = core.relevant_volumes_and_parts_for_content(series_meta, part_filter)
         volumes_for_cover = core.relevant_volumes_for_cover(
-            volumes_to_download, epub_generation_options
+            volumes_to_download, epub_generation_options.is_by_volume
         )
 
         await core.fill_covers_and_content(

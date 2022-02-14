@@ -1,3 +1,4 @@
+from functools import partial
 import logging
 import sys
 
@@ -5,29 +6,18 @@ import attr
 import dateutil
 import trio
 
-from . import core, jncweb, spec
-from .core import all_parts, AsyncCollector, dl_parts, FetchOptions, IdentifierSpec
-from .track import LastPartSpec
+from . import core, jncweb, spec, track
+from .trio_utils import background, gather
 from .utils import green
 
 logger = logging.getLogger(__package__)
 
 
 @attr.s
-class MultiSpec:
-    specs = attr.ib()
-
-    def has_volume(self, ref_volume) -> bool:
-        for sp in self.specs:
-            if sp.has_volume(ref_volume):
-                return True
-        return False
-
-    def has_part(self, ref_part) -> bool:
-        for sp in self.specs:
-            if sp.has_part(ref_part):
-                return True
-        return False
+class UpdateResult:
+    is_error = attr.ib(False)
+    series = attr.ib(None)
+    is_updated = attr.ib(None)
 
 
 async def update_url_series(
@@ -40,6 +30,7 @@ async def update_url_series(
     new_synced,
     is_whole_volume,
 ):
+    # FIXME update
     jnc_resource = jncweb.resource_from_url(jnc_url)
 
     logger.info(f"Fetching metadata for '{jnc_resource}'...")
@@ -89,33 +80,39 @@ async def update_all_series(
     new_synced,
     is_whole_volume,
 ):
-    with AsyncCollector() as c:
-        async with trio.open_nursery() as nursery:
-            for series_url, series_details in tracked_series.items():
-                # TODO channels to indicate which series have been updated
+    async with trio.open_nursery() as n:
+        series_urls = []
+        f_series = []
+        for series_url, series_details in tracked_series.items():
+            f_one_series = background(
+                n,
+                partial(
+                    _handle_series,
+                    session,
+                    series_url,
+                    series_details,
+                    epub_generation_options,
+                    is_sync,
+                    new_synced,
+                    is_whole_volume,
+                ),
+            )
+            f_series.append(f_one_series)
+            series_urls.append(series_url)
 
-                nursery.start_soon(
-                    c.collect(
-                        series_url,
-                        _handle_series,
-                        session,
-                        series_url,
-                        series_details,
-                        epub_generation_options,
-                        is_sync,
-                        new_synced,
-                        is_whole_volume,
-                    )
-                )
+        results = await gather(n, f_series).get()
 
+        # FIXME rework the event / logging to the user
         updated_series = {}
-        error_series = set()
-        for series_url, (last_part, is_error) in c.results.items():
-            if last_part:
-                updated_series[series_url] = last_part
+        error_series = []
+        for i, update_result in enumerate(results):
+            series_url = series_urls[i]
 
-            if is_error:
-                error_series.add(series_url)
+            if update_result.is_updated:
+                updated_series[series_url] = update_result.series
+
+            if update_result.is_error:
+                error_series.append(tracked_series[series_url])
 
         return updated_series, error_series
 
@@ -135,10 +132,7 @@ async def _handle_series(
             return
 
         jnc_resource = jncweb.resource_from_url(series_url)
-        series_slug, func_resolve = session.lazy_resolve_series(jnc_resource)
-        if not series_slug:
-            series_raw_data = await func_resolve()
-            series_slug = series_raw_data.slug
+        series_meta = await core.resolve_series(session, jnc_resource)
 
         if is_sync:
             raise NotImplementedError("is_sync LABS")
@@ -146,158 +140,205 @@ async def _handle_series(
             #     token, series, epub_generation_options
             # )
         else:
-            is_updated, series = await _create_epub_for_new_parts(
+            is_updated = await _create_epub_for_new_parts(
                 session,
                 series_details,
-                series_slug,
+                series_meta,
                 epub_generation_options,
                 is_whole_volume,
             )
 
-        last_part = None
         if is_updated:
+            # TODO event
             logger.info(
-                green(f"The series '{series.raw_data.title}' has been updated!")
+                green(f"The series '{series_meta.raw_data.title}' has been updated!")
             )
-            last_part = all_parts(series)[-1]
 
-        return last_part, False
+        return UpdateResult(False, series_meta, is_updated)
 
     except Exception as ex:
         logger.debug(str(ex), exc_info=sys.exc_info())
-        return False, True
+        return UpdateResult(True)
 
 
+# TODO too complex ; refactor
 async def _create_epub_for_new_parts(
     session,
     series_details,
-    series_slug,
+    series_meta,
     epub_generation_options,
     is_whole_volume,
 ):
-    # FIXME all very ugly ; refactor
-    # FIXME
-    series_url = jncweb.url_from_series_slug(series_slug)
-    jnc_resource = jncweb.resource_from_url(series_url)
-
-    # fetch the TOC
-    part_spec = LastPartSpec()
-    fetch_options = FetchOptions(is_download_content=False, is_download_cover=False)
-    series = await session.fetch_for_specs(jnc_resource, part_spec, fetch_options)
-
-    parts = all_parts(series)
-
-    last_part = None
-    if parts:
-        last_part = parts[-1]
-
     if series_details.part == 0:
         # special processing : means there was no part available when the
         # series was started tracking
 
-        # TODO in this case no need to fetch the last part
-        # fetch all : check that there is a part to distinguish branch below
+        # will fetch one part ; sufficient for here
+        # quick to check
+        await track.fill_meta_for_track(session, series_meta)
+        parts = core.all_parts_meta(series_meta)
 
         # still no part ?
         if not parts:
-            series_with_dl_parts = None
-            is_updated = False
+            return False
         else:
             # complete series
-            part_spec = spec.analyze_part_specs(":")
-            fetch_options = FetchOptions(
-                is_by_volume=epub_generation_options.is_by_volume
+            await core.fill_meta(session, series_meta)
+
+            part_filter = partial(core.is_part_available, session.now)
+
+            (
+                volumes_to_download,
+                parts_to_download,
+            ) = core.relevant_volumes_and_parts_for_content(series_meta, part_filter)
+            volumes_for_cover = core.relevant_volumes_for_cover(
+                volumes_to_download, epub_generation_options.is_by_volume
             )
-            series_with_dl_parts = await session.fetch_for_specs(
-                jnc_resource, part_spec, fetch_options
+
+            await core.fill_covers_and_content(
+                session, volumes_for_cover, parts_to_download
+            )
+            await core.create_epub(
+                series_meta,
+                volumes_to_download,
+                parts_to_download,
+                epub_generation_options,
             )
 
-            session.create_epub(series_with_dl_parts, epub_generation_options)
-
-            is_updated = True
-
-        return is_updated, series_with_dl_parts
+            return True
     else:
+
         if not series_details.part_date:
-            # TODO cleanup
-            # TODO do this together with fetch toc + fetch last_part
+            # TODO test this branch
             # if here => old format, first lookup date of last part and use that
-            # TODO possible to do that for all ie no need to keep the date around
-            # TODO remove ? suppose no old format ? but still maybe for stalled series
+            # maybe still useful for stalled series so keep it
             part_spec = spec.analyze_part_specs(series_details.part)
-            fetch_options = FetchOptions(
-                is_download_content=False, is_download_cover=False
-            )
-            series = await session.fetch_for_specs(
-                jnc_resource, part_spec, fetch_options
-            )
-            last_update_part = all_parts(series)[-1]
+            await core.fill_meta(session, series_meta, part_spec.has_volume)
+            parts = core.all_parts_meta(series_meta)
+            for part in parts:
+                if part_spec.has_part(part):
+                    # will be filled if the part still exists (it should)
+                    # TODO case it doesn't ? eg tracked.json filled by hand
+                    last_update_part = part
+                    break
             # in UTC
             last_update_date = last_update_part.raw_data.launch
         else:
+            # new format : date is recorded
             last_update_date = series_details.part_date
 
+        last_update_date = dateutil.parser.parse(last_update_date)
+
+        await fill_meta_for_update(session, series_meta, last_update_date)
+        # normally if in this branch parts should not be empty
+        parts = core.all_parts_meta(series_meta)
+
+        # TOC is below a part in the Labs API
+        last_part = parts[-1]
         toc = await session.api.fetch_data("parts", last_part.part_id, "toc")
         # weird struct for the response : toc.parts has pagination struct (but all
         # parts seem to be there anyway) and parts property in turn
-        parts_to_download = _parts_released_after_date(
-            toc.parts.parts, last_update_date
+        parts_id_to_download = _filter_parts_released_after_date(
+            last_update_date, toc.parts.parts
         )
 
-        if not parts_to_download:
-            is_updated = False
-            return is_updated, None
+        if not parts_id_to_download:
+            # not updated
+            return False
 
-        # fetch volumes for each parts
-        # TODO optimize instead of all this : start from last volume backward
-        # until .launch < recorded last update date
-        # then we have all the part ids + volume
-        with AsyncCollector() as c:
-            async with trio.open_nursery() as nursery:
-                for part_id in parts_to_download:
-                    nursery.start_soon(
-                        c.collect(
-                            part_id, session.api.fetch_data, "parts", part_id, "volume"
-                        )
-                    )
-
-            volumes = c.results
-
-        specs = []
-        if not is_whole_volume:
-            for part_id in parts_to_download:
-                volume_id = volumes[part_id].legacyId
-                id_spec = IdentifierSpec(spec.PART, volume_id, part_id)
-                specs.append(id_spec)
-        else:
-            volumes_id = set([v.legacyId for v in volumes.values()])
-            for volume_id in volumes_id:
-                id_spec = IdentifierSpec(spec.VOLUME, volume_id)
-                specs.append(id_spec)
-
-        multi_spec = MultiSpec(specs)
-        fetch_options = FetchOptions(is_by_volume=epub_generation_options.is_by_volume)
-        series = await session.fetch_for_specs(jnc_resource, multi_spec, fetch_options)
-
-        if not dl_parts(series):
-            logger.warning(
-                f"All updated parts for '{series.raw_data.title}' have expired!"
+        def simple_part_filter(part):
+            return part.part_id in parts_id_to_download and core.is_part_available(
+                session.now, part
             )
-            raise core.NoRequestedPartAvailableError(series.raw_data.slug)
-        await session.create_epub(series, epub_generation_options)
 
-        is_updated = True
-        return is_updated, series
+        (
+            volumes_to_download,
+            parts_to_download,
+        ) = core.relevant_volumes_and_parts_for_content(series_meta, simple_part_filter)
+
+        if is_whole_volume:
+            # second pass : filter on the volumes_to_download
+            # all the parts of those volumes must be downloaded
+            volumes_id_to_download = set((v.volume_id for v in volumes_to_download))
+
+            def whole_volume_part_filter(part):
+                return (
+                    part.volume.volume_id in volumes_id_to_download
+                    and core.is_part_available(session.now, part)
+                )
+
+            (
+                volumes_to_download,
+                parts_to_download,
+            ) = core.relevant_volumes_and_parts_for_content(
+                series_meta, whole_volume_part_filter
+            )
+
+        # TODO also log some have expired
+        if not parts_to_download:
+            # TODO event
+            logger.warning(
+                f"All updated parts for '{series_meta.raw_data.title}' have expired!"
+            )
+            raise core.NoRequestedPartAvailableError(series_meta.raw_data.slug)
+
+        volumes_for_cover = core.relevant_volumes_for_cover(
+            volumes_to_download, epub_generation_options.is_by_volume
+        )
+
+        await core.fill_covers_and_content(
+            session, volumes_for_cover, parts_to_download
+        )
+        await core.create_epub(
+            series_meta, volumes_to_download, parts_to_download, epub_generation_options
+        )
+
+        return True
 
 
-def _parts_released_after_date(parts, date):
-    parts = []
-    comparison_date = dateutil.parser.parse(date)
+async def fill_meta_for_update(session, series, last_update_date):
+    volumes = await core.fetch_volumes_meta(session, series.series_id)
+    series.volumes = volumes
+    for volume in volumes:
+        volume.series = series
+
+    # first try last 2 volumes => in most update scenarios (if updated frequently),
+    # this should be enough
+    # also special case of multiple volumes published at the same time (altenia)
+    # => 2 volumes ; but will fail if more
+    # TODO detect ? or add a switch to bypass (ie all the volumes)
+    last_2_volumes = volumes[-2:]
+    rest_volumes = volumes[:-2]
+    await core.fill_all_parts_meta_background(session, last_2_volumes)
+    for volume in last_2_volumes:
+        for part in volume.parts:
+            # check if has part before the reference date
+            # => means the parts relased after are all there
+            # (except possibly when multiple volumes published at the same time)
+            if not _is_released_after_date(last_update_date, part.raw_data.launch):
+                break
+        else:
+            continue
+        break
+    else:
+        # just give up and request everything
+        await core.fill_all_parts_meta_background(session, rest_volumes)
+
+
+def _is_released_after_date(date, part_date_s):
+    launch_date = dateutil.parser.parse(part_date_s)
+    return launch_date > date
+
+
+def _filter_parts_released_after_date(date, parts):
+    # parts is the raw Part struct from JNC Labs API
+    parts_id_to_download = set()
     for part in parts:
         # all date strings are in ISO format
         # so no need to parse really
         # parsing just to be safe
         # in case different shape like ms part or not (which throws str comp off)
-        launch_date = dateutil.parser.parse(part.launch)
-        if launch_date > comparison_date:
-            parts.append(part)
+        if _is_released_after_date(date, part.launch):
+            parts_id_to_download.add(part.legacyId)
+
+    return parts_id_to_download

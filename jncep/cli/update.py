@@ -3,8 +3,9 @@ import logging
 import click
 
 from . import options
-from .. import core, epub, jncweb, spec, track, update
-from ..utils import coro, green
+from .. import core, jncweb, spec, track, update
+from ..trio_utils import coro
+from ..utils import green
 from .base import CatchAllExceptionsCommand
 
 # TODO replace
@@ -119,7 +120,10 @@ async def update_tracked(
 
         if len(updated_series) > 0:
             # update tracking config JSON
-            for _, last_part in updated_series.items():
+            for _, series in updated_series.items():
+                parts = core.all_parts_meta(series)
+                # if here should exist
+                last_part = parts[-1]
                 pn = spec.to_relative_spec_from_part(last_part)
                 pdate = last_part.raw_data.launch
                 series = last_part.volume.series

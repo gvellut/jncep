@@ -280,6 +280,10 @@ def _replace_image_urls(content, images: List[Image]):
     return content
 
 
+def all_parts_meta(series):
+    return [part for volume in series.volumes if volume.parts for part in volume.parts]
+
+
 async def to_part_spec(session, jnc_resource):
     if jnc_resource.resource_type == jncweb.RESOURCE_TYPE_SERIES:
         return IdentifierSpec(spec.SERIES)
@@ -345,26 +349,7 @@ async def fill_meta(session, series, volume_callback=None):
     for volume in volumes:
         volume.series = series
 
-    async with trio.open_nursery() as n:
-        volume_indices = []
-        futures = []
-        for i, volume in enumerate(series.volumes):
-            if volume_callback and not volume_callback(volume):
-                continue
-            f_parts = background(
-                n, partial(fetch_parts_meta, session, volume.volume_id)
-            )
-            volume_indices.append(i)
-            futures.append(f_parts)
-
-        all_parts = await gather(n, futures).get()
-        for i, parts in enumerate(all_parts):
-            index = volume_indices[i]
-            volume = series.volumes[index]
-
-            volume.parts = parts
-            for part in parts:
-                part.volume = volume
+    await fill_all_parts_meta_background(session, volumes, volume_callback)
 
     # similar to what we got from the original JNC API
     return series
@@ -382,6 +367,29 @@ async def fetch_volumes_meta(session, series_id):
         volumes.append(volume)
 
     return volumes
+
+
+async def fill_all_parts_meta_background(session, volumes, volume_callback=None):
+    async with trio.open_nursery() as n:
+        volumes_meta = []
+        futures = []
+        for volume in volumes:
+            if volume_callback and not volume_callback(volume):
+                continue
+
+            f_parts = background(
+                n, partial(fetch_parts_meta, session, volume.volume_id)
+            )
+            futures.append(f_parts)
+            volumes_meta.append(volume)
+
+        all_parts = await gather(n, futures).get()
+        for i, parts in enumerate(all_parts):
+            volume = volumes_meta[i]
+
+            volume.parts = parts
+            for part in parts:
+                part.volume = volume
 
 
 async def fetch_parts_meta(session, volume_id):
@@ -435,7 +443,7 @@ async def fetch_content(session, parts):
     return parts_content
 
 
-def is_part_available(part, now):
+def is_part_available(now, part):
     if part.raw_data.preview:
         return True
 
@@ -552,8 +560,8 @@ async def fetch_cover_for_volume(session, volume):
     return cover
 
 
-def relevant_volumes_for_cover(volumes, epub_generation_options):
-    if epub_generation_options.is_by_volume:
+def relevant_volumes_for_cover(volumes, is_by_volume):
+    if is_by_volume:
         volumes_cover = [volumes[0]]
     else:
         volumes_cover = volumes

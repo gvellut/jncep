@@ -86,7 +86,6 @@ async def fill_meta_for_track(session, series):
         for part in parts:
             part.volume = last_volume
 
-    # similar to what we got from the original JNC API
     return series
 
 
