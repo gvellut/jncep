@@ -30,14 +30,14 @@ class Single:
     type_ = attr.ib()
     spec = attr.ib()
 
-    def has_volume(self, ref_volume) -> bool:
+    def has_volume(self, volume) -> bool:
         if self.type_ == SERIES:
             return True
         elif self.type_ == VOLUME:
-            return self.spec == ref_volume.volume_num
+            return self.spec == volume.num
         # part
         vn, _ = self.spec
-        return ref_volume.volume_num == vn
+        return volume.num == vn
 
     def has_part(self, ref_part) -> bool:
         # assume has_volume is True if has_part is checked
@@ -45,7 +45,7 @@ class Single:
             return True
         # part
         _, pn = self.spec
-        return ref_part.part_num == pn
+        return ref_part.num_in_volume == pn
 
 
 @attr.s
@@ -53,41 +53,41 @@ class Interval:
     start = attr.ib()
     end = attr.ib()
 
-    def has_volume(self, ref_volume) -> bool:
+    def has_volume(self, volume) -> bool:
         if self.start == START_OF_SERIES:
             # spec is a part (START_OF / END_OF cannot happen together)
             vn, _ = self.end.spec
-            return ref_volume.volume_num <= vn
+            return volume.num <= vn
 
         vn, _ = self.start.spec
         if self.end == END_OF_SERIES:
-            return ref_volume.volume_num >= vn
+            return volume.num >= vn
 
         vn2, _ = self.end.spec
-        return vn <= ref_volume.volume_num <= vn2
+        return vn <= volume.num <= vn2
 
     def has_part(self, ref_part) -> bool:
         if self.start == START_OF_SERIES:
             # spec is a part
             vn, pn = self.end.spec
-            if ref_part.volume_num < vn:
+            if ref_part.volume.num < vn:
                 return True
             # same volume
-            return ref_part.part_num <= pn
+            return ref_part.num_in_volume <= pn
 
         vn, pn = self.start.spec
         if self.end == END_OF_SERIES:
-            if ref_part.volume_num > vn:
+            if ref_part.volume.num > vn:
                 return True
             # same volume
-            return ref_part.part_num >= pn
+            return ref_part.num_in_volume >= pn
 
         vn2, pn2 = self.end.spec
-        if vn < ref_part.volume_num < vn2:
+        if vn < ref_part.volume.volume_num < vn2:
             return True
-        if ref_part.volume_num == vn and ref_part.part_num >= pn:
+        if ref_part.volume.num == vn and ref_part.num_in_volume >= pn:
             return True
-        if ref_part.volume_num == vn2 and ref_part.part_num <= pn2:
+        if ref_part.volume.num == vn2 and ref_part.num_in_volume <= pn2:
             return True
 
         return False
@@ -100,7 +100,7 @@ def to_relative_spec_from_part(part):
 
 
 def analyze_part_specs(part_specs):
-    """ v(.p):v2(.p) or v(.p): or :v(.p) or v(.p) or : """
+    """v(.p):v2(.p) or v(.p): or :v(.p) or v(.p) or :"""
 
     part_specs = part_specs.strip()
 

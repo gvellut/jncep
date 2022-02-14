@@ -144,11 +144,10 @@ class JNCLabsAPI:
         _deep_freeze(d)
         return d
 
-    # TODO use partial . no args
-    async def paginate(self, func, *args):
+    async def paginate(self, func):
         skip = 0
         while True:
-            j = await func(*args, skip=skip)
+            j = await func(skip=skip)
 
             pagination = Addict(j.pop("pagination"))
 

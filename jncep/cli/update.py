@@ -5,7 +5,7 @@ import click
 from . import options
 from .. import core, epub, jncweb, spec, track, update
 from ..utils import coro, green
-from .common import CatchAllExceptionsCommand
+from .base import CatchAllExceptionsCommand
 
 # TODO replace
 logger = logging.getLogger(__name__)
