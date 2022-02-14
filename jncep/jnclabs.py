@@ -237,7 +237,7 @@ class JNCLabsAPI:
 
     async def _set_follow(self, series_id, is_follow):
         action = "follow" if is_follow else "unfollow"
-        path = f"{API_JNC_PATH_BASE}/users/me/{action}"
+        path = f"/users/me/{action}"
 
         payload = {"serieId": series_id, "serieType": 1}
 

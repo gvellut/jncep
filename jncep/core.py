@@ -1,3 +1,4 @@
+from collections import namedtuple
 from datetime import datetime, timezone
 from functools import partial
 from html.parser import HTMLParser
@@ -23,6 +24,18 @@ logger = logging.getLogger(__name__)
 
 class NoRequestedPartAvailableError(Exception):
     pass
+
+
+EpubGenerationOptions = namedtuple(
+    "EpubGenerationOptions",
+    [
+        "output_dirpath",
+        "is_by_volume",
+        "is_extract_images",
+        "is_extract_content",
+        "is_not_replace_chars",
+    ],
+)
 
 
 @attr.s
@@ -95,7 +108,7 @@ async def create_epub(series, volumes, parts, epub_generation_options):
 
 
 def process_series(
-    series, volumes, parts, options: epub.EpubGenerationOptions
+    series, volumes, parts, options: EpubGenerationOptions
 ) -> epub.BookDetails:
 
     # prepare content
@@ -192,7 +205,6 @@ def _process_single_epub_content(series, volumes, parts):
 
     identifier = series.raw_data.slug + str(int(time.time()))
 
-    parts = list(downloaded_parts(series))
     images = [img for part in parts for img in part.images]
 
     book_details = epub.BookDetails(
@@ -268,20 +280,6 @@ def _replace_image_urls(content, images: List[Image]):
     return content
 
 
-def downloaded_parts(series):
-    for volume in analyzed_volumes(series):
-        for part in volume.parts:
-            if part.is_dl:
-                yield part
-
-
-def analyzed_volumes(series):
-    for volume in series.volumes:
-        if not volume.is_analyzed:
-            continue
-        yield volume
-
-
 async def to_part_spec(session, jnc_resource):
     if jnc_resource.resource_type == jncweb.RESOURCE_TYPE_SERIES:
         return IdentifierSpec(spec.SERIES)
@@ -341,12 +339,7 @@ async def resolve_series(session, jnc_resource):
     return series
 
 
-async def fetch_meta(session, jnc_resource, volume_callback=None):
-    # fetch the series now although can sometimes be posponed to later
-    # not completely the most efficient since has to wait to get
-    # all parts meta to download content but simpler
-    series = await resolve_series(session, jnc_resource)
-
+async def fill_meta(session, series, volume_callback=None):
     volumes = await fetch_volumes_meta(session, series.series_id)
     series.volumes = volumes
     for volume in volumes:
@@ -358,7 +351,6 @@ async def fetch_meta(session, jnc_resource, volume_callback=None):
         for i, volume in enumerate(series.volumes):
             if volume_callback and not volume_callback(volume):
                 continue
-            volume.is_analyzed = True
             f_parts = background(
                 n, partial(fetch_parts_meta, session, volume.volume_id)
             )
@@ -560,42 +552,47 @@ async def fetch_cover_for_volume(session, volume):
     return cover
 
 
-def relevant_volumes_and_parts(series, part_filter, epub_generation_options):
+def relevant_volumes_for_cover(volumes, epub_generation_options):
+    if epub_generation_options.is_by_volume:
+        volumes_cover = [volumes[0]]
+    else:
+        volumes_cover = volumes
+    return volumes_cover
+
+
+def relevant_volumes_and_parts_for_content(series, part_filter):
     # some volumes may be empty after checking the parts => so getting
     # the volumes from the parts
     volumes_to_download = {}
     parts_to_download = []
-    for volume in analyzed_volumes(series):
+    for volume in series.volumes:
+        if not volume.parts:
+            continue
         for part in volume.parts:
             if part_filter(part):
                 parts_to_download.append(part)
                 volumes_to_download[part.volume.volume_id] = volume
 
-    # dict keeps the ordering so no need to sort
+    # dict is ordered from py 3.6 so no need to sort
     volumes_to_download = list(volumes_to_download.values())
-    if epub_generation_options.is_by_volume:
-        volumes_cover = [volumes_to_download[0]]
-    else:
-        volumes_cover = volumes_to_download
 
-    return volumes_to_download, parts_to_download, volumes_cover
+    return volumes_to_download, parts_to_download
 
 
-async def fill_covers_and_content(session, volumes, parts):
+async def fill_covers_and_content(session, cover_volumes, content_parts):
     async with trio.open_nursery() as n:
-        f_content = background(n, partial(fetch_content, session, parts))
-        f_covers = background(n, partial(fetch_covers, session, volumes))
+        f_content = background(n, partial(fetch_content, session, content_parts))
+        f_covers = background(n, partial(fetch_covers, session, cover_volumes))
 
         contents, covers = await gather(n, [f_content, f_covers]).get()
 
-    for part in parts:
+    for part in content_parts:
         if part.part_id in contents:
             content, images = contents[part.part_id]
-            part.is_dl = True
             part.content = content
             part.images = images
 
-    for volume in volumes:
+    for volume in cover_volumes:
         if volume.volume_id in covers:
             volume.cover = covers[volume.volume_id]
 

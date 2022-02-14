@@ -1,4 +1,3 @@
-from collections import namedtuple
 import logging
 
 import attr
@@ -7,18 +6,6 @@ from ebooklib import epub
 from .model import Image
 
 logger = logging.getLogger(__name__)
-
-
-EpubGenerationOptions = namedtuple(
-    "EpubGenerationOptions",
-    [
-        "output_dirpath",
-        "is_by_volume",
-        "is_extract_images",
-        "is_extract_content",
-        "is_not_replace_chars",
-    ],
-)
 
 
 @attr.s

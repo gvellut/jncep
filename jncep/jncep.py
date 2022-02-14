@@ -3,8 +3,8 @@ import logging
 import click
 
 from .cli.epub import generate_epub
+from .cli.track import track_series
 
-# from .cli.track import track_series
 # from .cli.update import update_tracked
 from .utils import module_info, setup_logging
 
@@ -28,7 +28,7 @@ def main(is_debug):
 
 
 main.add_command(generate_epub)
-# main.add_command(track_series)
+main.add_command(track_series)
 # main.add_command(update_tracked)
 
 if __name__ == "__main__":

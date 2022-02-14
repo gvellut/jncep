@@ -3,7 +3,7 @@ import logging
 import click
 
 from . import options
-from .. import core, epub, jncweb, spec
+from .. import core, jncweb, spec
 from ..trio_utils import coro
 from .base import CatchAllExceptionsCommand
 
@@ -46,7 +46,7 @@ async def generate_epub(
     is_extract_content,
     is_not_replace_chars,
 ):
-    epub_generation_options = epub.EpubGenerationOptions(
+    epub_generation_options = core.EpubGenerationOptions(
         output_dirpath,
         is_by_volume,
         is_extract_images,
@@ -63,8 +63,9 @@ async def generate_epub(
         else:
             part_spec_analyzed = await core.to_part_spec(session, jnc_resource)
 
-        series_meta = await core.fetch_meta(
-            session, jnc_resource, volume_callback=part_spec_analyzed.has_volume
+        series = await core.resolve_series(session, jnc_resource)
+        series_meta = await core.fill_meta(
+            session, series, volume_callback=part_spec_analyzed.has_volume
         )
 
         # TODO log that part is unavailable to show user
@@ -76,12 +77,14 @@ async def generate_epub(
         (
             volumes_to_download,
             parts_to_download,
-            volumes_cover,
-        ) = core.relevant_volumes_and_parts(
-            series_meta, part_filter, epub_generation_options
+        ) = core.relevant_volumes_and_parts_for_content(series_meta, part_filter)
+        volumes_for_cover = core.relevant_volumes_for_cover(
+            volumes_to_download, epub_generation_options
         )
 
-        await core.fill_covers_and_content(session, volumes_cover, parts_to_download)
+        await core.fill_covers_and_content(
+            session, volumes_for_cover, parts_to_download
+        )
         await core.create_epub(
             series_meta, volumes_to_download, parts_to_download, epub_generation_options
         )

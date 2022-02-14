@@ -58,7 +58,7 @@ async def update_tracked(
     is_sync,
     is_whole_volume,
 ):
-    epub_generation_options = epub.EpubGenerationOptions(
+    epub_generation_options = core.EpubGenerationOptions(
         output_dirpath,
         is_by_volume,
         is_extract_images,

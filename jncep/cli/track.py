@@ -1,12 +1,16 @@
 import logging
+from typing import List
 
 import click
+
+# FIXME replace with Rich
 from colorama import Fore
 import dateutil.parser
 
 from . import options
 from .. import core, jncweb, track
-from ..utils import colored, coro, green, tryint
+from ..trio_utils import coro
+from ..utils import colored, green, tryint
 from .base import CatchAllExceptionsCommand
 
 logger = logging.getLogger(__name__)
@@ -26,24 +30,18 @@ def track_series():
 @coro
 async def add_track_series(jnc_url, email, password):
     async with core.JNCEPSession(email, password) as session:
-        jnc_resource = jncweb.resource_from_url(jnc_url)
-        series_slug, func_resolve = session.lazy_resolve_series(jnc_resource)
-        if not series_slug:
-            series_raw_data = await func_resolve()
-            series_slug = series_raw_data.slug
-
         # TODO async read
         tracked_series = track.read_tracked_series()
-        series_url = jncweb.url_from_series_slug(series_slug)
 
+        jnc_resource = jncweb.resource_from_url(jnc_url)
+        series = await core.resolve_series(session, jnc_resource)
+
+        series_url = jncweb.url_from_series_slug(series.raw_data.slug)
         if series_url in tracked_series:
-            series_raw_data = await resolve_func()
-            logger.warning(
-                f"The series '{series_raw_data.raw_series.title}' is already tracked!"
-            )
+            logger.warning(f"The series '{series.raw_data.title}' is already tracked!")
             return
 
-        await track.process_series_for_tracking(session, tracked_series, series_url)
+        await track.track_series(session, tracked_series, series)
 
         # TOO async write
         track.write_tracked_series(tracked_series)
@@ -76,29 +74,37 @@ async def add_track_series(jnc_url, email, password):
 )
 @coro
 async def sync_series(email, password, is_reverse, is_delete):
-    raise NotImplementedError("sync_series LABS")
+    tracked_series = track.read_tracked_series()
 
-    # tracked_series = core.read_tracked_series()
+    async with core.JNCEPSession(email, password) as session:
+        logger.info("Fetch followed series from J-Novel Club...")
+        follows: List[jncweb.JNCResource] = await session.api.fetch_follows()
 
-    # token = None
-    # try:
-    #     logger.info(f"Login with email '{email}'...")
-    #     token = jncapi_legacy.login(email, password)
+        if is_reverse:
+            new_synced, del_synced = await track.sync_series_backward(
+                session, follows, tracked_series, is_delete
+            )
 
-    #     logger.info("Fetch followed series from J-Novel Club...")
-    #     follows: List[jncweb.JNCResource] = jncapi_legacy.fetch_follows(token)
+            if new_synced or del_synced:
+                logger.info(
+                    green("The list of followed series has been sucessfully updated!")
+                )
+            else:
+                logger.info(green("Everything is already synced!"))
 
-    #     if is_reverse:
-    #         track.sync_series_backward(token, follows, tracked_series, is_delete)
-    #     else:
-    #         track.sync_series_forward(token, follows, tracked_series, is_delete)
-    # finally:
-    #     if token:
-    #         try:
-    #             logger.info("Logout...")
-    #             jncapi_legacy.logout(token)
-    #         except Exception:
-    #             pass
+        else:
+            new_synced, del_synced = await track.sync_series_forward(
+                session, follows, tracked_series, is_delete
+            )
+
+            track.write_tracked_series(tracked_series)
+
+            if new_synced or del_synced:
+                logger.info(
+                    green("The list of tracked series has been sucessfully updated!")
+                )
+            else:
+                logger.info(green("Everything is already synced!"))
 
 
 @track_series.command(
@@ -121,16 +127,12 @@ async def rm_track_series(jnc_url_or_index, email, password):
     else:
         async with core.JNCEPSession(email, password) as session:
             jnc_resource = jncweb.resource_from_url(jnc_url_or_index)
-            series_slug, func_resolve = session.lazy_resolve_series(jnc_resource)
-            if not series_slug:
-                series_raw_data = await func_resolve()
-                series_slug = series_raw_data.slug
-            series_url = jncweb.url_from_series_slug(series_slug)
+            series = await core.resolve_series(session, jnc_resource)
+            series_url = jncweb.url_from_series_slug(series.raw_data.slug)
 
             if series_url not in tracked_series:
-                series_raw_data = await resolve_func()
                 logger.warning(
-                    f"The series '{series_raw_data.title}' is not tracked! "
+                    f"The series '{series.raw_data.title}' is not tracked! "
                     "(Use 'track list --details')"
                 )
                 return

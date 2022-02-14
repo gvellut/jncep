@@ -23,7 +23,8 @@ class JNCResource:
     slug = attr.ib()
     is_new_website = attr.ib()
     resource_type = attr.ib()
-    raw_metadata = attr.ib(None)
+    # used when fetching the follows and building a JNCRes
+    follow_raw_data = attr.ib(None)
 
     def __str__(self):
         pu = urlparse(self.url)

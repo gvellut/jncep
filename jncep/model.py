@@ -27,7 +27,6 @@ class Part:
     volume = attr.ib(None)
     content = attr.ib(None)
     images = attr.ib(None)
-    is_dl = attr.ib(False)
 
     epub_content = attr.ib(None)
 
