@@ -159,8 +159,7 @@ def _process_single_epub_content(series, volumes, parts):
         series.raw_data.legacyId, series.raw_data.title, volume_num
     )
 
-    # cover should always be there : error if problem with downloading
-    # TODO handle problem with missing cover => use dummy jpeg
+    # cover can be None (handled in epub gen proper)
     cover_image = repr_volume.cover
 
     contents = [part.epub_content for part in parts]
@@ -270,12 +269,7 @@ def _replace_image_urls(content, images: List[Image]):
     for image in images:
         # the filename relative to the epub content root
         # file will be added to the Epub archive
-        # ext is almost always .jpg but sometimes it is .jpeg
-        # splitext  works fine with a url
-        root, ext = os.path.splitext(image.url)
-        new_local_filename = to_safe_filename(root) + ext
-        image.local_filename = new_local_filename
-        content = content.replace(image.url, new_local_filename)
+        content = content.replace(image.url, image.local_filename)
 
     return content
 
@@ -479,12 +473,22 @@ async def fetch_image(session, img_url):
     try:
         img_bytes = await session.api.fetch_url(img_url)
         image = Image(img_url, img_bytes)
+        image.local_filename = _local_image_filename(image)
         return image
     except Exception as ex:
         # TODO event error downloading image isntead
         logger.info("Error download image with URL: {img_url}")
         logger.debug(f"Error downloading image: {ex}", exc_info=sys.exc_info())
         return None
+
+
+def _local_image_filename(image):
+    # unique name to use for the image inside the EPUB
+    # ext is almost always .jpg but sometimes it is .jpeg
+    # splitext  works fine with a url
+    root, ext = os.path.splitext(image.url)
+    new_local_filename = to_safe_filename(root) + ext
+    return new_local_filename
 
 
 class ImgUrlParser(HTMLParser):
@@ -531,15 +535,23 @@ async def fetch_covers(session, volumes):
     for i, candidate_cover in enumerate(candidate_covers):
         volume = volumes[i]
         hires, lowres = candidate_cover
+        # priority to hires
+        # note : lowres can also be none if failure => handled in epub gen
         volumes_cover[volume.volume_id] = hires if hires else lowres
 
     return volumes_cover
 
 
 async def fetch_lowres_cover_for_volume(session, volume):
-    cover_url = volume.raw_data.cover.coverUrl
-    cover = await fetch_image(session, cover_url)
-    return cover
+    try:
+        cover_url = volume.raw_data.cover.coverUrl
+        cover = await fetch_image(session, cover_url)
+        return cover
+    except Exception as ex:
+        logger.debug(
+            f"Error fetch_lowres_cover_for_volume: {ex}", exc_info=sys.exc_info()
+        )
+        return None
 
 
 async def fetch_cover_image_from_parts(session, parts):
@@ -589,7 +601,7 @@ async def fetch_cover_image_from_parts(session, parts):
         logger.debug(
             f"Error fetching hi res cover images: {ex}", exc_info=sys.exc_info()
         )
-        # lowres cover will be used
+        # lowres cover will be used (unless it fails too)
         return None
 
 

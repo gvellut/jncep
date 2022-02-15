@@ -59,8 +59,21 @@ def create_epub(output_filepath, book_details: "BookDetails"):
         {"property": "group-position", "refines": f"#{collection_meta.collection_id}"},
     )
 
-    # TODO why not True ?
-    book.set_cover("cover.jpg", book_details.cover_image.content, False)
+    if book_details.cover_image:
+        content = book_details.cover_image.content
+        # in case cover image also present in content, use the file name
+        # (same URL => same local filename)
+        cover_image_filename = book_details.cover_image.local_filename
+    else:
+        # the lib handles that semi-gracefully (doesn't crash)
+        # may look broken in epub reader
+        # TODO handle problem with missing cover => use dummy jpeg
+        content = None
+        # dummy file name
+        cover_image_filename = "cover.jpg"
+
+    # TODO why not True ? check
+    book.set_cover(cover_image_filename, content, False)
 
     # TODO externalize CSS + option to epub + update
     style = """body {color: black;}
@@ -77,12 +90,16 @@ p {text-indent: 1.3em;}
 
     # TODO cf why not True ? above
     cover_page = epub.EpubHtml(title="Cover", file_name="cover.xhtml", lang=lang)
-    cover_page.content = '<img src="cover.jpg" alt="cover" />'
+    cover_page.content = f'<img src="{cover_image_filename}" alt="cover" />'
     cover_page.add_item(css)
     book.add_item(cover_page)
 
     image: Image
     for image in book_details.images:
+        # do not add if already added through cover or problems when writing:
+        # "Duplicate name" warning from epublib + maybe issue in the epub zip structure
+        if image.local_filename == cover_image_filename:
+            continue
         img = epub.EpubImage()
         img.file_name = image.local_filename
         # TODO always ? check ?
