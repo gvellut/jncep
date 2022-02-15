@@ -69,7 +69,8 @@ async def update_tracked(
 
     # TODO move most of this to update
     async with core.JNCEPSession(email, password) as session:
-        tracked_series = track.read_tracked_series()
+        track_manager = track.TrackConfigManager()
+        tracked_series = track_manager.read_tracked_series()
         if len(tracked_series) == 0:
             logger.warning(
                 "There are no tracked series! Use the 'jncep track add' command "
@@ -132,6 +133,6 @@ async def update_tracked(
                     "part": pn,
                     "name": series.raw_data.title,
                 }
-            track.write_tracked_series(tracked_series)
+            track_manager.write_tracked_series(tracked_series)
 
             logger.info(green(f"{len(updated_series)} series sucessfully updated!"))

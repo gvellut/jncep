@@ -2,7 +2,6 @@ import logging
 from typing import List
 
 import click
-
 # FIXME replace with Rich
 from colorama import Fore
 import dateutil.parser
@@ -31,7 +30,8 @@ def track_series():
 async def add_track_series(jnc_url, email, password):
     async with core.JNCEPSession(email, password) as session:
         # TODO async read
-        tracked_series = track.read_tracked_series()
+        track_manager = track.TrackConfigManager()
+        tracked_series = track_manager.read_tracked_series()
 
         jnc_resource = jncweb.resource_from_url(jnc_url)
         series = await core.resolve_series(session, jnc_resource)
@@ -44,7 +44,7 @@ async def add_track_series(jnc_url, email, password):
         await track.track_series(session, tracked_series, series)
 
         # TOO async write
-        track.write_tracked_series(tracked_series)
+        track_manager.write_tracked_series(tracked_series)
 
 
 @track_series.command(
@@ -74,7 +74,8 @@ async def add_track_series(jnc_url, email, password):
 )
 @coro
 async def sync_series(email, password, is_reverse, is_delete):
-    tracked_series = track.read_tracked_series()
+    track_manager = track.TrackConfigManager()
+    tracked_series = track_manager.read_tracked_series()
 
     async with core.JNCEPSession(email, password) as session:
         logger.info("Fetch followed series from J-Novel Club...")
@@ -97,7 +98,7 @@ async def sync_series(email, password, is_reverse, is_delete):
                 session, follows, tracked_series, is_delete
             )
 
-            track.write_tracked_series(tracked_series)
+            track_manager.write_tracked_series(tracked_series)
 
             if new_synced or del_synced:
                 logger.info(
@@ -115,7 +116,9 @@ async def sync_series(email, password, is_reverse, is_delete):
 @options.password_option
 @coro
 async def rm_track_series(jnc_url_or_index, email, password):
-    tracked_series = track.read_tracked_series()
+    track_manager = track.TrackConfigManager()
+    tracked_series = track_manager.read_tracked_series()
+
     index = tryint(jnc_url_or_index)
     if index is not None:
         index0 = index - 1
@@ -141,7 +144,7 @@ async def rm_track_series(jnc_url_or_index, email, password):
 
     del tracked_series[series_url]
 
-    track.write_tracked_series(tracked_series)
+    track_manager.write_tracked_series(tracked_series)
 
     logger.info(green(f"The series '{series_name}' is no longer tracked"))
 
@@ -158,7 +161,9 @@ async def rm_track_series(jnc_url_or_index, email, password):
 )
 def list_track_series(is_detail):
     # TODO async ? zero utility
-    tracked_series = track.read_tracked_series()
+    track_manager = track.TrackConfigManager()
+    tracked_series = track_manager.read_tracked_series()
+
     if len(tracked_series) > 0:
         logger.info(f"{len(tracked_series)} series are tracked:")
         for index, (ser_url, ser_details) in enumerate(tracked_series.items()):

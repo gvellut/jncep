@@ -10,12 +10,12 @@ from . import jncweb
 
 logger = logging.getLogger(__name__)
 
-IMG_URL_BASE = "https://d2dq7ifhe7bu0f.cloudfront.net"
+CDN_IMG_URL_BASE = "https://d2dq7ifhe7bu0f.cloudfront.net"
 LABS_API_JNC_URL_BASE = "https://labs.j-novel.club"
-API_JNC_URL_BASE = "https://api.j-novel.club"
+JNC_API_URL_BASE = "https://api.j-novel.club"
 
 LABS_API_JNC_PATH_BASE = "/app/v1"
-API_JNC_PATH_BASE = "/api"
+JNC_API_PATH_BASE = "/api"
 
 COMMON_API_HEADERS = {"accept": "application/json", "content-type": "application/json"}
 COMMON_LABS_API_PARAMS = {"format": "json"}
@@ -24,12 +24,20 @@ COMMON_LABS_API_PARAMS = {"format": "json"}
 # TODO timeout for the API requests
 
 
-def with_cache(f):
-    cache = {}
-    events = {}
+class InvalidCDNRequestException(Exception):
+    pass
 
+
+def with_cache(f):
     @wraps(f)
     async def wrapper(*args, **kwargs):
+        # with_cache used only for JNCLabsAPI so fine
+        api = args[0]
+        if not hasattr(api, "__cache"):
+            # cache scoped to api instance
+            api.__cache = ({}, {})
+        cache, events = api.__cache
+
         key = (*args, *kwargs.items())
         while True:
             if key in events:
@@ -84,14 +92,33 @@ def _deep_freeze(data):
 
 
 class JNCLabsAPI:
-    def __init__(self, connections=20):
+    def __init__(
+        self,
+        jnc_connections=10,
+        cdn_connections=20,
+        labs_api_default_timeout=10,
+        jnc_api_default_timeout=10,
+        cdn_default_timeout=20,
+        connection_timeout=10,
+    ):
+        # jnc_connections params used for both labs and api (but only 1 req at a time
+        # to api)
         self.jnc_api_session = asks.Session(
-            API_JNC_URL_BASE, connections=connections, headers=COMMON_API_HEADERS
+            JNC_API_URL_BASE, connections=jnc_connections, headers=COMMON_API_HEADERS
         )
         self.labs_api_session = asks.Session(
-            LABS_API_JNC_URL_BASE, connections=connections, headers=COMMON_API_HEADERS
+            LABS_API_JNC_URL_BASE,
+            connections=jnc_connections,
+            headers=COMMON_API_HEADERS,
         )
-        # TODO CDN session
+        # CDN_IMG_URL_BASE not really necessary
+        self.cdn_session = asks.Session(CDN_IMG_URL_BASE, connections=cdn_connections)
+
+        self.labs_api_default_timeout = labs_api_default_timeout
+        self.jnc_api_default_timeout = jnc_api_default_timeout
+        self.cdn_default_timeout = cdn_default_timeout
+
+        self.connection_timeout = connection_timeout
 
         self.token = None
 
@@ -111,7 +138,11 @@ class JNCLabsAPI:
         params = {**COMMON_LABS_API_PARAMS}
 
         r = await self.labs_api_session.post(
-            path=path, data=json.dumps(payload), params=params
+            path=path,
+            data=json.dumps(payload),
+            params=params,
+            connection_timeout=self.connection_timeout,
+            timeout=self.labs_api_default_timeout,
         )
         r.raise_for_status()
 
@@ -119,7 +150,7 @@ class JNCLabsAPI:
         self.token = data["id"]
 
     async def logout(self):
-        path = "/auth/logout"
+        path = f"{LABS_API_JNC_PATH_BASE}/auth/logout"
         await self._call_labs_authenticated("POST", path)
         self.token = None
 
@@ -129,16 +160,13 @@ class JNCLabsAPI:
             sub_resource = f"/{sub_resource}"
 
         path = f"{LABS_API_JNC_PATH_BASE}/{resource_type}/{slug_id}{sub_resource}"
-        auth = self.labs_authentication()
         params = {**COMMON_LABS_API_PARAMS}
         if skip is not None:
             params.update(skip=skip)
 
         logger.debug(f"LABS {path} skip={skip}")
 
-        r = await self._call_authenticated(
-            self.labs_api_session, "GET", path, auth, params=params
-        )
+        r = await self._call_labs_authenticated("GET", path, params=params)
 
         d = Addict(r.json())
         _deep_freeze(d)
@@ -162,13 +190,32 @@ class JNCLabsAPI:
 
     @with_cache
     async def fetch_content(self, slug_id, content_type):
+        # not LABS_API base for embed queries
         path = f"/embed/{slug_id}/{content_type}"
-        auth = self.labs_authentication()
 
-        logger.debug(f"LABS {path}")
+        logger.debug(f"LABS EMBED {path}")
 
-        r = await self._call_authenticated(self.labs_api_session, "GET", path, auth)
+        r = await self._call_labs_authenticated("GET", path)
         return r.text
+
+    async def _call_labs_authenticated(
+        self, method, path, headers=None, params=None, **kwargs
+    ):
+        # TODO does almost nothing => remove ?
+        auth = self.labs_authentication()
+        r = await self._call_authenticated(
+            self.labs_api_session,
+            method,
+            path,
+            auth,
+            headers,
+            params,
+            connection_timeout=self.connection_timeout,
+            timeout=self.labs_api_default_timeout,
+            **kwargs,
+        )
+
+        return r
 
     async def _call_api_authenticated(
         self, method, path, headers=None, params=None, **kwargs
@@ -179,10 +226,18 @@ class JNCLabsAPI:
         else:
             headers = {**COMMON_API_HEADERS, **headers}
 
-        path = f"{API_JNC_PATH_BASE}{path}"
+        path = f"{JNC_API_PATH_BASE}{path}"
 
         r = await self._call_authenticated(
-            self.jnc_api_session, method, path, auth, headers, params, **kwargs
+            self.jnc_api_session,
+            method,
+            path,
+            auth,
+            headers,
+            params,
+            connection_timeout=self.connection_timeout,
+            timeout=self.jnc_api_default_timeout,
+            **kwargs,
         )
 
         return r
@@ -245,10 +300,19 @@ class JNCLabsAPI:
         r.raise_for_status()
 
     @with_cache
-    async def fetch_url(self, url):
+    async def fetch_url(self, url: str):
+        if not url.startswith(CDN_IMG_URL_BASE):
+            raise InvalidCDNRequestException(
+                f"{url} doesn't start with {CDN_IMG_URL_BASE}"
+            )
+
         # for CDN images
         logger.debug(f"IMAGE {url}")
-        r = await asks.get(url)
+        r = await self.cdn_session.get(
+            url=url,
+            connection_timeout=self.connection_timeout,
+            timeout=self.cdn_default_timeout,
+        )
         r.raise_for_status()
         # should be JPEG
         # TODO check ?

@@ -16,60 +16,66 @@ from .utils import green
 logger = logging.getLogger(__package__)
 
 
-# TODO change => in App folder for windows + config file there too
-CONFIG_DIRPATH = Path.home() / ".jncep"
+# TODO change => in App folder for windows
+# TODO config file there too (login, passsword) as requested by someone no GH tracker
+DEFAULT_CONFIG_FILEPATH = Path.home() / ".jncep" / "tracked.json"
 
 
-def read_tracked_series():
-    try:
-        with _tracked_series_filepath().open() as json_file:
-            # Explicit ordereddict (although should be fine without
-            # since Python >= 3.6 dicts are ordered ; spec since 3.7)
-            data = json.load(json_file, object_pairs_hook=OrderedDict)
-            return _convert_to_latest_format(Addict(data))
-    except FileNotFoundError:
-        # first run ?
-        return Addict({})
-
-
-def _convert_to_latest_format(data):
-    converted = {}
-    # while at it convert from old format
-    # legacy format for tracked parts : just the part instead of object
-    # with keys part, name
-    # key is slug
-    # TODO rename "name" field into "title"
-    for series_url_or_slug, value in data.items():
-        if not isinstance(value, dict):
-            series_slug = series_url_or_slug
-            series_url = jncweb.url_from_series_slug(series_slug)
-            # low effort way to get some title
-            name = series_slug.replace("-", " ").title()
-            value = Addict({"name": name, "part": value})
-            converted[series_url] = value
+class TrackConfigManager:
+    def __init__(self, config_file_path=None):
+        if not config_file_path:
+            self.config_file_path = DEFAULT_CONFIG_FILEPATH
         else:
-            converted[series_url_or_slug] = value
+            if config_file_path is Path:
+                self.config_file_path = config_file_path
+            else:
+                self.config_file_path = Path(config_file_path)
+            # TODO check read write permission / is file etc...
 
-    converted_b = {}
-    for legacy_series_url, value in converted.items():
-        new_series_url = jncweb.to_new_website_series_url(legacy_series_url)
-        converted_b[new_series_url] = value
+    # TODO async
+    def read_tracked_series(self):
+        try:
+            with self.config_file_path.open() as json_file:
+                # Explicit ordereddict (although should be fine without
+                # since Python >= 3.6 dicts are ordered ; spec since 3.7)
+                data = json.load(json_file, object_pairs_hook=OrderedDict)
+                return self._convert_to_latest_format(Addict(data))
+        except FileNotFoundError:
+            # first run ?
+            return Addict({})
 
-    return converted_b
+    def write_tracked_series(self, tracked):
+        self._ensure_config_dirpath_exists()
+        with atomic_write(str(self.config_file_path.resolve()), overwrite=True) as f:
+            f.write(json.dumps(tracked, sort_keys=True, indent=2))
 
+    def _convert_to_latest_format(self, data):
+        converted = {}
+        # while at it convert from old format
+        # legacy format for tracked parts : just the part instead of object
+        # with keys part, name
+        # key is slug
+        # TODO rename "name" field into "title"
+        for series_url_or_slug, value in data.items():
+            if not isinstance(value, dict):
+                series_slug = series_url_or_slug
+                series_url = jncweb.url_from_series_slug(series_slug)
+                # low effort way to get some title
+                name = series_slug.replace("-", " ").title()
+                value = Addict({"name": name, "part": value})
+                converted[series_url] = value
+            else:
+                converted[series_url_or_slug] = value
 
-def write_tracked_series(tracked):
-    _ensure_config_dirpath_exists()
-    with atomic_write(str(_tracked_series_filepath().resolve()), overwrite=True) as f:
-        f.write(json.dumps(tracked, sort_keys=True, indent=2))
+        converted_b = {}
+        for legacy_series_url, value in converted.items():
+            new_series_url = jncweb.to_new_website_series_url(legacy_series_url)
+            converted_b[new_series_url] = value
 
+        return converted_b
 
-def _tracked_series_filepath():
-    return CONFIG_DIRPATH / "tracked.json"
-
-
-def _ensure_config_dirpath_exists():
-    CONFIG_DIRPATH.mkdir(parents=False, exist_ok=True)
+    def _ensure_config_dirpath_exists(self):
+        self.config_file_path.parent.mkdir(parents=False, exist_ok=True)
 
 
 async def fill_meta_for_track(session, series):

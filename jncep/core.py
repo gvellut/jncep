@@ -80,9 +80,9 @@ class JNCEPSession:
         if self.api.is_logged_in:
             try:
                 logger.info("Logout...")
-                await self.apiapi.logout()
-            except Exception:
-                pass
+                await self.api.logout()
+            except Exception as ex:
+                logger.debug(f"Error logout: {ex}", exc_info=sys.exc_info())
 
 
 async def create_epub(series, volumes, parts, epub_generation_options):
@@ -483,7 +483,7 @@ async def fetch_image(session, img_url):
     except Exception as ex:
         # TODO event error downloading image isntead
         logger.info("Error download image with URL: {img_url}")
-        logger.debug(f"Error downloading image : {ex}", exc_info=sys.exc_inf())
+        logger.debug(f"Error downloading image: {ex}", exc_info=sys.exc_info())
         return None
 
 
@@ -562,6 +562,9 @@ async def fetch_cover_image_from_parts(session, parts):
         async with trio.open_nursery() as n:
             f_his = []
             for part in first_2_parts:
+                if not is_part_available(session.now, part):
+                    continue
+
                 f_hi = background(
                     n, partial(fetch_highres_image_maybe, session, part.part_id)
                 )
@@ -582,8 +585,10 @@ async def fetch_cover_image_from_parts(session, parts):
             candidate_urls = await gather(n, f_his).get()
             return await _fetch_one_candidate_image(session, candidate_urls)
 
-    except Exception:
-        logger.debug("Error fetching hi res cover images", exc_info=sys.exc_info())
+    except Exception as ex:
+        logger.debug(
+            f"Error fetching hi res cover images: {ex}", exc_info=sys.exc_info()
+        )
         # lowres cover will be used
         return None
 
@@ -656,7 +661,7 @@ def _candidate_cover_image(content):
 
 
 def relevant_volumes_for_cover(volumes, is_by_volume):
-    if is_by_volume:
+    if not is_by_volume:
         volumes_cover = [volumes[0]]
     else:
         volumes_cover = volumes

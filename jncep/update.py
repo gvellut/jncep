@@ -30,7 +30,7 @@ async def update_url_series(
     new_synced,
     is_whole_volume,
 ):
-    # FIXME update
+    # FIXME implement
     jnc_resource = jncweb.resource_from_url(jnc_url)
 
     logger.info(f"Fetching metadata for '{jnc_resource}'...")
@@ -157,7 +157,7 @@ async def _handle_series(
         return UpdateResult(False, series_meta, is_updated)
 
     except Exception as ex:
-        logger.debug(str(ex), exc_info=sys.exc_info())
+        logger.debug(f"Error _handle_series: {ex}", exc_info=sys.exc_info())
         return UpdateResult(True)
 
 
