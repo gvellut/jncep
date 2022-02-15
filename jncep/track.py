@@ -81,7 +81,7 @@ async def fill_meta_for_track(session, series):
     if volumes:
         # just the last
         last_volume = volumes[-1]
-        parts = await core.fetch_parts_meta(session, last_volume.volume_id)
+        parts = await core.fetch_parts_meta_for_volume(session, last_volume.volume_id)
         last_volume.parts = parts
         for part in parts:
             part.volume = last_volume

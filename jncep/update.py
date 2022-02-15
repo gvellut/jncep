@@ -309,7 +309,7 @@ async def fill_meta_for_update(session, series, last_update_date):
     # TODO detect ? or add a switch to bypass (ie all the volumes)
     last_2_volumes = volumes[-2:]
     rest_volumes = volumes[:-2]
-    await core.fill_all_parts_meta_background(session, last_2_volumes)
+    await core.fill_parts_meta_for_volumes(session, last_2_volumes)
     for volume in last_2_volumes:
         for part in volume.parts:
             # check if has part before the reference date
@@ -322,7 +322,7 @@ async def fill_meta_for_update(session, series, last_update_date):
         break
     else:
         # just give up and request everything
-        await core.fill_all_parts_meta_background(session, rest_volumes)
+        await core.fill_parts_meta_for_volumes(session, rest_volumes)
 
 
 def _is_released_after_date(date, part_date_s):

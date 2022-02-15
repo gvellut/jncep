@@ -68,16 +68,32 @@ async def generate_epub(
             session, series, volume_callback=part_spec_analyzed.has_volume
         )
 
-        # TODO log that part is unavailable to show user
+        # TODO event ? Think better logging system / notification to the user
+
+        has_unavailable_parts = False
+
         def part_filter(part):
-            return part_spec_analyzed.has_part(part) and core.is_part_available(
-                session.now, part
-            )
+            if part_spec_analyzed.has_part(part):
+                if core.is_part_available(session.now, part):
+                    return True
+                else:
+                    nonlocal has_unavailable_parts
+                    has_unavailable_parts = True
+            return False
 
         (
             volumes_to_download,
             parts_to_download,
         ) = core.relevant_volumes_and_parts_for_content(series_meta, part_filter)
+
+        if not parts_to_download:
+            raise core.NoRequestedPartAvailableError()
+
+        if has_unavailable_parts:
+            logger.warning(
+                "Some of the requested parts are not available for reading !"
+            )
+
         volumes_for_cover = core.relevant_volumes_for_cover(
             volumes_to_download, epub_generation_options.is_by_volume
         )

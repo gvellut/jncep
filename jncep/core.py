@@ -13,8 +13,7 @@ import attr
 import dateutil.parser
 import trio
 
-from . import epub, jncweb, spec
-from .jnclabs import JNCLabsAPI
+from . import epub, jnclabs, jncweb, spec
 from .model import Image, Part, Series, Volume
 from .trio_utils import background, gather
 from .utils import green, to_safe_filename
@@ -50,17 +49,17 @@ class IdentifierSpec:
 
         return self.volume_id == volume.volume_id
 
-    def has_part(self, ref_part) -> bool:
+    def has_part(self, part) -> bool:
         # assumes has_volume already checked with the volume_id
         if self.type_ in (spec.SERIES, spec.VOLUME):
             return True
 
-        return self.part_id == ref_part.part_id
+        return self.part_id == part.part_id
 
 
 class JNCEPSession:
     def __init__(self, email, password):
-        self.api = JNCLabsAPI()
+        self.api = jnclabs.JNCLabsAPI()
         self.email = email
         self.password = password
         self.now = datetime.now(tz=timezone.utc)
@@ -102,6 +101,7 @@ async def create_epub(series, volumes, parts, epub_generation_options):
         )
         # TODO write to memory then async fs write here ? (uses epublib
         # which is sync anyway)
+        # or trio.to_thread.run_sync
         epub.create_epub(output_filepath, book_details_i)
 
         logger.info(green(f"Success! EPUB generated in '{output_filepath}'!"))
@@ -349,7 +349,7 @@ async def fill_meta(session, series, volume_callback=None):
     for volume in volumes:
         volume.series = series
 
-    await fill_all_parts_meta_background(session, volumes, volume_callback)
+    await fill_parts_meta_for_volumes(session, volumes, volume_callback)
 
     # similar to what we got from the original JNC API
     return series
@@ -369,7 +369,7 @@ async def fetch_volumes_meta(session, series_id):
     return volumes
 
 
-async def fill_all_parts_meta_background(session, volumes, volume_callback=None):
+async def fill_parts_meta_for_volumes(session, volumes, volume_callback=None):
     async with trio.open_nursery() as n:
         volumes_meta = []
         futures = []
@@ -378,7 +378,7 @@ async def fill_all_parts_meta_background(session, volumes, volume_callback=None)
                 continue
 
             f_parts = background(
-                n, partial(fetch_parts_meta, session, volume.volume_id)
+                n, partial(fetch_parts_meta_for_volume, session, volume.volume_id)
             )
             futures.append(f_parts)
             volumes_meta.append(volume)
@@ -392,7 +392,7 @@ async def fill_all_parts_meta_background(session, volumes, volume_callback=None)
                 part.volume = volume
 
 
-async def fetch_parts_meta(session, volume_id):
+async def fetch_parts_meta_for_volume(session, volume_id):
     parts_raw_data = await fetch_parts_for_volume(session, volume_id)
     parts = []
 
@@ -487,41 +487,18 @@ async def fetch_image(session, img_url):
         return None
 
 
-class StopHTMLParsing(Exception):
-    pass
-
-
 class ImgUrlParser(HTMLParser):
-    def __init__(self, is_stop_after_text=False):
+    def __init__(self):
         super().__init__()
 
         self.img_urls = []
-        # this is to handle covers : special significance for
-        # first image before any text
-        # TODO separte parser ?
-        self.is_stop_after_text = is_stop_after_text
-        self.is_after_body = False
-        self.is_after_first_text_in_body = False
 
     def handle_starttag(self, tag, tag_attrs):
         if tag == "img":
-            self._handle_img(tag_attrs)
-
-        if tag == "body":
-            self.is_after_body = True
-
-    def _handle_img(self, tag_attrs):
-        for tag_attr in tag_attrs:
-            if tag_attr[0] == "src":
-                self.img_urls.append(tag_attr[1])
-                break
-
-    def handle_data(self, data):
-        if self.is_after_body:
-            self.is_after_first_text_in_body = True
-
-            if self.is_stop_after_text:
-                raise StopHTMLParsing()
+            for tag_attr in tag_attrs:
+                if tag_attr[0] == "src":
+                    self.img_urls.append(tag_attr[1])
+                    break
 
 
 def extract_image_urls(content):
@@ -530,34 +507,152 @@ def extract_image_urls(content):
     return parser.img_urls
 
 
-def _top_image(content):
-    # TODO implement
-    pass
-
-
 async def fetch_covers(session, volumes):
     async with trio.open_nursery() as n:
-        f_covers = []
+        f_lowres_covers = []
+        f_hires_covers = []
         for volume in volumes:
-            f_cover = background(n, partial(fetch_cover_for_volume, session, volume))
-            f_covers.append(f_cover)
+            # fetch the cover url low res image as indicated in the metadata
+            # used as a fallback in case the high res is not found
+            f_cover = background(
+                n, partial(fetch_lowres_cover_for_volume, session, volume)
+            )
+            f_lowres_covers.append(f_cover)
+            f_part_image_cover = background(
+                n, partial(fetch_cover_image_from_parts, session, volume.parts)
+            )
+            f_hires_covers.append(f_part_image_cover)
 
-        covers = await gather(n, f_covers).get()
+        lowres_covers = await gather(n, f_lowres_covers).get()
+        hires_covers = await gather(n, f_hires_covers).get()
 
+    candidate_covers = zip(hires_covers, lowres_covers)
     volumes_cover = {}
-    for i, cover in enumerate(covers):
+    for i, candidate_cover in enumerate(candidate_covers):
         volume = volumes[i]
-        volumes_cover[volume.volume_id] = cover
+        hires, lowres = candidate_cover
+        volumes_cover[volume.volume_id] = hires if hires else lowres
+
     return volumes_cover
 
 
-async def fetch_cover_for_volume(session, volume):
+async def fetch_lowres_cover_for_volume(session, volume):
     cover_url = volume.raw_data.cover.coverUrl
     cover = await fetch_image(session, cover_url)
-    # TODO also check the content of each part for image at the top of the part
-    # for high resolution
-
     return cover
+
+
+async def fetch_cover_image_from_parts(session, parts):
+    if not parts:
+        # shouldn't happen
+        return None
+
+    try:
+        # the cover image is almost always on the 1st part
+        # very rarely on the second
+        # so check those 2 first in parallel (need the content); then if
+        # doesn't succeed, check the rest
+        first_2_parts = parts[:2]
+        rest_parts = parts[2:]
+
+        async def fetch_highres_image_maybe(session, part_id):
+            content = await session.api.fetch_content(part_id, "data.xhtml")
+            return _candidate_cover_image(content)
+
+        async with trio.open_nursery() as n:
+            f_his = []
+            for part in first_2_parts:
+                f_hi = background(
+                    n, partial(fetch_highres_image_maybe, session, part.part_id)
+                )
+                f_his.append(f_hi)
+
+            candidate_urls = await gather(n, f_his).get()
+            cover = await _fetch_one_candidate_image(session, candidate_urls)
+            if cover:
+                return cover
+
+            # check the rest of parts
+            f_his = []
+            for part in rest_parts:
+                f_hi = background(
+                    n, partial(fetch_highres_image_maybe, session, part.part_id)
+                )
+                f_his.append(f_hi)
+            candidate_urls = await gather(n, f_his).get()
+            return await _fetch_one_candidate_image(session, candidate_urls)
+
+    except Exception:
+        logger.debug("Error fetching hi res cover images", exc_info=sys.exc_info())
+        # lowres cover will be used
+        return None
+
+
+async def _fetch_one_candidate_image(session, candidate_urls):
+    for candidate_url in candidate_urls:
+        if candidate_url:
+
+            if "cover" not in candidate_url and "cvr" not in candidate_url:
+                # TODO event Notification
+                # TODO check the cover format on old series
+                logger.debug("The hires cover candidate url doesn't look like a URL")
+
+            cover = await fetch_image(session, candidate_url)
+            # TODO check dimension ? but all the images in the interior have
+            # hi res
+            # TODO check the presence of colors => images in the interior except the
+            # cover are B&W
+            return cover
+    return None
+
+
+class StopHTMLParsing(Exception):
+    pass
+
+
+class CoverImgUrlParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+
+        self.candidate_cover_url = None
+
+        # this is to handle covers : special significance for
+        # first image before any text
+        self.is_after_body = False
+        self.is_after_first_text_in_body = False
+
+    def handle_starttag(self, tag, tag_attrs):
+        if tag == "img":
+            self._handle_img(tag_attrs)
+            raise StopHTMLParsing()
+
+        if tag == "body":
+            self.is_after_body = True
+
+    def _handle_img(self, tag_attrs):
+        for tag_attr in tag_attrs:
+            if tag_attr[0] == "src":
+                self.candidate_cover_url = tag_attr[1]
+                break
+
+    def handle_data(self, text):
+        if self.is_after_body:
+            # to avoid new line and spaces
+            text = text.strip()
+            if text:
+                raise StopHTMLParsing()
+
+
+def _candidate_cover_image(content):
+    try:
+        parser = CoverImgUrlParser()
+        parser.feed(content)
+    except StopHTMLParsing:
+        pass
+    url = parser.candidate_cover_url
+    if not url:
+        return None
+    return url
 
 
 def relevant_volumes_for_cover(volumes, is_by_volume):
