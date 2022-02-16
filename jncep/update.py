@@ -18,6 +18,7 @@ class UpdateResult:
     is_error = attr.ib(False)
     series = attr.ib(None)
     is_updated = attr.ib(None)
+    is_considered = attr.ib(True)
 
 
 async def update_url_series(
@@ -25,21 +26,23 @@ async def update_url_series(
     jnc_url,
     epub_generation_options,
     tracked_series,
-    updated_series,
     is_sync,
     new_synced,
     is_whole_volume,
 ):
-    # FIXME implement
+    # for single url => if error no catch : let it crash and report to the user
+
     jnc_resource = jncweb.resource_from_url(jnc_url)
+    series_meta = await core.resolve_series(session, jnc_resource)
 
-    logger.info(f"Fetching metadata for '{jnc_resource}'...")
-    jncapi_legacy.fetch_metadata(token, jnc_resource)
+    series_url = jncweb.url_from_series_slug(series_meta.raw_data.slug)
 
-    series = analyze_metadata(jnc_resource)
-
-    series_slug = series.raw_series.titleslug
-    series_url = jncweb.url_from_series_slug(series_slug)
+    if series_url not in tracked_series:
+        logger.warning(
+            f"The series '{series_meta.raw_data.title}' is not tracked! "
+            f"Use the 'jncep track add' command first."
+        )
+        return
 
     if is_sync:
         # not very useful but make it possible
@@ -47,29 +50,33 @@ async def update_url_series(
         # to mirror case with no URL argument
         if series_url not in new_synced:
             logger.warning(
-                f"The series '{series.raw_series.title}' is not among the "
+                f"The series '{series_meta.raw_data.title}' is not among the "
                 f"tracked series added from syncing. Use 'jncep update' "
                 "without --sync."
             )
             return
-        is_updated = _create_epub_from_beginning(token, series, epub_generation_options)
 
-    else:
-        if series_url not in tracked_series:
-            logger.warning(
-                f"The series '{series.raw_series.title}' is not tracked! "
-                f"Use the 'jncep track add' command first."
-            )
-            return
+    series_details = tracked_series[series_url]
 
-        series_details = tracked_series[series_url]
-        is_updated = _create_updated_epub(
-            token, series, series_details, epub_generation_options, is_whole_volume
-        )
+    is_force_from_beginning = is_sync
+    is_updated = await _create_epub_for_new_parts(
+        session,
+        series_details,
+        series_meta,
+        epub_generation_options,
+        is_whole_volume,
+        is_force_from_beginning,
+    )
 
+    updated_series = {}
+    error_series = []
     if is_updated:
-        logger.info(green(f"The series '{series.raw_series.title}' has been updated!"))
-        updated_series.append(series)
+        logger.info(
+            green(f"The series '{series_meta.raw_data.title}' has been updated!")
+        )
+        updated_series[series_url] = series_meta
+
+    return updated_series, error_series
 
 
 async def update_all_series(
@@ -105,7 +112,12 @@ async def update_all_series(
         # FIXME rework the event / logging to the user
         updated_series = {}
         error_series = []
+
+        update_result: UpdateResult
         for i, update_result in enumerate(results):
+            if not update_result.is_considered:
+                continue
+
             series_url = series_urls[i]
 
             if update_result.is_updated:
@@ -128,25 +140,21 @@ async def _handle_series(
 ):
     try:
         if is_sync and series_url not in new_synced:
-            # FIXME not implemented
-            return
+            return UpdateResult(is_considered=False)
 
         jnc_resource = jncweb.resource_from_url(series_url)
         series_meta = await core.resolve_series(session, jnc_resource)
 
-        if is_sync:
-            raise NotImplementedError("is_sync LABS")
-            # is_updated = _create_epub_from_beginning(
-            #     token, series, epub_generation_options
-            # )
-        else:
-            is_updated = await _create_epub_for_new_parts(
-                session,
-                series_details,
-                series_meta,
-                epub_generation_options,
-                is_whole_volume,
-            )
+        # generate from the start if the series is newly sync
+        is_force_from_beginning = is_sync
+        is_updated = await _create_epub_for_new_parts(
+            session,
+            series_details,
+            series_meta,
+            epub_generation_options,
+            is_whole_volume,
+            is_force_from_beginning,
+        )
 
         if is_updated:
             # TODO event
@@ -157,6 +165,7 @@ async def _handle_series(
         return UpdateResult(False, series_meta, is_updated)
 
     except Exception as ex:
+        # FIXME show the user some feedback as to the nature of the error
         logger.debug(f"Error _handle_series: {ex}", exc_info=sys.exc_info())
         return UpdateResult(True)
 
@@ -167,10 +176,11 @@ async def _create_epub_for_new_parts(
     series_details,
     series_meta,
     epub_generation_options,
-    is_whole_volume,
+    is_whole_volume=False,
+    is_force_from_beginning=False,
 ):
-    if series_details.part == 0:
-        # special processing : means there was no part available when the
+    if series_details.part == 0 or is_force_from_beginning:
+        # Firt clause: special processing : means there was no part available when the
         # series was started tracking
 
         # will fetch one part ; sufficient for here
@@ -182,7 +192,7 @@ async def _create_epub_for_new_parts(
         if not parts:
             return False
         else:
-            # complete series
+            # complete series from beginning
             await core.fill_meta(session, series_meta)
 
             part_filter = partial(core.is_part_available, session.now)
@@ -274,7 +284,7 @@ async def _create_epub_for_new_parts(
                 series_meta, whole_volume_part_filter
             )
 
-        # TODO also log some have expired
+        # FIXME also log some have expired
         if not parts_to_download:
             # TODO event
             logger.warning(
@@ -302,6 +312,7 @@ async def fill_meta_for_update(session, series, last_update_date):
     for volume in volumes:
         volume.series = series
 
+    # in order not to do too many requests:
     # first try last 2 volumes => in most update scenarios (if updated frequently),
     # this should be enough
     # also special case of multiple volumes published at the same time (altenia)
@@ -314,7 +325,7 @@ async def fill_meta_for_update(session, series, last_update_date):
         for part in volume.parts:
             # check if has part before the reference date
             # => means the parts relased after are all there
-            # (except possibly when multiple volumes published at the same time)
+            # (except possibly when multiple volumes > 2 published at the same time)
             if not _is_released_after_date(last_update_date, part.raw_data.launch):
                 break
         else:

@@ -39,7 +39,8 @@ class TrackConfigManager:
                 # Explicit ordereddict (although should be fine without
                 # since Python >= 3.6 dicts are ordered ; spec since 3.7)
                 data = json.load(json_file, object_pairs_hook=OrderedDict)
-                return self._convert_to_latest_format(Addict(data))
+                data = Addict(data)
+                return self._convert_to_latest_format(data)
         except FileNotFoundError:
             # first run ?
             return Addict({})
@@ -133,11 +134,13 @@ async def track_series(session, tracked_series, series):
         )
 
     series_url = jncweb.url_from_series_slug(series.raw_data.slug)
-    tracked_series[series_url] = {
-        "part_date": pdate,
-        "part": pn,  # now just for show
-        "name": series.raw_data.title,
-    }
+    tracked_series[series_url] = Addict(
+        {
+            "part_date": pdate,
+            "part": pn,  # now just for show
+            "name": series.raw_data.title,
+        }
+    )
 
 
 async def sync_series_forward(session, follows, tracked_series, is_delete):

@@ -1,4 +1,3 @@
-from collections import namedtuple
 import logging
 import re
 
@@ -15,14 +14,6 @@ START_OF_VOLUME = "START_OF_VOLUME"
 END_OF_VOLUME = "END_OF_VOLUME"
 START_OF_SERIES = "START_OF_SERIES"
 END_OF_SERIES = "END_OF_SERIES"
-
-
-# TODO something more generic that blends the spec + the ref
-# use cases => mix of the two
-
-# fields a bit arbitrary : What is needed for the use case
-RefVolume = namedtuple("RefVolume", ("volume_id volume_num num_volumes"))
-RefPart = namedtuple("RefPart", ("volume_num part_num part_id num_parts_in_volume"))
 
 
 @attr.s

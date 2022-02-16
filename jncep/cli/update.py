@@ -80,15 +80,14 @@ async def update_tracked(
 
         new_synced = None
         if is_sync:
-            # logger.info("Fetch followed series from J-Novel Club...")
-            # follows = await session.api.fetch_follows()
-            # new_synced, _ = core.sync_series_forward(
-            #     token, follows, tracked_series, False
-            # )
-            raise NotImplementedError("is_sync LABS")
+            logger.info("Fetch followed series from J-Novel Club...")
+            follows = await session.api.fetch_follows()
+            new_synced, _ = await track.sync_series_forward(
+                session, follows, tracked_series, False
+            )
 
         if jnc_url:
-            updated_series = await update.update_url_series(
+            updated_series, _ = await update.update_url_series(
                 session,
                 jnc_url,
                 epub_generation_options,
@@ -114,10 +113,10 @@ async def update_tracked(
             if error_series:
                 logger.error("Some series could not be updated!")
 
-            if len(updated_series) == 0:
-                # FIXME case all in error ? handle
-                logger.info(green("All series are already up to date!"))
-                return
+        if len(updated_series) == 0:
+            # FIXME case all in error ? handle
+            logger.info(green("All series are already up to date!"))
+            return
 
         if len(updated_series) > 0:
             # update tracking config JSON
