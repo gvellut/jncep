@@ -89,9 +89,6 @@ Options:
                           content linked by the JNOVEL_CLUB_URL argument,
                           either a single part, a whole volume or the whole
                           series]
-  -a, --absolute          Flag to indicate that the --parts option specifies
-                          part numbers globally, instead of relative to a
-                          volume i.e. <part>:<part>
   -v, --byvolume          Flag to indicate that the parts of different volumes
                           shoud be output in separate EPUBs
   -i, --images            Flag to indicate that the images of the novel should
@@ -134,18 +131,16 @@ The specified range is in the shape of `<volume>[.<part>]:<volume>[.<part>]` whe
 
 Any of the 2 sides of the `:` range separator is optional, like `<volume>[.<part>]:`, which means 'every part starting with the specified part until the last in the series', or even `:`, which means 'every part in the series'.
 
-If the flag `--absolute` is passed, the range must be of the form `<part>:<part>` where each part number refers to the part number from the beginning of the series i.e. if the first volume in the series has 11 parts, then `12` is the same as `2.1` without the `--absolute` flag.
-
-Moreover, the `:` itself is also optional: It is possible to specify just `<volume>[.<part>]` (or `<part>` with the `--absolute` flag), in which case it is not interpreted as a range. If only the volume is specified (e.g. `2`), then all the parts of the volume will be downloaded and if there is also a part (e.g. `2.1`), only that part will be downloaded.
+Moreover, the `:` itself is also optional: It is possible to specify just `<volume>[.<part>]`, in which case it is not interpreted as a range. If only the volume is specified (e.g. `2`), then all the parts of the volume will be downloaded and if there is also a part (e.g. `2.1`), only that part will be downloaded.
 
 Here are examples of valid values for the argument:
 - `1.5:2.8` => Part 5 of volume 1 to part 8 of volume 2
 - `1:2.8` => Part 1 of volume 1 to part 8 of volume 2
-- `1:3` => If not absolute, part 1 of volume 1 to the last part of volume 3; If absolute, parts 1 to 3 (from the beginning of the series) 
+- `1:3` => Part 1 of volume 1 to the last part of volume 3
 - `2.7:` => Part 7 of volume 2 until the last part in the series 
 - `:3.5` => From the first part in the series until part 5 of volume 3
 - `:` => The whole series
-- `2` => If not absolute, all the parts of volume 2; If absolute, part 2 (from the beginning of the series) 
+- `2` => All the parts of volume 2
 
 ### Rare Unicode characters
 
@@ -342,20 +337,3 @@ Report issues at https://github.com/gvellut/jncep/issues
 
 - self-contained executable for macOS and Windows with PyInstaller
 - config file for account
-
-# TODO
-
-epub
-if spec
-if not spec
-
-not spec:
-series => volumes => parts
-image for volume => first image of part 1 ? or find one with patter _cvr like before
-volume => serie + parts
-part => serie
-For cover need to download the part to get URL / or guess pattern (no) => download all part in order until finf pattern cvr or cover in the text of the part
-
-spec:
-series from URL
-analyze => 
