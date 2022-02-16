@@ -6,11 +6,11 @@ import attr
 import dateutil
 import trio
 
-from . import core, jncweb, spec, track
+from . import core, jncweb, spec, track, utils
 from .trio_utils import background, gather
-from .utils import green
 
 logger = logging.getLogger(__package__)
+console = utils.getConsole()
 
 
 @attr.s
@@ -38,7 +38,7 @@ async def update_url_series(
     series_url = jncweb.url_from_series_slug(series_meta.raw_data.slug)
 
     if series_url not in tracked_series:
-        logger.warning(
+        console.warning(
             f"The series '{series_meta.raw_data.title}' is not tracked! "
             f"Use the 'jncep track add' command first."
         )
@@ -49,7 +49,7 @@ async def update_url_series(
         # only consider newly synced series if --sync used
         # to mirror case with no URL argument
         if series_url not in new_synced:
-            logger.warning(
+            console.warning(
                 f"The series '{series_meta.raw_data.title}' is not among the "
                 f"tracked series added from syncing. Use 'jncep update' "
                 "without --sync."
@@ -69,14 +69,15 @@ async def update_url_series(
     )
 
     updated_series = {}
-    error_series = []
     if is_updated:
-        logger.info(
-            green(f"The series '{series_meta.raw_data.title}' has been updated!")
+        console.info(
+            f"The series '{series_meta.raw_data.title}' has been updated!",
+            style="success",
         )
         updated_series[series_url] = series_meta
 
-    return updated_series, error_series
+    # meta not error like with all_series
+    return updated_series, series_meta
 
 
 async def update_all_series(
@@ -158,8 +159,9 @@ async def _handle_series(
 
         if is_updated:
             # TODO event
-            logger.info(
-                green(f"The series '{series_meta.raw_data.title}' has been updated!")
+            console.info(
+                f"The series '{series_meta.raw_data.title}' has been updated!",
+                style="success",
             )
 
         return UpdateResult(False, series_meta, is_updated)
@@ -192,6 +194,8 @@ async def _create_epub_for_new_parts(
         if not parts:
             return False
         else:
+            console.info(f"Series '{series_meta.raw_data.title}' will be updated...")
+
             # complete series from beginning
             await core.fill_meta(session, series_meta)
 
@@ -256,6 +260,8 @@ async def _create_epub_for_new_parts(
             # not updated
             return False
 
+        console.info(f"Series '{series_meta.raw_data.title}' will be updated...")
+
         def simple_part_filter(part):
             return part.part_id in parts_id_to_download and core.is_part_available(
                 session.now, part
@@ -287,7 +293,7 @@ async def _create_epub_for_new_parts(
         # FIXME also log some have expired
         if not parts_to_download:
             # TODO event
-            logger.warning(
+            console.warning(
                 f"All updated parts for '{series_meta.raw_data.title}' have expired!"
             )
             raise core.NoRequestedPartAvailableError(series_meta.raw_data.slug)
@@ -300,7 +306,10 @@ async def _create_epub_for_new_parts(
             session, volumes_for_cover, parts_to_download
         )
         await core.create_epub(
-            series_meta, volumes_to_download, parts_to_download, epub_generation_options
+            series_meta,
+            volumes_to_download,
+            parts_to_download,
+            epub_generation_options,
         )
 
         return True

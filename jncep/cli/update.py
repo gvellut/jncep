@@ -1,15 +1,15 @@
 import logging
 
+from addict import Dict as Addict
 import click
 
 from . import options
-from .. import core, jncweb, spec, track, update
+from .. import core, jncweb, spec, track, update, utils
 from ..trio_utils import coro
-from ..utils import green
 from .base import CatchAllExceptionsCommand
 
-# TODO replace
 logger = logging.getLogger(__name__)
+console = utils.getConsole()
 
 
 @click.command(
@@ -72,7 +72,7 @@ async def update_tracked(
         track_manager = track.TrackConfigManager()
         tracked_series = track_manager.read_tracked_series()
         if len(tracked_series) == 0:
-            logger.warning(
+            console.warning(
                 "There are no tracked series! Use the 'jncep track add' command "
                 "first."
             )
@@ -80,14 +80,16 @@ async def update_tracked(
 
         new_synced = None
         if is_sync:
-            logger.info("Fetch followed series from J-Novel Club...")
+            console.status("Fetch followed series from J-Novel Club...")
             follows = await session.api.fetch_follows()
             new_synced, _ = await track.sync_series_forward(
                 session, follows, tracked_series, False
             )
 
         if jnc_url:
-            updated_series, _ = await update.update_url_series(
+            console.status(f"Update '{jnc_url}'...")
+
+            updated_series, series_meta = await update.update_url_series(
                 session,
                 jnc_url,
                 epub_generation_options,
@@ -98,9 +100,15 @@ async def update_tracked(
             )
 
             if len(updated_series) == 0:
+                console.info(
+                    f"The series '{series_meta.raw_data.title}' is already up to date!",
+                    style="success",
+                )
                 return
 
         else:
+            console.status("Update all series...")
+
             updated_series, error_series = await update.update_all_series(
                 session,
                 epub_generation_options,
@@ -111,11 +119,14 @@ async def update_tracked(
             )
 
             if error_series:
-                logger.error("Some series could not be updated!")
+                console.error("Some series could not be updated!")
 
         if len(updated_series) == 0:
             # FIXME case all in error ? handle
-            logger.info(green("All series are already up to date!"))
+            console.info(
+                "All series are already up to date!",
+                style="success",
+            )
             return
 
         if len(updated_series) > 0:
@@ -127,11 +138,18 @@ async def update_tracked(
                 pn = spec.to_relative_spec_from_part(last_part)
                 pdate = last_part.raw_data.launch
                 series = last_part.volume.series
-                tracked_series[jncweb.url_from_series_slug(series.raw_data.slug)] = {
-                    "part_date": pdate,
-                    "part": pn,
-                    "name": series.raw_data.title,
-                }
+                tracked_series[
+                    jncweb.url_from_series_slug(series.raw_data.slug)
+                ] = Addict(
+                    {
+                        "part_date": pdate,
+                        "part": pn,
+                        "name": series.raw_data.title,
+                    }
+                )
             track_manager.write_tracked_series(tracked_series)
 
-            logger.info(green(f"{len(updated_series)} series sucessfully updated!"))
+            console.info(
+                f"{len(updated_series)} series sucessfully updated!",
+                style="success",
+            )

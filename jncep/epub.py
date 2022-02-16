@@ -27,7 +27,7 @@ class CollectionMetadata:
     position = attr.ib()
 
 
-def create_epub(output_filepath, book_details: "BookDetails"):
+def output_epub(output_filepath, book_details: "BookDetails"):
     lang = "en"
     book = epub.EpubBook()
     book.set_identifier(book_details.identifier)

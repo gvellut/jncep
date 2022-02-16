@@ -2,17 +2,16 @@ import logging
 from typing import List
 
 import click
-# FIXME replace with Rich
-from colorama import Fore
 import dateutil.parser
 
 from . import options
-from .. import core, jncweb, track
+from .. import core, jncweb, track, utils
 from ..trio_utils import coro
-from ..utils import colored, green, tryint
+from ..utils import tryint
 from .base import CatchAllExceptionsCommand
 
 logger = logging.getLogger(__name__)
+console = utils.getConsole()
 
 
 @click.group(name="track", help="Track updates to a series")
@@ -33,12 +32,14 @@ async def add_track_series(jnc_url, email, password):
         track_manager = track.TrackConfigManager()
         tracked_series = track_manager.read_tracked_series()
 
+        console.status("Check tracking status...")
+
         jnc_resource = jncweb.resource_from_url(jnc_url)
         series = await core.resolve_series(session, jnc_resource)
 
         series_url = jncweb.url_from_series_slug(series.raw_data.slug)
         if series_url in tracked_series:
-            logger.warning(f"The series '{series.raw_data.title}' is already tracked!")
+            console.warning(f"The series '{series.raw_data.title}' is already tracked!")
             return
 
         await track.track_series(session, tracked_series, series)
@@ -78,22 +79,30 @@ async def sync_series(email, password, is_reverse, is_delete):
     tracked_series = track_manager.read_tracked_series()
 
     async with core.JNCEPSession(email, password) as session:
-        logger.info("Fetch followed series from J-Novel Club...")
+        console.status("Fetch followed series from J-Novel Club...")
         follows: List[jncweb.JNCResource] = await session.api.fetch_follows()
 
         if is_reverse:
+            console.status("Sync to J-Novel Club...")
+
             new_synced, del_synced = await track.sync_series_backward(
                 session, follows, tracked_series, is_delete
             )
 
             if new_synced or del_synced:
-                logger.info(
-                    green("The list of followed series has been sucessfully updated!")
+                console.info(
+                    "The list of followed series has been sucessfully updated!",
+                    style="success",
                 )
             else:
-                logger.info(green("Everything is already synced!"))
+                console.info(
+                    "Everything is already synced!",
+                    style="success",
+                )
 
         else:
+            console.status("Sync tracked series from J-Novel Club...")
+
             new_synced, del_synced = await track.sync_series_forward(
                 session, follows, tracked_series, is_delete
             )
@@ -101,11 +110,15 @@ async def sync_series(email, password, is_reverse, is_delete):
             track_manager.write_tracked_series(tracked_series)
 
             if new_synced or del_synced:
-                logger.info(
-                    green("The list of tracked series has been sucessfully updated!")
+                console.info(
+                    "The list of tracked series has been sucessfully updated!",
+                    style="success",
                 )
             else:
-                logger.info(green("Everything is already synced!"))
+                console.info(
+                    "Everything is already synced!",
+                    style="success",
+                )
 
 
 @track_series.command(
@@ -116,6 +129,8 @@ async def sync_series(email, password, is_reverse, is_delete):
 @options.password_option
 @coro
 async def rm_track_series(jnc_url_or_index, email, password):
+    console.status("Check tracking status...")
+
     track_manager = track.TrackConfigManager()
     tracked_series = track_manager.read_tracked_series()
 
@@ -123,7 +138,7 @@ async def rm_track_series(jnc_url_or_index, email, password):
     if index is not None:
         index0 = index - 1
         if index0 < 0 or index0 >= len(tracked_series):
-            logger.warning(f"Index '{index}' is not valid! (Use 'track list')")
+            console.warning(f"Index '{index}' is not valid! (Use 'track list')")
             return
         series_url_list = list(tracked_series.keys())
         series_url = series_url_list[index0]
@@ -134,7 +149,7 @@ async def rm_track_series(jnc_url_or_index, email, password):
             series_url = jncweb.url_from_series_slug(series.raw_data.slug)
 
             if series_url not in tracked_series:
-                logger.warning(
+                console.warning(
                     f"The series '{series.raw_data.title}' is not tracked! "
                     "(Use 'track list --details')"
                 )
@@ -146,7 +161,10 @@ async def rm_track_series(jnc_url_or_index, email, password):
 
     track_manager.write_tracked_series(tracked_series)
 
-    logger.info(green(f"The series '{series_name}' is no longer tracked"))
+    console.info(
+        f"The series '{series_name}' is no longer tracked",
+        style="success",
+    )
 
 
 @track_series.command(
@@ -165,7 +183,7 @@ def list_track_series(is_detail):
     tracked_series = track_manager.read_tracked_series()
 
     if len(tracked_series) > 0:
-        logger.info(f"{len(tracked_series)} series are tracked:")
+        console.info(f"[bright_red]{len(tracked_series)}[/] series are tracked:")
         for index, (ser_url, ser_details) in enumerate(tracked_series.items()):
             details = None
             if ser_details.part_date:
@@ -177,10 +195,10 @@ def list_track_series(is_detail):
             else:
                 details = f"{ser_details.part}"
 
-            msg = f"[{colored(index + 1, Fore.YELLOW)}] {green(ser_details.name)}"
+            msg = f"[[bright_yellow]{index + 1}[/]] [bright_green]{ser_details.name}[/]"
             if is_detail:
-                msg += f" {ser_url} {colored(details, Fore.RED)}"
+                msg += f" {ser_url} [bright_red]{details}[/]"
 
-            logger.info(msg)
+            console.info(msg)
     else:
-        logger.info("No series is tracked.")
+        console.warning("No series is tracked.")

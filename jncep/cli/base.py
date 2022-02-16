@@ -4,6 +4,10 @@ import traceback
 
 import click
 
+from .. import utils
+
+console = utils.getConsole()
+
 logger = logging.getLogger(__package__)
 
 
@@ -21,6 +25,7 @@ class UnrecoverableJNCEPError(click.ClickException):
         self.exc_info = exc_info
 
     def show(self):
-        logger.error("*** An unrecoverable error occured ***")
-        logger.error(self.message)
-        logger.debug("".join(traceback.format_exception(*self.exc_info)))
+        console.error("*** An unrecoverable error occured ***")
+        console.error(self.message)
+
+        logger.debug(" ".join(traceback.format_exception(*self.exc_info)))

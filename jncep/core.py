@@ -13,12 +13,13 @@ import attr
 import dateutil.parser
 import trio
 
-from . import epub, jnclabs, jncweb, spec
+from . import epub, jnclabs, jncweb, spec, utils
 from .model import Image, Part, Series, Volume
 from .trio_utils import background, gather
-from .utils import green, to_safe_filename
+from .utils import to_safe_filename
 
 logger = logging.getLogger(__name__)
+console = utils.getConsole()
 
 
 class NoRequestedPartAvailableError(Exception):
@@ -69,17 +70,22 @@ class JNCEPSession:
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
+        console.stop_status()
+
         await self.logout()
         return False
 
     async def login(self, email, password):
-        logger.info(f"Login with email '{email}'...")
-        return await self.api.login(email, password)
+        console.status(f"Login with email '[highlight]{email}[/]'...")
+        token = await self.api.login(email, password)
+        console.info(f"Logged in with email '[highlight]{email}[/]'")
+        console.status("...")
+        return token
 
     async def logout(self):
         if self.api.is_logged_in:
             try:
-                logger.info("Logout...")
+                console.info("Logout...")
                 await self.api.logout()
             except Exception as ex:
                 logger.debug(f"Error logout: {ex}", exc_info=sys.exc_info())
@@ -101,10 +107,13 @@ async def create_epub(series, volumes, parts, epub_generation_options):
         )
         # TODO write to memory then async fs write here ? (uses epublib
         # which is sync anyway)
-        # or trio.to_thread.run_sync
-        epub.create_epub(output_filepath, book_details_i)
+        # or trio.to_thread.run_sync or inside
+        epub.output_epub(output_filepath, book_details_i)
 
-        logger.info(green(f"Success! EPUB generated in '{output_filepath}'!"))
+        # TODO outside ?
+        console.info(
+            f"Success! EPUB generated in '{output_filepath}'!", style="success"
+        )
 
 
 def process_series(
@@ -476,8 +485,8 @@ async def fetch_image(session, img_url):
         image.local_filename = _local_image_filename(image)
         return image
     except Exception as ex:
-        # TODO event error downloading image isntead
-        logger.info("Error download image with URL: {img_url}")
+        # TODO event error instead in case multiple : group
+        console.error(f"Error downloading image with URL: '{img_url}'")
         logger.debug(f"Error downloading image: {ex}", exc_info=sys.exc_info())
         return None
 
@@ -612,7 +621,9 @@ async def _fetch_one_candidate_image(session, candidate_urls):
             if "cover" not in candidate_url and "cvr" not in candidate_url:
                 # TODO event Notification
                 # TODO check the cover format on old series
-                logger.debug("The hires cover candidate url doesn't look like a URL")
+                logger.debug(
+                    "The hires cover candidate url doesn't look like a cover URL"
+                )
 
             cover = await fetch_image(session, candidate_url)
             # TODO check dimension ? but all the images in the interior have

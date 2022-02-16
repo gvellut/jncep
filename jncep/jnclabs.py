@@ -6,9 +6,10 @@ from addict import Dict as Addict
 import asks
 import trio
 
-from . import jncweb
+from . import jncweb, utils
 
 logger = logging.getLogger(__name__)
+console = utils.getConsole()
 
 CDN_IMG_URL_BASE = "https://d2dq7ifhe7bu0f.cloudfront.net"
 LABS_API_JNC_URL_BASE = "https://labs.j-novel.club"

@@ -9,11 +9,11 @@ from atomicwrites import atomic_write
 import dateutil.parser
 import trio
 
-from . import core, jncweb, spec
+from . import core, jncweb, spec, utils
 from .trio_utils import background, gather
-from .utils import green
 
 logger = logging.getLogger(__package__)
+console = utils.getConsole()
 
 
 # TODO change => in App folder for windows
@@ -113,11 +113,10 @@ async def track_series(session, tracked_series, series):
         pdate = "1111-11-11T11:11:11.111Z"
 
         # TODO event
-        logger.info(
-            green(
-                f"The series '{series.raw_data.title}' is now tracked, starting "
-                f"from the beginning"
-            )
+        console.info(
+            f"The series '{series.raw_data.title}' is now tracked, starting "
+            f"from the beginning",
+            style="success",
         )
     else:
         pn = spec.to_relative_spec_from_part(last_part)
@@ -126,11 +125,10 @@ async def track_series(session, tracked_series, series):
         relative_part = spec.to_relative_spec_from_part(last_part)
         part_date = dateutil.parser.parse(last_part.raw_data.launch)
         part_date_formatted = part_date.strftime("%b %d, %Y")
-        logger.info(
-            green(
-                f"The series '{series.raw_data.title}' is now tracked, starting "
-                f"after part {relative_part} [{part_date_formatted}]"
-            )
+        console.info(
+            f"The series '{series.raw_data.title}' is now tracked, starting "
+            f"after part {relative_part} [{part_date_formatted}]",
+            style="success",
         )
 
     series_url = jncweb.url_from_series_slug(series.raw_data.slug)
@@ -173,7 +171,7 @@ async def sync_series_forward(session, follows, tracked_series, is_delete):
             if series_url not in followed_index:
                 del tracked_series[series_url]
 
-                logger.warning(f"The series '{series_data.name}' is no longer tracked")
+                console.warning(f"The series '{series_data.name}' is no longer tracked")
 
                 del_synced.append(series_url)
 
@@ -197,12 +195,12 @@ async def sync_series_backward(session, follows, tracked_series, is_delete):
 
             async def do_follow(jnc_resource):
                 # TODO make sure it is next to follow ?
-                logger.info(f"Fetching metadata for '{jnc_resource}'...")
+                console.info(f"Fetch metadata for '{jnc_resource}'...")
                 series = await core.resolve_series(session, jnc_resource)
                 series_id = series.series_id
                 title = series.raw_data.title
 
-                logger.info(f"Follow '{title}'...")
+                console.info(f"Follow '{title}'...")
                 await session.api.follow_series(series_id)
 
                 new_synced.append(series_url)
@@ -218,7 +216,7 @@ async def sync_series_backward(session, follows, tracked_series, is_delete):
                         # use the follow_raw_data: to avoid another call to the API
                         series_id = jnc_resource.follow_raw_data.id
                         title = jnc_resource.follow_raw_data.title
-                        logger.warning(f"Unfollow '{title}'...")
+                        console.warning(f"Unfollow '{title}'...")
                         await session.api.unfollow_series(series_id)
 
                         del_synced.append(jnc_resource.url)

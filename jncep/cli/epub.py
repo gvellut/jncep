@@ -3,11 +3,12 @@ import logging
 import click
 
 from . import options
-from .. import core, jncweb, spec
+from .. import core, jncweb, spec, utils
 from ..trio_utils import coro
 from .base import CatchAllExceptionsCommand
 
 logger = logging.getLogger(__name__)
+console = utils.getConsole()
 
 
 @click.command(
@@ -46,6 +47,7 @@ async def generate_epub(
     is_extract_content,
     is_not_replace_chars,
 ):
+    # created by group
     epub_generation_options = core.EpubGenerationOptions(
         output_dirpath,
         is_by_volume,
@@ -58,10 +60,12 @@ async def generate_epub(
         jnc_resource = jncweb.resource_from_url(jnc_url)
 
         if part_spec:
-            logger.info(f"Using part specification '{part_spec}' ")
+            console.info(f"Use part specification '[highlight]{part_spec}[/]'")
             part_spec_analyzed = spec.analyze_part_specs(part_spec)
         else:
             part_spec_analyzed = await core.to_part_spec(session, jnc_resource)
+
+        console.status("Get content...")
 
         series = await core.resolve_series(session, jnc_resource)
         series_meta = await core.fill_meta(
@@ -69,6 +73,7 @@ async def generate_epub(
         )
 
         # TODO event ? Think better logging system / notification to the user
+        # to support maybe GUI
 
         has_unavailable_parts = False
 
@@ -90,8 +95,8 @@ async def generate_epub(
             raise core.NoRequestedPartAvailableError()
 
         if has_unavailable_parts:
-            logger.warning(
-                "Some of the requested parts are not available for reading !"
+            console.warning(
+                "Some of the requested parts are not available for reading !",
             )
 
         volumes_for_cover = core.relevant_volumes_for_cover(
@@ -101,6 +106,12 @@ async def generate_epub(
         await core.fill_covers_and_content(
             session, volumes_for_cover, parts_to_download
         )
+
+        console.status("Create EPUB...")
+
         await core.create_epub(
-            series_meta, volumes_to_download, parts_to_download, epub_generation_options
+            series_meta,
+            volumes_to_download,
+            parts_to_download,
+            epub_generation_options,
         )
