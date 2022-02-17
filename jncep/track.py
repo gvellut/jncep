@@ -79,11 +79,9 @@ class TrackConfigManager:
         self.config_file_path.parent.mkdir(parents=False, exist_ok=True)
 
 
-async def fill_meta_for_track(session, series):
-    volumes = await core.fetch_volumes_meta(session, series.series_id)
-    series.volumes = volumes
-    for volume in volumes:
-        volume.series = series
+async def fill_meta_last_part(session, series):
+    await core.fill_volumes_meta(session, series)
+    volumes = series.volumes
 
     if volumes:
         # just the last
@@ -92,12 +90,13 @@ async def fill_meta_for_track(session, series):
         last_volume.parts = parts
         for part in parts:
             part.volume = last_volume
+            part.series = last_volume.series
 
     return series
 
 
 async def track_series(session, tracked_series, series):
-    await fill_meta_for_track(session, series)
+    await fill_meta_last_part(session, series)
 
     last_part = None
     if series.volumes:

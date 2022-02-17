@@ -9,10 +9,33 @@ import trio
 logger = logging.getLogger(__name__)
 
 
+def handle_BaseExceptions(exc):
+    if (
+        isinstance(exc, SystemExit)
+        or isinstance(exc, KeyboardInterrupt)
+        or isinstance(exc, GeneratorExit)
+    ):
+        return exc
+    if isinstance(exc, trio.MultiError):
+        for ex in exc.exceptions:
+            base_ex = handle_BaseExceptions(ex)
+            if base_ex:
+                return base_ex
+    return None
+
+
 def coro(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        return trio.run(partial(f, *args, **kwargs))
+        try:
+            return trio.run(partial(f, *args, **kwargs))
+        except trio.MultiError as ex:
+            # TODO does this make sense ???
+            base_ex = handle_BaseExceptions(ex)
+            if base_ex:
+                raise base_ex
+            # just the first
+            raise ex.exceptions[0]
 
     return wrapper
 

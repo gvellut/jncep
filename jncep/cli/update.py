@@ -1,10 +1,9 @@
 import logging
 
-from addict import Dict as Addict
 import click
 
 from . import options
-from .. import core, jncweb, spec, track, update, utils
+from .. import core, track, update, utils
 from ..trio_utils import coro
 from .base import CatchAllExceptionsCommand
 
@@ -89,7 +88,7 @@ async def update_tracked(
         if jnc_url:
             console.status(f"Update '{jnc_url}'...")
 
-            updated_series, series_meta = await update.update_url_series(
+            is_tracking_updated = await update.update_url_series(
                 session,
                 jnc_url,
                 epub_generation_options,
@@ -99,17 +98,10 @@ async def update_tracked(
                 is_whole_volume,
             )
 
-            if len(updated_series) == 0:
-                console.info(
-                    f"The series '{series_meta.raw_data.title}' is already up to date!",
-                    style="success",
-                )
-                return
-
         else:
             console.status("Update all series...")
 
-            updated_series, error_series = await update.update_all_series(
+            is_tracking_updated = await update.update_all_series(
                 session,
                 epub_generation_options,
                 tracked_series,
@@ -118,38 +110,9 @@ async def update_tracked(
                 is_whole_volume,
             )
 
-            if error_series:
-                console.error("Some series could not be updated!")
-
-        if len(updated_series) == 0:
-            # FIXME case all in error ? handle
-            console.info(
-                "All series are already up to date!",
-                style="success",
-            )
-            return
-
-        if len(updated_series) > 0:
-            # update tracking config JSON
-            for _, series in updated_series.items():
-                parts = core.all_parts_meta(series)
-                # if here should exist
-                last_part = parts[-1]
-                pn = spec.to_relative_spec_from_part(last_part)
-                pdate = last_part.raw_data.launch
-                series = last_part.volume.series
-                tracked_series[
-                    jncweb.url_from_series_slug(series.raw_data.slug)
-                ] = Addict(
-                    {
-                        "part_date": pdate,
-                        "part": pn,
-                        "name": series.raw_data.title,
-                    }
-                )
+        if is_tracking_updated:
             track_manager.write_tracked_series(tracked_series)
-
             console.info(
-                f"{len(updated_series)} series sucessfully updated!",
+                "The data for tracked series has been sucessfully updated!",
                 style="success",
             )

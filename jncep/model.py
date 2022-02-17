@@ -25,6 +25,7 @@ class Part:
     part_id = attr.ib()
     num_in_volume = attr.ib()
     volume = attr.ib(None)
+    series = attr.ib(None)
     content = attr.ib(None)
     images = attr.ib(None)
 

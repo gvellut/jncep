@@ -87,7 +87,7 @@ class JNCEPSession:
             try:
                 console.info("Logout...")
                 await self.api.logout()
-            except Exception as ex:
+            except (trio.MultiError, Exception) as ex:
                 logger.debug(f"Error logout: {ex}", exc_info=sys.exc_info())
 
 
@@ -347,10 +347,8 @@ async def resolve_series(session, jnc_resource):
 
 
 async def fill_meta(session, series, volume_callback=None):
-    volumes = await fetch_volumes_meta(session, series.series_id)
-    series.volumes = volumes
-    for volume in volumes:
-        volume.series = series
+    await fill_volumes_meta(session, series)
+    volumes = series.volumes
 
     await fill_parts_meta_for_volumes(session, volumes, volume_callback)
 
@@ -370,6 +368,13 @@ async def fetch_volumes_meta(session, series_id):
         volumes.append(volume)
 
     return volumes
+
+
+async def fill_volumes_meta(session, series):
+    volumes = await fetch_volumes_meta(session, series.series_id)
+    series.volumes = volumes
+    for volume in volumes:
+        volume.series = series
 
 
 async def fill_parts_meta_for_volumes(session, volumes, volume_callback=None):
@@ -393,6 +398,7 @@ async def fill_parts_meta_for_volumes(session, volumes, volume_callback=None):
             volume.parts = parts
             for part in parts:
                 part.volume = volume
+                part.series = volume.series
 
 
 async def fetch_parts_meta_for_volume(session, volume_id):
@@ -450,6 +456,9 @@ def is_part_available(now, part):
     if part.raw_data.preview:
         return True
 
+    if part.series.raw_data.catchup:
+        return True
+
     expiration_data = dateutil.parser.parse(part.raw_data.expiration)
     return expiration_data > now
 
@@ -484,7 +493,7 @@ async def fetch_image(session, img_url):
         image = Image(img_url, img_bytes)
         image.local_filename = _local_image_filename(image)
         return image
-    except Exception as ex:
+    except (trio.MultiError, Exception) as ex:
         # TODO event error instead in case multiple : group
         console.error(f"Error downloading image with URL: '{img_url}'")
         logger.debug(f"Error downloading image: {ex}", exc_info=sys.exc_info())
@@ -556,7 +565,7 @@ async def fetch_lowres_cover_for_volume(session, volume):
         cover_url = volume.raw_data.cover.coverUrl
         cover = await fetch_image(session, cover_url)
         return cover
-    except Exception as ex:
+    except (trio.MultiError, Exception) as ex:
         logger.debug(
             f"Error fetch_lowres_cover_for_volume: {ex}", exc_info=sys.exc_info()
         )
@@ -606,7 +615,7 @@ async def fetch_cover_image_from_parts(session, parts):
             candidate_urls = await gather(n, f_his).get()
             return await _fetch_one_candidate_image(session, candidate_urls)
 
-    except Exception as ex:
+    except (trio.MultiError, Exception) as ex:
         logger.debug(
             f"Error fetching hi res cover images: {ex}", exc_info=sys.exc_info()
         )

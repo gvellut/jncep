@@ -62,7 +62,7 @@ rich_theme = rich.theme.Theme(
         "success": "bright_green",
         "warning": "bright_yellow",
         "error": "bright_red",
-        "highlight": "white on red",
+        "highlight": "black on white",
     }
 )
 
