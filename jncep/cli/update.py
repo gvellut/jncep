@@ -66,7 +66,6 @@ async def update_tracked(
         is_not_replace_chars,
     )
 
-    # TODO move most of this to update
     async with core.JNCEPSession(email, password) as session:
         track_manager = track.TrackConfigManager()
         tracked_series = track_manager.read_tracked_series()

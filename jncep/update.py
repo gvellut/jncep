@@ -35,7 +35,6 @@ async def update_url_series(
     is_whole_volume,
 ):
     # for single url => if error no catch : let it crash and report to the user
-
     jnc_resource = jncweb.resource_from_url(jnc_url)
     series_meta = await core.resolve_series(session, jnc_resource)
 
@@ -151,13 +150,13 @@ async def update_all_series(
             # second clause => all in error
             # FIXME case all in error ? handle
             console.info(
-                "All series are already up to date!",
+                "\u2728 All series are already up to date!",
                 style="success",
             )
 
         if num_updated > 0:
             console.info(
-                f"{num_updated} series sucessfully updated!",
+                f"{num_updated} series \u2728 sucessfully updated!",
                 style="success",
             )
 
@@ -190,6 +189,7 @@ async def _handle_series(
     new_synced,
     is_whole_volume,
 ):
+    series_meta = None
     try:
         if is_sync and series_url not in new_synced:
             return UpdateResult(is_considered=False)
@@ -211,16 +211,21 @@ async def _handle_series(
         if update_result.is_updated:
             # TODO event
             console.info(
-                f"The series '{series_meta.raw_data.title}' has been updated!",
+                f"\u2714 The series '{series_meta.raw_data.title}' has been updated!",
                 style="success",
             )
 
         return update_result
 
     except (trio.MultiError, Exception) as ex:
+        if series_meta and series_meta.raw_data:
+            title = series_meta.raw_data.title
+        else:
+            title = series_url
         # FIXME show the user some feedback as to the nature of the error
         console.error(
-            f"Error updating '{series_meta.raw_data.title}'! "
+            # crying face
+            f"\u274C Error updating '{title}'! "
             "(run 'jncep -d update' for more details)",
         )
         logger.debug(f"Error _handle_series: {ex}", exc_info=sys.exc_info())

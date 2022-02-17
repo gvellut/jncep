@@ -78,7 +78,7 @@ class JNCEPSession:
     async def login(self, email, password):
         console.status(f"Login with email '[highlight]{email}[/]'...")
         token = await self.api.login(email, password)
-        console.info(f"Logged in with email '[highlight]{email}[/]'")
+        console.info(f"\u26A1 Logged in with email '[highlight]{email}[/]'")
         console.status("...")
         return token
 
@@ -110,9 +110,10 @@ async def create_epub(series, volumes, parts, epub_generation_options):
         # or trio.to_thread.run_sync or inside
         epub.output_epub(output_filepath, book_details_i)
 
-        # TODO outside ?
+        # laughing face
         console.info(
-            f"Success! EPUB generated in '{output_filepath}'!", style="success"
+            f"\U0001F600 Success! EPUB generated in '{output_filepath}'!",
+            style="success",
         )
 
 
