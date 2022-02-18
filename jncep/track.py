@@ -113,8 +113,8 @@ async def track_series(session, tracked_series, series):
 
         # TODO event
         console.info(
-            f"The series '[highlight]{series.raw_data.title}[/]' is now tracked, starting "
-            f"from the beginning",
+            f"The series '[highlight]{series.raw_data.title}[/]' is now tracked, "
+            "starting from the beginning",
             style="success",
         )
     else:
@@ -171,7 +171,8 @@ async def sync_series_forward(session, follows, tracked_series, is_delete):
                 del tracked_series[series_url]
 
                 console.warning(
-                    f"The series '[highlight]{series_data.name}[/]' is no longer tracked"
+                    f"The series '[highlight]{series_data.name}[/]' is no longer "
+                    "tracked"
                 )
 
                 del_synced.append(series_url)

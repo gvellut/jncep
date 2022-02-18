@@ -97,7 +97,7 @@ async def generate_epub(
 
         if has_unavailable_parts:
             console.warning(
-                "Some of the requested parts are not available for reading !",
+                "Some of the requested parts are not available for reading!",
             )
 
         volumes_for_cover = core.relevant_volumes_for_cover(

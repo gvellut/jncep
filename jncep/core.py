@@ -153,9 +153,6 @@ def process_series(
 def _process_single_epub_content(series, volumes, parts):
     # order of volumes and parts must match
 
-    # TODO suffix final complete : not in api but in web page for series
-    # data for React contains what is needed in JSON
-
     # representative volume
     repr_volume = volumes[0]
     author = _extract_author(repr_volume.raw_data.creators)
@@ -313,7 +310,7 @@ def _replace_chars(content):
 def _replace_image_urls(content, images: List[Image]):
     for image in images:
         # the filename relative to the epub content root
-        # file will be added to the Epub archive
+        # the file will be added to the Epub archive
         content = content.replace(image.url, image.local_filename)
 
     return content
