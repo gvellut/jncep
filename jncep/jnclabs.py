@@ -7,6 +7,7 @@ import asks
 import trio
 
 from . import jncweb, utils
+from .utils import deep_freeze
 
 logger = logging.getLogger(__name__)
 console = utils.getConsole()
@@ -77,19 +78,10 @@ def _copy_or_raw(data):
     if type(data) is Addict:
         cp = data.deepcopy()
         # alway refreeze : fine in this context
-        _deep_freeze(cp)
+        deep_freeze(cp)
         return cp
     # an image content ; won't be modifed so can be shared
     return data
-
-
-def _deep_freeze(data):
-    if type(data) is Addict:
-        data.freeze()
-        for value in data.values():
-            if type(value) is list:
-                for v in value:
-                    _deep_freeze(v)
 
 
 class JNCLabsAPI:
@@ -97,9 +89,11 @@ class JNCLabsAPI:
         self,
         jnc_connections=10,
         cdn_connections=20,
+        jncweb_connections=10,
         labs_api_default_timeout=10,
         jnc_api_default_timeout=10,
         cdn_default_timeout=20,
+        jncweb_default_timeout=10,
         connection_timeout=10,
     ):
         # jnc_connections params used for both labs and api (but only 1 req at a time
@@ -115,9 +109,14 @@ class JNCLabsAPI:
         # CDN_IMG_URL_BASE not really necessary
         self.cdn_session = asks.Session(CDN_IMG_URL_BASE, connections=cdn_connections)
 
+        self.jncweb_session = asks.Session(
+            jncweb.JNC_URL_BASE, connections=jncweb_connections
+        )
+
         self.labs_api_default_timeout = labs_api_default_timeout
         self.jnc_api_default_timeout = jnc_api_default_timeout
         self.cdn_default_timeout = cdn_default_timeout
+        self.jncweb_default_timeout = jncweb_default_timeout
 
         self.connection_timeout = connection_timeout
 
@@ -170,7 +169,7 @@ class JNCLabsAPI:
         r = await self._call_labs_authenticated("GET", path, params=params)
 
         d = Addict(r.json())
-        _deep_freeze(d)
+        deep_freeze(d)
         return d
 
     async def paginate(self, func):
@@ -318,3 +317,15 @@ class JNCLabsAPI:
         # should be JPEG
         # TODO check ?
         return r.content
+
+    @with_cache
+    async def fetch_jnc_webpage(self, series_slug):
+        url = jncweb.url_from_series_slug(series_slug)
+        logger.debug(f"JNCWEB {url}")
+        r = await self.jncweb_session.get(
+            url=url,
+            connection_timeout=self.connection_timeout,
+            timeout=self.jncweb_default_timeout,
+        )
+        r.raise_for_status()
+        return r.text

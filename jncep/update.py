@@ -7,7 +7,7 @@ import dateutil
 import trio
 
 from . import core, jncweb, model, spec, track, utils
-from .trio_utils import background, gather
+from .trio_utils import background, bag, gather
 
 logger = logging.getLogger(__package__)
 console = utils.getConsole()
@@ -391,9 +391,22 @@ async def _create_epub_for_new_parts(
             volumes_to_download, epub_generation_options.is_by_volume
         )
 
-        await core.fill_covers_and_content(
-            session, volumes_for_cover, parts_to_download
-        )
+        tasks = [
+            partial(
+                core.fill_covers_and_content,
+                session,
+                volumes_for_cover,
+                parts_to_download,
+            ),
+            partial(
+                core.fill_num_parts_for_volumes,
+                session,
+                series_meta,
+                volumes_to_download,
+            ),
+        ]
+        await bag(tasks)
+
         await core.create_epub(
             series_meta,
             volumes_to_download,

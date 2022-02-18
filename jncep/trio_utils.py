@@ -60,6 +60,19 @@ class Future:
             )
 
 
+# FIXME use that everytim background / gather is used in the code
+async def bag(async_fns):
+    # background and gather
+    async with trio.open_nursery() as n:
+        f_tasks = []
+        for async_fn in async_fns:
+            f_task = background(n, async_fn)
+            f_tasks.append(f_task)
+
+        results = await gather(n, f_tasks).get()
+        return results
+
+
 def background(nursery: trio.Nursery, async_fn) -> Future:
     send_chan, recv_chan = trio.open_memory_channel(1)
 

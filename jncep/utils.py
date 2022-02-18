@@ -4,6 +4,7 @@ import re
 import sys
 import unicodedata
 
+from addict import Dict as Addict
 import rich.console
 import rich.theme
 
@@ -57,12 +58,21 @@ def module_info():
     return mod.__spec__.name
 
 
+def deep_freeze(data):
+    if type(data) is Addict:
+        data.freeze()
+        for value in data.values():
+            if type(value) is list:
+                for v in value:
+                    deep_freeze(v)
+
+
 rich_theme = rich.theme.Theme(
     {
-        "success": "bright_green",
-        "warning": "bright_yellow",
-        "error": "bright_red",
-        "highlight": "black on white",
+        "success": "green",
+        "warning": "yellow",
+        "error": "red",
+        "highlight": "blue",
     }
 )
 
