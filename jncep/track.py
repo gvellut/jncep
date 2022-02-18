@@ -113,7 +113,7 @@ async def track_series(session, tracked_series, series):
 
         # TODO event
         console.info(
-            f"The series '{series.raw_data.title}' is now tracked, starting "
+            f"The series '[highlight]{series.raw_data.title}[/]' is now tracked, starting "
             f"from the beginning",
             style="success",
         )
@@ -125,8 +125,8 @@ async def track_series(session, tracked_series, series):
         part_date = dateutil.parser.parse(last_part.raw_data.launch)
         part_date_formatted = part_date.strftime("%b %d, %Y")
         console.info(
-            f"The series '{series.raw_data.title}' is now tracked, starting "
-            f"after part {relative_part} [{part_date_formatted}]",
+            f"The series '[highlight]{series.raw_data.title}[/]' is now tracked, "
+            f"starting after part {relative_part} [{part_date_formatted}]",
             style="success",
         )
 
@@ -170,7 +170,9 @@ async def sync_series_forward(session, follows, tracked_series, is_delete):
             if series_url not in followed_index:
                 del tracked_series[series_url]
 
-                console.warning(f"The series '{series_data.name}' is no longer tracked")
+                console.warning(
+                    f"The series '[highlight]{series_data.name}[/]' is no longer tracked"
+                )
 
                 del_synced.append(series_url)
 

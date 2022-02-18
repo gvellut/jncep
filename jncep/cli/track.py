@@ -39,7 +39,10 @@ async def add_track_series(jnc_url, email, password):
 
         series_url = jncweb.url_from_series_slug(series.raw_data.slug)
         if series_url in tracked_series:
-            console.warning(f"The series '{series.raw_data.title}' is already tracked!")
+            console.warning(
+                f"The series '[highlight]{series.raw_data.title}[/]' is "
+                "already tracked!"
+            )
             return
 
         await track.track_series(session, tracked_series, series)
@@ -150,8 +153,8 @@ async def rm_track_series(jnc_url_or_index, email, password):
 
             if series_url not in tracked_series:
                 console.warning(
-                    f"The series '{series.raw_data.title}' is not tracked! "
-                    "(Use 'track list --details')"
+                    f"The series '[highlight]{series.raw_data.title}[/]' is not "
+                    "tracked! (Use 'track list --details')"
                 )
                 return
 
@@ -162,7 +165,7 @@ async def rm_track_series(jnc_url_or_index, email, password):
     track_manager.write_tracked_series(tracked_series)
 
     console.info(
-        f"The series '{series_name}' is no longer tracked",
+        f"The series '[highlight]{series_name}[/]' is no longer tracked",
         style="success",
     )
 

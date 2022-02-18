@@ -42,7 +42,7 @@ async def update_url_series(
 
     if series_url not in tracked_series:
         console.warning(
-            f"The series '{series_meta.raw_data.title}' is not tracked! "
+            f"The series '[highlight]{series_meta.raw_data.title}[/]' is not tracked! "
             f"Use the 'jncep track add' command first."
         )
         return
@@ -53,14 +53,15 @@ async def update_url_series(
         # to mirror case with no URL argument
         if series_url not in new_synced:
             console.warning(
-                f"The series '{series_meta.raw_data.title}' is not among the "
-                f"tracked series added from syncing. Use 'jncep update' "
+                f"The series '[highlight]{series_meta.raw_data.title}[/]' is not "
+                "among the tracked series added from syncing. Use 'jncep update' "
                 "without --sync."
             )
             return
 
     series_details = tracked_series[series_url]
 
+    # the series has just been synced so force EPUB gen from start
     is_force_from_beginning = is_sync
     update_result = await _create_epub_for_new_parts(
         session,
@@ -73,12 +74,14 @@ async def update_url_series(
 
     if update_result.is_updated:
         console.info(
-            f"The series '{series_meta.raw_data.title}' is already up to date!",
+            f"\u2714 The series '[highlight]{series_meta.raw_data.title}[/]' has "
+            "been updated!",
             style="success",
         )
     else:
         console.info(
-            f"The series '{series_meta.raw_data.title}' has been updated!",
+            f"The series '[highlight]{series_meta.raw_data.title}[/]' is already up "
+            "to date!",
             style="success",
         )
 
@@ -156,7 +159,7 @@ async def update_all_series(
 
         if num_updated > 0:
             console.info(
-                f"{num_updated} series \u2728 sucessfully updated!",
+                f"\u2728 {num_updated} series sucessfully updated!",
                 style="success",
             )
 
@@ -211,7 +214,8 @@ async def _handle_series(
         if update_result.is_updated:
             # TODO event
             console.info(
-                f"\u2714 The series '{series_meta.raw_data.title}' has been updated!",
+                f"\u2714 The series '[highlight]{series_meta.raw_data.title}[/]' has "
+                "been updated!",
                 style="success",
             )
 
@@ -255,7 +259,10 @@ async def _create_epub_for_new_parts(
         if not parts:
             return UpdateResult(is_updated=False)
         else:
-            console.info(f"Series '{series_meta.raw_data.title}' will be updated...")
+            console.info(
+                f"The series '[highlight]{series_meta.raw_data.title}[/]' "
+                "will be updated..."
+            )
 
             # complete series from beginning
             await core.fill_meta(session, series_meta)
@@ -332,7 +339,8 @@ async def _create_epub_for_new_parts(
         if not available_parts_to_download:
             # TODO event
             console.warning(
-                f"All updated parts for '{series_meta.raw_data.title}' have expired!"
+                f"All updated parts for '[highlight]{series_meta.raw_data.title}[/]' "
+                "have expired!"
             )
             # not updated but the series will still have its tracking data changed
             # in tracking config ; if not, the message above will always be displayed
@@ -342,12 +350,16 @@ async def _create_epub_for_new_parts(
                 series=series_meta, is_updated=False, is_force_set_updated=True
             )
 
-        console.info(f"Series '{series_meta.raw_data.title}' will be updated...")
+        console.info(
+            f"The series '[highlight]{series_meta.raw_data.title}[/]' will "
+            "be updated..."
+        )
 
         # after the to update notification
         if len(available_parts_to_download) != len(parts_release_after_date):
             console.warning(
-                f"Some parts for '{series_meta.raw_data.title}' have expired!"
+                f"Some parts for '[highlight]{series_meta.raw_data.title}[/]' have "
+                "expired!"
             )
 
         # we need the volumes for titles and covers

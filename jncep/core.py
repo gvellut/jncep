@@ -18,7 +18,7 @@ import trio
 from . import epub, jnclabs, jncweb, spec, utils
 from .model import Image, Part, Series, Volume
 from .trio_utils import background, gather
-from .utils import to_safe_filename
+from .utils import deep_freeze, to_safe_filename
 
 logger = logging.getLogger(__name__)
 console = utils.getConsole()
@@ -784,6 +784,7 @@ async def fetch_jncweb_page_react_data(session, series_slug):
     end_index = page_html.find(end_tag, start_index)
     react_props = page_html[start_index:end_index]
     data = Addict(json.loads(react_props))
+    deep_freeze(data)
     return data
 
 
