@@ -93,7 +93,10 @@ async def generate_epub(
         ) = core.relevant_volumes_and_parts_for_content(series_meta, part_filter)
 
         if not parts_to_download:
-            raise core.NoRequestedPartAvailableError()
+            console.error(
+                "None of the requested parts are available! No EPUB will be generated.",
+            )
+            return
 
         if has_unavailable_parts:
             console.warning(

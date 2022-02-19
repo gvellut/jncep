@@ -17,15 +17,11 @@ import trio
 
 from . import epub, jnclabs, jncweb, spec, utils
 from .model import Image, Part, Series, Volume
-from .trio_utils import background, gather
+from .trio_utils import bag
 from .utils import deep_freeze, to_safe_filename
 
 logger = logging.getLogger(__name__)
 console = utils.getConsole()
-
-
-class NoRequestedPartAvailableError(Exception):
-    pass
 
 
 EpubGenerationOptions = namedtuple(
@@ -353,15 +349,11 @@ async def to_part_spec(session, jnc_resource):
         return IdentifierSpec(spec.VOLUME, volume.legacyId)
 
     elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_PART:
-        async with trio.open_nursery() as n:
-            f_part = background(
-                n, partial(session.api.fetch_data, "parts", jnc_resource.slug)
-            )
-            f_volume = background(
-                n, partial(session.api.fetch_data, "parts", jnc_resource.slug, "volume")
-            )
-            part, volume = await gather(n, [f_part, f_volume]).get()
-
+        tasks = [
+            partial(session.api.fetch_data, "parts", jnc_resource.slug),
+            partial(session.api.fetch_data, "parts", jnc_resource.slug, "volume"),
+        ]
+        part, volume = await bag(tasks)
         return IdentifierSpec(spec.PART, volume.legacyId, part.legacyId)
 
 
@@ -418,27 +410,22 @@ async def fill_volumes_meta(session, series):
 
 
 async def fill_parts_meta_for_volumes(session, volumes, volume_callback=None):
-    async with trio.open_nursery() as n:
-        volumes_meta = []
-        futures = []
-        for volume in volumes:
-            if volume_callback and not volume_callback(volume):
-                continue
+    volumes_meta = []
+    tasks = []
+    for volume in volumes:
+        if volume_callback and not volume_callback(volume):
+            continue
+        tasks.append(partial(fetch_parts_meta_for_volume, session, volume.volume_id))
+        volumes_meta.append(volume)
+    all_parts = await bag(tasks)
 
-            f_parts = background(
-                n, partial(fetch_parts_meta_for_volume, session, volume.volume_id)
-            )
-            futures.append(f_parts)
-            volumes_meta.append(volume)
+    for i, parts in enumerate(all_parts):
+        volume = volumes_meta[i]
 
-        all_parts = await gather(n, futures).get()
-        for i, parts in enumerate(all_parts):
-            volume = volumes_meta[i]
-
-            volume.parts = parts
-            for part in parts:
-                part.volume = volume
-                part.series = volume.series
+        volume.parts = parts
+        for part in parts:
+            part.volume = volume
+            part.series = volume.series
 
 
 async def fetch_parts_meta_for_volume(session, volume_id):
@@ -475,15 +462,10 @@ async def fetch_parts_for_volume(session, volume_id):
 
 
 async def fetch_content(session, parts):
-    async with trio.open_nursery() as n:
-        f_contents = []
-        for part in parts:
-            f_content = background(
-                n, partial(fetch_content_and_images_for_part, session, part.part_id)
-            )
-            f_contents.append(f_content)
-
-        contents = await gather(n, f_contents).get()
+    tasks = []
+    for part in parts:
+        tasks.append(partial(fetch_content_and_images_for_part, session, part.part_id))
+    contents = await bag(tasks)
 
     parts_content = {}
     for i, content_image in enumerate(contents):
@@ -509,13 +491,8 @@ async def fetch_content_and_images_for_part(session, part_id):
     content = await session.api.fetch_content(part_id, "data.xhtml")
     img_urls = extract_image_urls(content)
     if len(img_urls) > 0:
-        f_images = []
-        async with trio.open_nursery() as n:
-            for img_url in img_urls:
-                f_image = background(n, partial(fetch_image, session, img_url))
-                f_images.append(f_image)
-
-            images = await gather(n, f_images).get()
+        tasks = [partial(fetch_image, session, img_url) for img_url in img_urls]
+        images = await bag(tasks)
 
         images = list(filter(None, images))
         for i, image in enumerate(images):
@@ -570,23 +547,18 @@ def extract_image_urls(content):
 
 
 async def fetch_covers(session, volumes):
-    async with trio.open_nursery() as n:
-        f_lowres_covers = []
-        f_hires_covers = []
-        for volume in volumes:
-            # fetch the cover url low res image as indicated in the metadata
-            # used as a fallback in case the high res is not found
-            f_cover = background(
-                n, partial(fetch_lowres_cover_for_volume, session, volume)
-            )
-            f_lowres_covers.append(f_cover)
-            f_part_image_cover = background(
-                n, partial(fetch_cover_image_from_parts, session, volume.parts)
-            )
-            f_hires_covers.append(f_part_image_cover)
+    tasks = []
+    for volume in volumes:
+        # fetch the cover url low res image as indicated in the metadata
+        # used as a fallback in case the high res is not found
+        tasks.append(partial(fetch_lowres_cover_for_volume, session, volume))
+        tasks.append(partial(fetch_cover_image_from_parts, session, volume.parts))
 
-        lowres_covers = await gather(n, f_lowres_covers).get()
-        hires_covers = await gather(n, f_hires_covers).get()
+    covers = await bag(tasks)
+    # even index are lowres
+    lowres_covers = covers[::2]
+    # odd
+    hires_covers = covers[1::2]
 
     candidate_covers = zip(hires_covers, lowres_covers)
     volumes_cover = {}
@@ -613,8 +585,9 @@ async def fetch_lowres_cover_for_volume(session, volume):
 
 
 async def fetch_cover_image_from_parts(session, parts):
+    # need content so only available parts
+    parts = [part for part in parts if is_part_available(session.now, part)]
     if not parts:
-        # shouldn't happen
         return None
 
     try:
@@ -629,31 +602,15 @@ async def fetch_cover_image_from_parts(session, parts):
             content = await session.api.fetch_content(part_id, "data.xhtml")
             return _candidate_cover_image(content)
 
-        async with trio.open_nursery() as n:
-            f_his = []
-            for part in first_2_parts:
-                if not is_part_available(session.now, part):
-                    continue
-
-                f_hi = background(
-                    n, partial(fetch_highres_image_maybe, session, part.part_id)
-                )
-                f_his.append(f_hi)
-
-            candidate_urls = await gather(n, f_his).get()
+        for batch_parts in [first_2_parts, rest_parts]:
+            tasks = []
+            for part in batch_parts:
+                tasks.append(partial(fetch_highres_image_maybe, session, part.part_id))
+            candidate_urls = await bag(tasks)
             cover = await _fetch_one_candidate_image(session, candidate_urls)
             if cover:
                 return cover
-
-            # check the rest of parts
-            f_his = []
-            for part in rest_parts:
-                f_hi = background(
-                    n, partial(fetch_highres_image_maybe, session, part.part_id)
-                )
-                f_his.append(f_hi)
-            candidate_urls = await gather(n, f_his).get()
-            return await _fetch_one_candidate_image(session, candidate_urls)
+        return None
 
     except (trio.MultiError, Exception) as ex:
         logger.debug(
@@ -760,11 +717,11 @@ def relevant_volumes_and_parts_for_content(series, part_filter):
 
 
 async def fill_covers_and_content(session, cover_volumes, content_parts):
-    async with trio.open_nursery() as n:
-        f_content = background(n, partial(fetch_content, session, content_parts))
-        f_covers = background(n, partial(fetch_covers, session, cover_volumes))
-
-        contents, covers = await gather(n, [f_content, f_covers]).get()
+    tasks = [
+        partial(fetch_content, session, content_parts),
+        partial(fetch_covers, session, cover_volumes),
+    ]
+    contents, covers = await bag(tasks)
 
     for part in content_parts:
         if part.part_id in contents:

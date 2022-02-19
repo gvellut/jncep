@@ -7,7 +7,7 @@ import dateutil
 import trio
 
 from . import core, jncweb, model, spec, track, utils
-from .trio_utils import background, bag, gather
+from .trio_utils import bag
 
 logger = logging.getLogger(__package__)
 console = utils.getConsole()
@@ -103,73 +103,70 @@ async def update_all_series(
     new_synced,
     is_whole_volume,
 ):
-    async with trio.open_nursery() as n:
-        series_details_a = []
-        f_series = []
-        for series_url, series_details in tracked_series.items():
-            f_one_series = background(
-                n,
-                partial(
-                    _handle_series,
-                    session,
-                    series_url,
-                    series_details,
-                    epub_generation_options,
-                    is_sync,
-                    new_synced,
-                    is_whole_volume,
-                ),
+    series_details_a = []
+    tasks = []
+    for series_url, series_details in tracked_series.items():
+        tasks.append(
+            partial(
+                _handle_series,
+                session,
+                series_url,
+                series_details,
+                epub_generation_options,
+                is_sync,
+                new_synced,
+                is_whole_volume,
             )
-            f_series.append(f_one_series)
-            series_details_a.append(series_details)
+        )
+        series_details_a.append(series_details)
 
-        results = await gather(n, f_series).get()
+    results = await bag(tasks)
 
-        num_updated = 0
-        num_errors = 0
-        is_tracking_updated = False
-        update_result: UpdateResult
-        for i, update_result in enumerate(results):
-            if not update_result.is_considered:
-                continue
+    num_updated = 0
+    num_errors = 0
+    is_tracking_updated = False
+    update_result: UpdateResult
+    for i, update_result in enumerate(results):
+        if not update_result.is_considered:
+            continue
 
-            series_details = series_details_a[i]
+        series_details = series_details_a[i]
 
-            if update_result.is_updated:
-                num_updated += 1
+        if update_result.is_updated:
+            num_updated += 1
 
-            if update_result.is_error:
-                num_errors += 1
-            else:
-                # the update of tracking has some conditions besides
-                # just the series udpated
-                is_tracking_updated_for_series = _update_tracking_data(
-                    series_details, update_result.series, update_result
-                )
-                if is_tracking_updated_for_series:
-                    is_tracking_updated = True
-
-        if num_errors > 0:
-            console.error("Some series could not be updated!")
-
-        emoji = ""
-        if console.is_advanced():
-            emoji = "\u2728 "
-
-        if num_updated == 0 and num_errors == 0:
-            # second clause => all in error
-            console.info(
-                f"{emoji}All series are already up to date!",
-                style="success",
+        if update_result.is_error:
+            num_errors += 1
+        else:
+            # the update of tracking has some conditions besides
+            # just the series udpated
+            is_tracking_updated_for_series = _update_tracking_data(
+                series_details, update_result.series, update_result
             )
+            if is_tracking_updated_for_series:
+                is_tracking_updated = True
 
-        if num_updated > 0:
-            console.info(
-                f"{emoji}{num_updated} series sucessfully updated!",
-                style="success",
-            )
+    if num_errors > 0:
+        console.error("Some series could not be updated!")
 
-        return is_tracking_updated
+    emoji = ""
+    if console.is_advanced():
+        emoji = "\u2728 "
+
+    if num_updated == 0 and num_errors == 0:
+        # second clause => all in error
+        console.info(
+            f"{emoji}All series are already up to date!",
+            style="success",
+        )
+
+    if num_updated > 0:
+        console.info(
+            f"{emoji}{num_updated} series sucessfully updated!",
+            style="success",
+        )
+
+    return is_tracking_updated
 
 
 def _update_tracking_data(series_details, series_meta, update_result):

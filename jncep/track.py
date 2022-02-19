@@ -7,10 +7,9 @@ from pathlib import Path
 from addict import Dict as Addict
 from atomicwrites import atomic_write
 import dateutil.parser
-import trio
 
 from . import core, jncweb, spec, utils
-from .trio_utils import background, gather
+from .trio_utils import bag
 
 logger = logging.getLogger(__package__)
 console = utils.getConsole()
@@ -114,7 +113,7 @@ async def track_series(session, tracked_series, series):
         # TODO event
         console.info(
             f"The series '[highlight]{series.raw_data.title}[/]' is now tracked, "
-            "starting from the beginning",
+            "starting [highlight]from the beginning[/]",
             style="success",
         )
     else:
@@ -126,7 +125,8 @@ async def track_series(session, tracked_series, series):
         part_date_formatted = part_date.strftime("%b %d, %Y")
         console.info(
             f"The series '[highlight]{series.raw_data.title}[/]' is now tracked, "
-            f"starting after part {relative_part} [{part_date_formatted}]",
+            f"starting after part [highlight]{relative_part} [{part_date_formatted}]"
+            f"[/]",
             style="success",
         )
 
@@ -144,24 +144,22 @@ async def sync_series_forward(session, follows, tracked_series, is_delete):
     # sync local tracked series based on remote follows
     new_synced = []
     del_synced = []
-    async with trio.open_nursery() as n:
-        f_tasks = []
-        for jnc_resource in follows:
-            if jnc_resource.url in tracked_series:
-                continue
 
-            async def do_track(jnc_resource):
-                series = await core.resolve_series(session, jnc_resource)
-                await track_series(session, tracked_series, series)
+    async def do_track(jnc_resource):
+        series = await core.resolve_series(session, jnc_resource)
+        await track_series(session, tracked_series, series)
 
-                series_url = jncweb.url_from_series_slug(series.raw_data.slug)
-                new_synced.append(series_url)
+        series_url = jncweb.url_from_series_slug(series.raw_data.slug)
+        new_synced.append(series_url)
 
-            f_task = background(n, partial(do_track, jnc_resource))
-            f_tasks.append(f_task)
+    tasks = []
+    for jnc_resource in follows:
+        if jnc_resource.url in tracked_series:
+            continue
+        tasks.append(partial(do_track, jnc_resource))
 
-        # result doesn't matter ; just drain exceptions
-        await gather(n, f_tasks).get()
+    # result doesn't matter ; just for the exceptions
+    await bag(tasks)
 
     if is_delete:
         followed_index = {f.url: f for f in follows}
@@ -185,47 +183,43 @@ async def sync_series_backward(session, follows, tracked_series, is_delete):
     new_synced = []
     del_synced = []
 
+    async def do_follow(jnc_resource):
+        # TODO make sure it is next to follow ?
+        console.info(f"Fetch metadata for '{jnc_resource}'...")
+        series = await core.resolve_series(session, jnc_resource)
+        series_id = series.series_id
+        title = series.raw_data.title
+
+        console.info(f"Follow '{title}'...")
+        await session.api.follow_series(series_id)
+
+        new_synced.append(series_url)
+
     followed_index = {f.url: f for f in follows}
-    async with trio.open_nursery() as n:
-        f_tasks = []
-        for series_url in tracked_series:
-            # series_url is the latest URL format (same as the follows)
-            if series_url in followed_index:
-                continue
+    tasks = []
+    for series_url in tracked_series:
+        # series_url is the latest URL format (same as the follows)
+        if series_url in followed_index:
+            continue
+        jnc_resource = jncweb.resource_from_url(series_url)
+        tasks.append(partial(do_follow, jnc_resource))
 
-            jnc_resource = jncweb.resource_from_url(series_url)
+    if is_delete:
 
-            async def do_follow(jnc_resource):
-                # TODO make sure it is next to follow ?
-                console.info(f"Fetch metadata for '{jnc_resource}'...")
-                series = await core.resolve_series(session, jnc_resource)
-                series_id = series.series_id
-                title = series.raw_data.title
+        async def do_undollow(jnc_resource):
+            # use the follow_raw_data: to avoid another call to the API
+            series_id = jnc_resource.follow_raw_data.id
+            title = jnc_resource.follow_raw_data.title
+            console.warning(f"Unfollow '{title}'...")
+            await session.api.unfollow_series(series_id)
 
-                console.info(f"Follow '{title}'...")
-                await session.api.follow_series(series_id)
+            del_synced.append(jnc_resource.url)
 
-                new_synced.append(series_url)
+        for jnc_resource in follows:
+            if jnc_resource.url not in tracked_series:
+                tasks.append(partial(do_undollow, jnc_resource))
 
-            f_task = background(n, partial(do_follow, jnc_resource))
-            f_tasks.append(f_task)
-
-        if is_delete:
-            for jnc_resource in follows:
-                if jnc_resource.url not in tracked_series:
-
-                    async def do_undollow(jnc_resource):
-                        # use the follow_raw_data: to avoid another call to the API
-                        series_id = jnc_resource.follow_raw_data.id
-                        title = jnc_resource.follow_raw_data.title
-                        console.warning(f"Unfollow '{title}'...")
-                        await session.api.unfollow_series(series_id)
-
-                        del_synced.append(jnc_resource.url)
-
-                    f_task = background(n, partial(do_undollow, jnc_resource))
-                    f_tasks.append(f_task)
-
-        await gather(n, f_tasks).get()
+    # no result needed ; just for the exceptions
+    await bag(tasks)
 
     return new_synced, del_synced
