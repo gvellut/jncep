@@ -81,7 +81,9 @@ rich_theme = rich.theme.Theme(
 
 class RichConsole:
     def __init__(self):
-        self.console = rich.console.Console(highlight=False, theme=rich_theme)
+        self.console = rich.console.Console(
+            highlight=False, theme=rich_theme, soft_wrap=True
+        )
         self._status = None
 
     def info(self, *args, **kwargs):
@@ -95,13 +97,14 @@ class RichConsole:
 
     def status(self, message, **kwargs_spinner_style):
         if not self._status:
+            default = {}
             if self.is_advanced():
-                spinner = "dots"
+                default = {"spinner": "dots"}
             else:
-                spinner = "star2"
-            self._status = self.console.status(
-                message, **{"spinner": spinner, **kwargs_spinner_style}
-            )
+                default = {"spinner": "line", "refresh_per_second": 6}
+            st_args = {**default, **kwargs_spinner_style}
+
+            self._status = self.console.status(message, **st_args)
             self._status.start()
         else:
             self._status.update(message, **kwargs_spinner_style)
