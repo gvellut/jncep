@@ -186,7 +186,7 @@ def list_track_series(is_detail):
     tracked_series = track_manager.read_tracked_series()
 
     if len(tracked_series) > 0:
-        console.info(f"[bright_red]{len(tracked_series)}[/] series are tracked:")
+        console.info(f"{len(tracked_series)} series are tracked:")
         for index, (ser_url, ser_details) in enumerate(tracked_series.items()):
             details = None
             if ser_details.part_date:
@@ -198,9 +198,9 @@ def list_track_series(is_detail):
             else:
                 details = f"{ser_details.part}"
 
-            msg = f"[[bright_yellow]{index + 1}[/]] [bright_green]{ser_details.name}[/]"
+            msg = f"[[yellow]{index + 1}[/]] [green]{ser_details.name}[/]"
             if is_detail:
-                msg += f" {ser_url} [bright_red]{details}[/]"
+                msg += f" {ser_url} [red]{details}[/]"
 
             console.info(msg)
     else:

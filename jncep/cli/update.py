@@ -111,7 +111,4 @@ async def update_tracked(
 
         if is_tracking_updated:
             track_manager.write_tracked_series(tracked_series)
-            console.info(
-                "The data for tracked series has been sucessfully updated!",
-                style="success",
-            )
+            logger.debug("Data for tracked series sucessfully updated!")

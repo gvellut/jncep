@@ -25,7 +25,10 @@ class UnrecoverableJNCEPError(click.ClickException):
         self.exc_info = exc_info
 
     def show(self):
-        console.error("*** \u274C An unrecoverable error occured ***")
+        emoji = ""
+        if console.is_advanced():
+            emoji = "\u274C "
+        console.error(f"*** {emoji}An unrecoverable error occured ***")
         console.error(self.message)
 
         logger.debug(" ".join(traceback.format_exception(*self.exc_info)))

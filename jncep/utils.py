@@ -72,7 +72,7 @@ rich_theme = rich.theme.Theme(
         "success": "green",
         "warning": "yellow",
         "error": "red",
-        "highlight": "blue",
+        "highlight": "magenta",
     }
 )
 
@@ -95,7 +95,13 @@ class RichConsole:
 
     def status(self, message, **kwargs_spinner_style):
         if not self._status:
-            self._status = self.console.status(message, **kwargs_spinner_style)
+            if self.is_advanced():
+                spinner = "dots"
+            else:
+                spinner = "star2"
+            self._status = self.console.status(
+                message, **{"spinner": spinner, **kwargs_spinner_style}
+            )
             self._status.start()
         else:
             self._status.update(message, **kwargs_spinner_style)
@@ -106,6 +112,9 @@ class RichConsole:
 
     def log(self, *args, **kwargs):
         self.console.log(*args, **kwargs)
+
+    def is_advanced(self):
+        return not self.console.legacy_windows
 
 
 class DebugConsole:
@@ -130,6 +139,9 @@ class DebugConsole:
     def log(self, message, *args, **kwargs):
         logger.info(message)
 
+    def is_advanced(self):
+        return False
+
 
 class RootConsole:
     def __init__(self):
@@ -153,6 +165,9 @@ class RootConsole:
 
     def log(self, message, *args, **kwargs):
         self.console.log(message, *args, **kwargs)
+
+    def is_advanced(self):
+        return self.console.is_advanced()
 
 
 ROOT_CONSOLE = RootConsole()

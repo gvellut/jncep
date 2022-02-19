@@ -73,8 +73,11 @@ async def update_url_series(
     )
 
     if update_result.is_updated:
+        emoji = ""
+        if console.is_advanced():
+            emoji = "\u2714 "
         console.info(
-            f"\u2714 The series '[highlight]{series_meta.raw_data.title}[/]' has "
+            f"{emoji}The series '[highlight]{series_meta.raw_data.title}[/]' has "
             "been updated!",
             style="success",
         )
@@ -149,17 +152,20 @@ async def update_all_series(
         if num_errors > 0:
             console.error("Some series could not be updated!")
 
+        emoji = ""
+        if console.is_advanced():
+            emoji = "\u2728 "
+
         if num_updated == 0 and num_errors == 0:
             # second clause => all in error
-            # FIXME case all in error ? handle
             console.info(
-                "\u2728 All series are already up to date!",
+                f"{emoji}All series are already up to date!",
                 style="success",
             )
 
         if num_updated > 0:
             console.info(
-                f"\u2728 {num_updated} series sucessfully updated!",
+                f"{emoji}{num_updated} series sucessfully updated!",
                 style="success",
             )
 
@@ -213,8 +219,11 @@ async def _handle_series(
 
         if update_result.is_updated:
             # TODO event
+            emoji = ""
+            if console.is_advanced():
+                emoji = "\u2714 "
             console.info(
-                f"\u2714 The series '[highlight]{series_meta.raw_data.title}[/]' has "
+                f"{emoji}The series '[highlight]{series_meta.raw_data.title}[/]' has "
                 "been updated!",
                 style="success",
             )
@@ -226,10 +235,13 @@ async def _handle_series(
             title = series_meta.raw_data.title
         else:
             title = series_url
+
+        emoji = ""
+        if console.is_advanced():
+            emoji = "\u274C "
         # FIXME show the user some feedback as to the nature of the error
         console.error(
-            # crying face
-            f"\u274C Error updating '{title}'! "
+            f"{emoji}Error updating '{title}'! "
             "(run 'jncep -d update' for more details)",
         )
         logger.debug(f"Error _handle_series: {ex}", exc_info=sys.exc_info())

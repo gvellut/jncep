@@ -80,7 +80,11 @@ class JNCEPSession:
     async def login(self, email, password):
         console.status(f"Login with email '[highlight]{email}[/]'...")
         token = await self.api.login(email, password)
-        console.info(f"\u26A1 Logged in with email '[highlight]{email}[/]'")
+
+        emoji = ""
+        if console.is_advanced():
+            emoji = "\u26A1 "
+        console.info(f"{emoji}Logged in with email '[highlight]{email}[/]'")
         console.status("...")
         return token
 
@@ -113,8 +117,11 @@ async def create_epub(series, volumes, parts, epub_generation_options):
         epub.output_epub(output_filepath, book_details_i)
 
         # laughing face
+        emoji = ""
+        if console.is_advanced():
+            emoji = "\U0001F600 "
         console.info(
-            f"\U0001F600 Success! EPUB generated in '{output_filepath}'!",
+            f"{emoji}Success! EPUB generated in '{output_filepath}'!",
             style="success",
         )
 
