@@ -226,9 +226,15 @@ def _process_single_epub_content(series, volumes, parts):
 
             is_complete = _is_volume_complete(volume, parts)
             if is_complete:
-                title = f"{title_base} [Complete]"
+                part_nums = f"Complete"
             else:
-                title = f"{title_base} [Parts {part_num0} to {part_num1}]"
+                # check the last part in the epub
+                suffix = ""
+                if _is_part_final(parts[-1]):
+                    suffix = " - Final"
+                part_nums = f"Parts {part_num0} to {part_num1}{suffix}"
+
+            title = f"{title_base} [{part_nums}]"
 
     identifier = series.raw_data.slug + str(int(time.time()))
 
