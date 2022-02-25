@@ -25,6 +25,7 @@ console = utils.getConsole()
 @options.images_option
 @options.raw_content_option
 @options.no_replace_chars_option
+@options.css_option
 @click.option(
     "-s",
     "--sync",
@@ -40,6 +41,7 @@ console = utils.getConsole()
     "--whole",
     "is_whole_volume",
     is_flag=True,
+    envvar="JNCEP_WHOLE",
     help=(
         "Flag to indicate whether the whole volume should be regenerated when a "
         "new part is detected during the update"
@@ -55,6 +57,7 @@ async def update_tracked(
     is_extract_images,
     is_extract_content,
     is_not_replace_chars,
+    style_css_path,
     is_sync,
     is_whole_volume,
 ):
@@ -64,6 +67,7 @@ async def update_tracked(
         is_extract_images,
         is_extract_content,
         is_not_replace_chars,
+        style_css_path,
     )
 
     async with core.JNCEPSession(email, password) as session:

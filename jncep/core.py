@@ -32,6 +32,7 @@ EpubGenerationOptions = namedtuple(
         "is_extract_images",
         "is_extract_content",
         "is_not_replace_chars",
+        "style_css_path",
     ],
 )
 
@@ -110,7 +111,9 @@ async def create_epub(series, volumes, parts, epub_generation_options):
         # TODO write to memory then async fs write here ? (uses epublib
         # which is sync anyway)
         # or trio.to_thread.run_sync or inside
-        epub.output_epub(output_filepath, book_details_i)
+        epub.output_epub(
+            output_filepath, book_details_i, epub_generation_options.style_css_path
+        )
 
         # laughing face
         emoji = ""
@@ -226,7 +229,7 @@ def _process_single_epub_content(series, volumes, parts):
 
             is_complete = _is_volume_complete(volume, parts)
             if is_complete:
-                part_nums = f"Complete"
+                part_nums = "Complete"
             else:
                 # check the last part in the epub
                 suffix = ""

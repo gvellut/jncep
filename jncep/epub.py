@@ -2,6 +2,7 @@ import logging
 
 import attr
 from ebooklib import epub
+import importlib_resources as imres
 
 from .model import Image
 
@@ -27,7 +28,29 @@ class CollectionMetadata:
     position = attr.ib()
 
 
-def output_epub(output_filepath, book_details: "BookDetails"):
+DEFAULT_STYLE_CSS_PATH = "res/style.css"
+DEFAULT_STYLE_CSS = None
+
+
+def read_default_style_css():
+    global DEFAULT_STYLE_CSS
+    DEFAULT_STYLE_CSS = (
+        imres.files(__package__).joinpath(DEFAULT_STYLE_CSS_PATH).read_text()
+    )
+
+
+def get_css(style_css_path):
+    if style_css_path:
+        with open(style_css_path, "r", encoding="utf-8", errors="ignore") as f:
+            return f.read()
+
+    if not DEFAULT_STYLE_CSS:
+        read_default_style_css()
+
+    return DEFAULT_STYLE_CSS
+
+
+def output_epub(output_filepath, book_details: BookDetails, style_css_path=None):
     lang = "en"
     book = epub.EpubBook()
     book.set_identifier(book_details.identifier)
@@ -75,14 +98,8 @@ def output_epub(output_filepath, book_details: "BookDetails"):
     # TODO why not True ? check
     book.set_cover(cover_image_filename, content, False)
 
-    # TODO externalize CSS + option to epub + update
-    style = """body {color: black;}
-h1 {page-break-before: always;}
-img {width: 100%; page-break-after: always; page-break-before: always;
-    object-fit: contain;}
-p {text-indent: 1.3em;}
-.centerp {text-align: center; text-indent: 0em;}
-.noindent {text-indent: 0em;}"""
+    style = get_css(style_css_path)
+
     css = epub.EpubItem(
         uid="style", file_name="book.css", media_type="text/css", content=style
     )

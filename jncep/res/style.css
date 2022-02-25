@@ -1,0 +1,27 @@
+body {
+    color: black;
+}
+
+h1 {
+    page-break-before: always;
+}
+
+img {
+    width: 100%;
+    page-break-after: always;
+    page-break-before: always;
+    object-fit: contain;
+}
+
+p {
+    text-indent: 1.3em;
+}
+
+.centerp {
+    text-align: center;
+    text-indent: 0em;
+}
+
+.noindent {
+    text-indent: 0em;
+}
