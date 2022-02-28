@@ -152,7 +152,7 @@ To solve this issue (without having to mess with fonts), by default, this specif
 
 ### CSS
 
-The default CSS used by the tool and embedded in the generated EPUB files can be found (in the repository)[https://raw.githubusercontent.com/gvellut/jncep/master/jncep/res/style.css]. It is possible to download it and customize it. Then you can tell the `epub` command to use your own version by passing the `-t/--css` option with the path to your custom CSS as value.
+The default CSS used by the tool and embedded in the generated EPUB files can be found [in the repository](https://raw.githubusercontent.com/gvellut/jncep/master/jncep/res/style.css). It is possible to download it and customize it. Then you can tell the `epub` command to use your own version by passing the `-t/--css` option with the path to your custom CSS as value.
 
 ### Environment variables
 
