@@ -160,11 +160,11 @@ Just like the login and password, other options that are shared between the `epu
 - JNCEP_EMAIL
 - JNCEP_PASSWORD
 - JNCEP_OUTPUT
+- JNCEP_CSS
 - JNCEP_BYVOLUME
 - JNCEP_IMAGES
 - JNCEP_CONTENT
 - JNCEP_NOREPLACE
-- JNCEP_CSS
 
 The environment variables which set flags (JNCEP_BYVOLUME and below in the list above) should have a value like `1`.
 
