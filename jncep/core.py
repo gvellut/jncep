@@ -503,6 +503,7 @@ async def fetch_content_and_images_for_part(session, part_id):
         tasks = [partial(fetch_image, session, img_url) for img_url in img_urls]
         images = await bag(tasks)
 
+        # filter images with download error
         images = list(filter(None, images))
         for i, image in enumerate(images):
             image.order_in_part = i + 1
@@ -520,9 +521,11 @@ async def fetch_image(session, img_url):
         image.local_filename = _local_image_filename(image)
         return image
     except (trio.MultiError, Exception) as ex:
-        # TODO event error instead in case multiple : group
         console.error(f"Error downloading image with URL: '{img_url}'")
         logger.debug(f"Error downloading image: {ex}", exc_info=sys.exc_info())
+        # TODO still create the Image object with empty content ?
+        # the original link to the image will stay in the EPUB
+        # some EPUB reader may be able to donwload them
         return None
 
 
@@ -634,7 +637,6 @@ async def _fetch_one_candidate_image(session, candidate_urls):
         if candidate_url:
 
             if "cover" not in candidate_url and "cvr" not in candidate_url:
-                # TODO event Notification
                 # TODO check the cover format on old series
                 logger.debug(
                     "The hires cover candidate url doesn't look like a cover URL"

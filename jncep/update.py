@@ -215,7 +215,6 @@ async def _handle_series(
         )
 
         if update_result.is_updated:
-            # TODO event
             emoji = ""
             if console.is_advanced():
                 emoji = "\u2714 "
@@ -346,7 +345,6 @@ async def _create_epub_for_new_parts(
         ]
 
         if not available_parts_to_download:
-            # TODO event
             console.warning(
                 f"All updated parts for '[highlight]{series_meta.raw_data.title}[/]' "
                 "have expired!"

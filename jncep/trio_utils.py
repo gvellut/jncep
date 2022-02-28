@@ -60,7 +60,6 @@ class Future:
             )
 
 
-# FIXME use that everytim background / gather is used in the code
 async def bag(async_fns):
     # background and gather
     async with trio.open_nursery() as n:

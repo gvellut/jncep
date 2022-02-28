@@ -23,9 +23,6 @@ COMMON_API_HEADERS = {"accept": "application/json", "content-type": "application
 COMMON_LABS_API_PARAMS = {"format": "json"}
 
 
-# TODO timeout for the API requests
-
-
 class InvalidCDNRequestException(Exception):
     pass
 
@@ -270,7 +267,6 @@ class JNCLabsAPI:
         for s in me_data.serieFollows:
             series = s.serie
             slug = series.titleslug
-            # TODO check if still necessary with LABS API
             # the metadata is not as complete as the usual (with fetch_metadata)
             # but it can still be useful to avoid a call later to the API
             jnc_resource = jncweb.JNCResource(

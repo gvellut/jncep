@@ -76,8 +76,6 @@ rich_theme = rich.theme.Theme(
     }
 )
 
-# TODO use events instead ?
-
 
 class RichConsole:
     def __init__(self):

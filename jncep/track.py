@@ -110,7 +110,6 @@ async def track_series(session, tracked_series, series):
         # 0000-... not a valid date so 1111-...
         pdate = "1111-11-11T11:11:11.111Z"
 
-        # TODO event
         console.info(
             f"The series '[highlight]{series.raw_data.title}[/]' is now tracked, "
             "starting [highlight]from the beginning[/]",
@@ -184,7 +183,6 @@ async def sync_series_backward(session, follows, tracked_series, is_delete):
     del_synced = []
 
     async def do_follow(jnc_resource):
-        # TODO make sure it is next to follow ?
         console.info(f"Fetch metadata for '{jnc_resource}'...")
         series = await core.resolve_series(session, jnc_resource)
         series_id = series.series_id

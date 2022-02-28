@@ -38,7 +38,7 @@ Those credentials can be passed directly on the command line using the `--email`
 jncep epub --email user@example.com --password "foo%bar666!" https://j-novel.club/series/tearmoon-empire
 ```
 
-Optionally, the JNCEP_EMAIL and JNCEP_PASSWORD env vars can be set instead of passing the `--email` and `--password` arguments when launching the commands. For example, if they are set in the .bashrc in the following way:
+Optionally, the __JNCEP_EMAIL__ and __JNCEP_PASSWORD__ env vars can be set instead of passing the `--email` and `--password` arguments when launching the commands. For example, if they are set in the .bashrc in the following way:
 
 ```console
 export JNCEP_EMAIL=user@example.com
@@ -98,6 +98,8 @@ Options:
   -n, --no-replace        Flag to indicate that some unicode characters
                           unlikely to be in an EPUB reader font should NOT be
                           replaced and instead kept as is
+  -t, --css FILE          Path to custom CSS file for the EPUBs [default: The
+                          CSS provided by JNCEP]
   --help                  Show this message and exit.
 ```
 
@@ -147,6 +149,24 @@ Here are examples of valid values for the argument:
 Originally, the tool copied into the EPUB the text obtained from J-Novel Club as is, simply adding a bit of styling through an external CSS. Depending on the font used by the ePub reader, some rare Unicode characters did not display. I noticed it in a series where the string used as the scene separator is [♱](https://emojipedia.org/emoji/%E2%99%B1/) (East Syriac Cross): My Kobo eBook reader would not show it with any of the fonts present on the device. Using [Crimson Text](https://www.typewolf.com/site-of-the-day/fonts/crimson-text), the font used by J-Novel Club for its web reader, gave the same result. It turns out it was only rendered in the web reader by a fallback font, which on my Mac is Menlo (a monospace font by Apple). This issue also happened with the Calibre EPUB reader. However, the iBooks reader app on macOS displayed the character.
 
 To solve this issue (without having to mess with fonts), by default, this specific character is now replaced with "\*\*". This behaviour can be overridden with the `-n` switch. Both the characters to replace and the replacement string are hardcoded. If another character is unable to display properly, [an issue can be filed](https://github.com/gvellut/jncep/issues) and it will be processed by the tool in a later version.
+
+### CSS
+
+The default CSS used by the tool and embedded in the generated EPUB files can be found (in the repository)[https://raw.githubusercontent.com/gvellut/jncep/master/jncep/res/style.css]. It is possible to download it and customize it. Then you can tell the `epub` command to use your own version by passing the `-t/--css` option with the path to your custom CSS as value.
+
+### Environment variables
+
+Just like the login and password, other options that are shared between the `epub` and `update` subcommands can be set using an environment variable. These are:
+- JNCEP_EMAIL
+- JNCEP_PASSWORD
+- JNCEP_OUTPUT
+- JNCEP_BYVOLUME
+- JNCEP_IMAGES
+- JNCEP_CONTENT
+- JNCEP_NOREPLACE
+- JNCEP_CSS
+
+The environment variables which set flags (JNCEP_BYVOLUME and below in the list above) should have a value like `1`.
 
 ## track
 
@@ -263,8 +283,8 @@ To get some help about the arguments to the `update` command, just launch with t
 ~$ jncep update --help
 Usage: jncep update [OPTIONS] (JNOVEL_CLUB_URL?)
 
-  Generate EPUB files for new parts of all tracked series (or specific
-  series if a URL argument is passed)
+  Generate EPUB files for new parts of all tracked series (or specific series
+  if a URL argument is passed)
 
 Options:
   -l, --email TEXT        Login email for J-Novel Club account  [required]
@@ -280,10 +300,12 @@ Options:
   -n, --no-replace        Flag to indicate that some unicode characters
                           unlikely to be in an EPUB reader font should NOT be
                           replaced and instead kept as is
+  -t, --css FILE          Path to custom CSS file for the EPUBs [default: The
+                          CSS provided by JNCEP]
   -s, --sync              Flag to sync tracked series based on series followed
                           on J-Novel Club and update the new ones from the
                           beginning of the series
-  -w, --whole             Flag to indicate whether the whole volume should be 
+  -w, --whole             Flag to indicate whether the whole volume should be
                           regenerated when a new part is detected during the
                           update
   --help                  Show this message and exit.
@@ -321,13 +343,7 @@ It can be useful for when a new series starts publishing: It can be set as Follo
 
 The `update` command can be called in the background from launchd (on macOS) or a scheduled task (on Windows) or cron (on Linux) in order to regularly download new content if available and create EPUBs (for example, once a day). 
 
-There is no notification built in the `jncep update` command but the text output can be combined with other tools to make something suitable. For example, on __macOS__:
-
-```console
-jncep update | tail -n 1 | sed -En '/^[[:digit:]]+ series/p' | (grep -q ^ && osascript -e 'display notification "New J-Novel Club EPUBs available!" with title "JNCEP" sound name "Glass"')
-```
-
-If there are updates, the last line output by `jncep update` is something like `2 series sucessfully updated!`, in which case some AppleScript sends a notification message with a sound. It pops up and is kept in the macOS Notification Center.
+There is no notification built in the `jncep update` command but the text output can be combined with other tools to make something suitable. If there are updates, the `jncep update` command outputs something like `2 series sucessfully updated!`, which can be processed by another tool do create a notification.
 
 # Issues
 
