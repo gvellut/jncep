@@ -41,6 +41,8 @@ setup_args = dict(
     ],
     keywords="epub jnc jnovel",
     packages=find_packages(exclude=["docs", "tests"]),
+    package_data={"jncep": ["res/*"]},
+    include_package_data=True,
     install_requires=requirements,
     extras_require={"dev": requirements_dev},
     project_urls={
