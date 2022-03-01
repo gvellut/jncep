@@ -299,9 +299,8 @@ async def _create_epub_for_new_parts(
     else:
 
         if not series_details.part_date:
-            # TODO test this branch
             # if here => old format, first lookup date of last part and use that
-            # maybe still useful for stalled series so keep it
+            # still useful for stalled series so keep it
             part_spec = spec.analyze_part_specs(series_details.part)
             await core.fill_meta(session, series_meta, part_spec.has_volume)
             parts = core.all_parts_meta(series_meta)
@@ -324,8 +323,8 @@ async def _create_epub_for_new_parts(
         toc = await session.api.fetch_data("parts", last_part.part_id, "toc")
         # weird struct for the response : toc.parts has pagination struct (but all
         # parts seem to be there anyway) and parts property in turn
-        # parts_to_download is a lsit of Parts but has reduced data (no num, no series
-        # no volume)
+        # parts_release_after_date is a list of Parts but has reduced data (no num,
+        # no series, no volume)
         parts_release_after_date = _filter_parts_released_after_date(
             last_update_date, toc.parts.parts
         )
