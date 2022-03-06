@@ -132,8 +132,6 @@ async def sync_series(email, password, is_reverse, is_delete):
 @options.password_option
 @coro
 async def rm_track_series(jnc_url_or_index, email, password):
-    console.status("Check tracking status...")
-
     track_manager = track.TrackConfigManager()
     tracked_series = track_manager.read_tracked_series()
 
@@ -147,6 +145,7 @@ async def rm_track_series(jnc_url_or_index, email, password):
         series_url = series_url_list[index0]
     else:
         async with core.JNCEPSession(email, password) as session:
+            console.status("Check tracking status...")
             jnc_resource = jncweb.resource_from_url(jnc_url_or_index)
             series = await core.resolve_series(session, jnc_resource)
             series_url = jncweb.url_from_series_slug(series.raw_data.slug)
