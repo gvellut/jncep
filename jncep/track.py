@@ -78,30 +78,44 @@ class TrackConfigManager:
         self.config_file_path.parent.mkdir(parents=False, exist_ok=True)
 
 
+# FIXME instead of last part ; check first part => TOC + all the parts
+# no risk that volumes have empty parts
 async def fill_meta_last_part(session, series):
     await core.fill_volumes_meta(session, series)
     volumes = series.volumes
 
     if volumes:
-        # just the last
-        last_volume = volumes[-1]
-        parts = await core.fetch_parts_meta_for_volume(session, last_volume.volume_id)
-        last_volume.parts = parts
-        for part in parts:
-            part.volume = last_volume
-            part.series = last_volume.series
+        volumes_meta = []
+        tasks = []
+        # just the last + penultimate : I saw some empty volumes are added with no parts
+        # the last 2 should make sure the last part is in there
+        # TODO what of volumes published at the same time? need 3? rare
+        last_volumes = volumes[-2:]
+        for volume in last_volumes:
+            tasks.append(
+                partial(core.fetch_parts_meta_for_volume, session, volume.volume_id)
+            )
+            volumes_meta.append(volume)
+        all_parts = await bag(tasks)
+
+        for i, parts in enumerate(all_parts):
+            volume = volumes_meta[i]
+
+            volume.parts = parts
+            for part in parts:
+                part.volume = volume
+                part.series = volume.series
 
     return series
 
 
 async def track_series(session, tracked_series, series):
     await fill_meta_last_part(session, series)
+    parts = core.all_parts_meta(series)
 
     last_part = None
-    if series.volumes:
-        last_volume = series.volumes[-1]
-        if last_volume.parts:
-            last_part = last_volume.parts[-1]
+    if parts:
+        last_part = parts[-1]
 
     # record current last part + name
     if not last_part:
