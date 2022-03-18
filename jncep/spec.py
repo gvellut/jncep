@@ -76,12 +76,13 @@ class Interval:
         vn2, pn2 = self.end.spec
         if vn < ref_part.volume.num < vn2:
             return True
-        if ref_part.volume.num == vn and ref_part.num_in_volume >= pn:
-            return True
-        if ref_part.volume.num == vn2 and ref_part.num_in_volume <= pn2:
-            return True
 
-        return False
+        if vn == vn2:
+            return ref_part.volume.num == vn and pn <= ref_part.num_in_volume <= pn2
+
+        return (ref_part.volume.num == vn and ref_part.num_in_volume >= pn) or (
+            ref_part.volume.num == vn2 and ref_part.num_in_volume <= pn2
+        )
 
 
 def to_relative_spec_from_part(part):
