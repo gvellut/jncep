@@ -78,35 +78,32 @@ class TrackConfigManager:
         self.config_file_path.parent.mkdir(parents=False, exist_ok=True)
 
 
-# FIXME instead of last part ; check first part => TOC + all the parts
-# no risk that volumes have empty parts
 async def fill_meta_last_part(session, series):
     await core.fill_volumes_meta(session, series)
     volumes = series.volumes
 
     if volumes:
-        volumes_meta = []
-        tasks = []
-        # just the last + penultimate : I saw some empty volumes are added with no parts
+        # at first just the last 2 : I saw some empty volumes are added with no parts
         # the last 2 should make sure the last part is in there
-        # TODO what of volumes published at the same time? need 3? rare
-        last_volumes = volumes[-2:]
-        for volume in last_volumes:
-            tasks.append(
-                partial(core.fetch_parts_meta_for_volume, session, volume.volume_id)
-            )
-            volumes_meta.append(volume)
-        all_parts = await bag(tasks)
+        last_2_volumes = volumes[-2:]
+        await core.fill_parts_meta_for_volumes(session, last_2_volumes)
+        for volume in last_2_volumes:
+            if volume.parts:
+                # has a part
+                return
 
-        for i, parts in enumerate(all_parts):
-            volume = volumes_meta[i]
-
-            volume.parts = parts
-            for part in parts:
-                part.volume = volume
-                part.series = volume.series
-
-    return series
+        # just in case handle the case no part in last 2
+        # should be pretty rare to pass through here
+        # one at a time
+        # TODO or all at once (since parallel) ?
+        # go backwards since the later volume are more likely to be requested for update
+        # so cached already
+        rest_volumes = volumes[-3::-1]
+        for volume in rest_volumes:
+            await core.fill_parts_meta_for_volumes(session, [volume])
+            if volume.parts:
+                # has a part
+                return
 
 
 async def track_series(session, tracked_series, series):
