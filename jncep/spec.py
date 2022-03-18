@@ -74,7 +74,7 @@ class Interval:
             return ref_part.num_in_volume >= pn
 
         vn2, pn2 = self.end.spec
-        if vn < ref_part.volume.volume_num < vn2:
+        if vn < ref_part.volume.num < vn2:
             return True
         if ref_part.volume.num == vn and ref_part.num_in_volume >= pn:
             return True
