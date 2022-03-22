@@ -342,7 +342,7 @@ async def to_part_spec(session, jnc_resource):
             # volume num)
             series_slug, volume_number = jnc_resource.slug
 
-            volumes = await fetch_volumes_for_series(session.api, series_slug)
+            volumes = await fetch_volumes_for_series(session, series_slug)
 
             volume_index = volume_number - 1
             if volume_index not in range(len(volumes)):
