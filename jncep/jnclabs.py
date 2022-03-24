@@ -87,10 +87,10 @@ class JNCLabsAPI:
         jnc_connections=10,
         cdn_connections=20,
         jncweb_connections=10,
-        labs_api_default_timeout=10,
-        jnc_api_default_timeout=10,
-        cdn_default_timeout=20,
-        jncweb_default_timeout=10,
+        labs_api_default_timeout=30,
+        jnc_api_default_timeout=30,
+        cdn_default_timeout=60,
+        jncweb_default_timeout=30,
         connection_timeout=120,
     ):
         # jnc_connections params used for both labs and api (but only 1 req at a time
