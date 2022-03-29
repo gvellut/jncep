@@ -87,14 +87,16 @@ class JNCLabsAPI:
         jnc_connections=10,
         cdn_connections=20,
         jncweb_connections=10,
-        labs_api_default_timeout=30,
-        jnc_api_default_timeout=30,
-        cdn_default_timeout=60,
-        jncweb_default_timeout=30,
-        connection_timeout=120,
+        labs_api_default_timeout=20,
+        jnc_api_default_timeout=20,
+        cdn_default_timeout=30,
+        jncweb_default_timeout=20,
+        connection_timeout=None,
     ):
-        # jnc_connections params used for both labs and api (but only 1 req at a time
-        # to api)
+        # jnc_connections params used for both labs and api (but in the code only 1 req
+        # at a time to api so doesn't really matter)
+        # connection timeout is disabled by default => no timeout waiting for a
+        # connection to be available from the rate limiter
         self.jnc_api_session = asks.Session(
             JNC_API_URL_BASE, connections=jnc_connections, headers=COMMON_API_HEADERS
         )
