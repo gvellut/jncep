@@ -17,7 +17,6 @@ class Volume:
     is_analyzed = attr.ib(False)
     cover = attr.ib(None)
     series = attr.ib(None)
-    parts_count = attr.ib(None)
 
 
 @attr.s

@@ -2,7 +2,6 @@ from collections import namedtuple
 from datetime import datetime, timezone
 from functools import partial
 from html.parser import HTMLParser
-import json
 import logging
 import os
 import re
@@ -10,7 +9,6 @@ import sys
 import time
 from typing import List
 
-from addict import Dict as Addict
 import attr
 import dateutil.parser
 import trio
@@ -18,7 +16,7 @@ import trio
 from . import epub, jnclabs, jncweb, spec, utils
 from .model import Image, Part, Series, Volume
 from .trio_utils import bag
-from .utils import deep_freeze, to_safe_filename
+from .utils import to_safe_filename
 
 logger = logging.getLogger(__name__)
 console = utils.getConsole()
@@ -252,19 +250,19 @@ def _process_single_epub_content(series, volumes, parts):
 
 def _is_part_final(part):
     volume = part.volume
-    if volume.parts_count is None:
+    if volume.raw_data.get("totalParts") is None:
         # assume not final
         return False
-    return part.num_in_volume == volume.parts_count
+    return part.num_in_volume == volume.raw_data.totalParts
 
 
 def _is_volume_complete(volume, parts):
     # need parts as args : the requested parts that will be included in the final
     # epub
-    if volume.parts_count is None:
+    if volume.raw_data.get("totalParts") is None:
         # assume not complete
         return False
-    return volume.parts_count == len(parts)
+    return volume.raw_data.totalParts == len(parts)
 
 
 async def extract_images(parts, epub_generation_options):
@@ -743,54 +741,6 @@ async def fill_covers_and_content(session, cover_volumes, content_parts):
     for volume in cover_volumes:
         if volume.volume_id in covers:
             volume.cover = covers[volume.volume_id]
-
-
-async def fetch_jncweb_page_react_data(session, series_slug):
-    page_html = await session.api.fetch_jnc_webpage(series_slug)
-    start_tag = '<script id="__NEXT_DATA__" type="application/json">'
-    end_tag = "</script>"
-    start_index = page_html.find(start_tag)
-    if start_index == -1:
-        return None
-    start_index += len(start_tag)
-    end_index = page_html.find(end_tag, start_index)
-    react_props = page_html[start_index:end_index]
-    data = Addict(json.loads(react_props))
-    deep_freeze(data)
-    return data
-
-
-async def fill_num_parts_for_volumes(session, series, volumes):
-    props = await fetch_jncweb_page_react_data(session, series.raw_data.slug)
-
-    def find_volumes(obj):
-        if isinstance(obj, dict):
-            if "volumes" in obj:
-                return obj.volumes
-            for item in obj.values():
-                volumes_attr = find_volumes(item)
-                if volumes_attr:
-                    return volumes_attr
-        elif isinstance(obj, list):
-            for item in obj:
-                volumes_attr = find_volumes(item)
-                if volumes_attr:
-                    return volumes_attr
-        return None
-
-    volumes_data = find_volumes(props)
-    if not volumes_data:
-        return
-
-    volumes_parts_count_index = {}
-    for volume_data in volumes_data:
-        # partCount seems to be there even for older series
-        if "partCount" in volume_data:
-            volumes_parts_count_index[volume_data.id] = volume_data.partCount
-
-    for volume in volumes:
-        if volume.volume_id in volumes_parts_count_index:
-            volume.parts_count = volumes_parts_count_index[volume.volume_id]
 
 
 async def _write_bytes(filepath, content):

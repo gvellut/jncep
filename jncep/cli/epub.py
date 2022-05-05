@@ -1,11 +1,10 @@
-from functools import partial
 import logging
 
 import click
 
 from . import options
 from .. import core, jncweb, spec, utils
-from ..trio_utils import bag, coro
+from ..trio_utils import coro
 from .base import CatchAllExceptionsCommand
 
 logger = logging.getLogger(__name__)
@@ -110,21 +109,9 @@ async def generate_epub(
             volumes_to_download, epub_generation_options.is_by_volume
         )
 
-        tasks = [
-            partial(
-                core.fill_covers_and_content,
-                session,
-                volumes_for_cover,
-                parts_to_download,
-            ),
-            partial(
-                core.fill_num_parts_for_volumes,
-                session,
-                series_meta,
-                volumes_to_download,
-            ),
-        ]
-        await bag(tasks)
+        await core.fill_covers_and_content(
+            session, volumes_for_cover, parts_to_download
+        )
 
         console.status("Create EPUB...")
 
