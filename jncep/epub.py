@@ -85,7 +85,7 @@ def output_epub(output_filepath, book_details: BookDetails, style_css_path=None)
     if book_details.cover_image:
         content = book_details.cover_image.content
         # in case cover image also present in content, use the file name
-        # (same URL => same local filename)
+        # (same URL => same local filename or cover.jpg (renamed in core.py))
         cover_image_filename = book_details.cover_image.local_filename
     else:
         # the lib handles that semi-gracefully (doesn't crash)

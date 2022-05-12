@@ -36,7 +36,6 @@ class Part:
 class Image:
     url = attr.ib()
     content = attr.ib(None)
-    part = attr.ib(None)
     local_filename = attr.ib(None)
 
     order_in_part = attr.ib(None)

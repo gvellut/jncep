@@ -532,7 +532,10 @@ def _local_image_filename(image):
     # ext is almost always .jpg but sometimes it is .jpeg
     # splitext  works fine with a url
     root, ext = os.path.splitext(image.url)
-    new_local_filename = to_safe_filename(root) + ext
+    root = root.replace("https://", "")
+    # i is alphabetically greater than c (for cover.jpg)
+    # so cover will always be first in zip ; useful for File Explorer cf GH #20
+    new_local_filename = "i_" + to_safe_filename(root) + ext
     return new_local_filename
 
 
@@ -733,14 +736,35 @@ async def fill_covers_and_content(session, cover_volumes, content_parts):
     contents, covers = await bag(tasks)
 
     for part in content_parts:
-        if part.part_id in contents:
-            content, images = contents[part.part_id]
-            part.content = content
-            part.images = images
+        content, images = contents[part.part_id]
+        part.content = content
+        part.images = images
 
     for volume in cover_volumes:
-        if volume.volume_id in covers:
-            volume.cover = covers[volume.volume_id]
+        volume.cover = covers[volume.volume_id]
+
+    _rename_cover_images(cover_volumes)
+
+
+def _rename_cover_images(volumes):
+    # replace cover local filename from the default to cover.jpg
+    # both in part images + volume.cover
+    cover_filename = "cover.jpg"
+    for volume in volumes:
+        if not volume.cover:
+            continue
+
+        cover_image = volume.cover
+        cover_image.local_filename = cover_filename
+
+        for part in volume.parts:
+            if not part.images:
+                continue
+
+            for image in part.images:
+                if image.url == cover_image.url:
+                    image.local_filename = cover_filename
+                    break
 
 
 async def _write_bytes(filepath, content):
