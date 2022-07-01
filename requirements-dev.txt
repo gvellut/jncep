@@ -3,3 +3,4 @@ flake8
 twine
 wheel
 coloredlogs
+pytest~=6.0

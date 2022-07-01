@@ -7,8 +7,8 @@ logger = logging.getLogger(__name__)
 
 RANGE_SEP = ":"
 
-SERIES = "ALL_SERIES"
-VOLUME = "ALL_VOLUME"
+SERIES = "SERIES_ALL"
+VOLUME = "VOLUME_ALL"
 PART = "SINGLE_PART"
 START_OF_VOLUME = "START_OF_VOLUME"
 END_OF_VOLUME = "END_OF_VOLUME"
@@ -31,10 +31,14 @@ class Single:
         return volume.num == vn
 
     def has_part(self, ref_part) -> bool:
-        # assume has_volume is True if has_part is checked
-        if self.type_ in (SERIES, VOLUME):
+        if self.type_ == SERIES:
             return True
-        # part
+
+        if not self.has_volume(ref_part.volume):
+            return False
+        if self.type_ == VOLUME:
+            return True
+
         _, pn = self.spec
         return ref_part.num_in_volume == pn
 
@@ -46,9 +50,10 @@ class Interval:
 
     def has_volume(self, volume) -> bool:
         if self.start == START_OF_SERIES:
-            # spec is a part (START_OF / END_OF cannot happen together)
-            vn, _ = self.end.spec
-            return volume.num <= vn
+            # spec is a tuple (START_OF / END_OF cannot happen together)
+            # if analyse_spec is used
+            vn2, _ = self.end.spec
+            return volume.num <= vn2
 
         vn, _ = self.start.spec
         if self.end == END_OF_SERIES:
@@ -59,18 +64,33 @@ class Interval:
 
     def has_part(self, ref_part) -> bool:
         if self.start == START_OF_SERIES:
-            # spec is a part
-            vn, pn = self.end.spec
-            if ref_part.volume.num < vn:
+            # spec is a tuple (see comment in has_volume)
+            vn2, pn2 = self.end.spec
+            if ref_part.volume.num < vn2:
                 return True
-            # same volume
-            return ref_part.num_in_volume <= pn
 
+            if ref_part.volume.num > vn2:
+                return False
+
+            # same volume
+            if pn2 == END_OF_VOLUME:
+                return True
+
+            return ref_part.num_in_volume <= pn2
+
+        # spec is a tuple
         vn, pn = self.start.spec
         if self.end == END_OF_SERIES:
             if ref_part.volume.num > vn:
                 return True
+
+            if ref_part.volume.num < vn:
+                return False
+
             # same volume
+            if pn == START_OF_VOLUME:
+                return True
+
             return ref_part.num_in_volume >= pn
 
         vn2, pn2 = self.end.spec
@@ -84,24 +104,25 @@ class Interval:
             if pn == START_OF_VOLUME:
                 if pn2 == END_OF_VOLUME:
                     return True
-                else:
-                    return ref_part.num_in_volume <= pn2
+
+                return ref_part.num_in_volume <= pn2
             else:
                 if pn2 == END_OF_VOLUME:
                     return ref_part.num_in_volume >= pn
-                else:
-                    return pn <= ref_part.num_in_volume <= pn2
+
+                return pn <= ref_part.num_in_volume <= pn2
         else:
             if ref_part.volume.num == vn:
                 if pn == START_OF_VOLUME:
                     return True
-                else:
-                    return ref_part.num_in_volume >= pn
-            elif ref_part.volume.num == vn2:
+
+                return ref_part.num_in_volume >= pn
+            else:
+                assert ref_part.volume.num == vn2
                 if pn2 == END_OF_VOLUME:
                     return True
-                else:
-                    return ref_part.num_in_volume <= pn2
+
+                return ref_part.num_in_volume <= pn2
 
 
 def to_relative_spec_from_part(part):
