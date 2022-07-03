@@ -488,13 +488,21 @@ def is_part_available(now, part):
     if part.series.raw_data.catchup:
         return True
 
+    if not part.raw_data.expiration:
+        # not filled yet on JNC's end (happened for the first parts of a new series)
+        # cf GH #22
+        # assume it has not expired
+        return True
+
     expiration_data = dateutil.parser.parse(part.raw_data.expiration)
     return expiration_data > now
 
 
 async def fetch_content_and_images_for_part(session, part_id):
-    # TODO catch error + event => in case expires between checking before and
+    # FIXME catch error => in case expires between checking before and
     # running this (case to check)
+    # FIXME or the assumption of is_part_available (if expiration is null)
+    # is incorrect
     content = await session.api.fetch_content(part_id, "data.xhtml")
     img_urls = extract_image_urls(content)
     if len(img_urls) > 0:
