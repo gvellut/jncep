@@ -159,17 +159,7 @@ class JNCLabsAPI:
             sub_resource = f"/{sub_resource}"
 
         path = f"{LABS_API_JNC_PATH_BASE}/{resource_type}/{slug_id}{sub_resource}"
-        params = {**COMMON_LABS_API_PARAMS}
-        if skip is not None:
-            params.update(skip=skip)
-
-        logger.debug(f"LABS {path} skip={skip}")
-
-        r = await self._call_labs_authenticated("GET", path, params=params)
-
-        d = Addict(r.json())
-        deep_freeze(d)
-        return d
+        return await self._fetch_resource(path, skip=skip)
 
     async def paginate(self, func):
         skip = 0
@@ -196,6 +186,27 @@ class JNCLabsAPI:
 
         r = await self._call_labs_authenticated("GET", path)
         return r.text
+
+    @with_cache
+    async def fetch_events(self, skip=None, **params):
+        path = f"{LABS_API_JNC_PATH_BASE}/events"
+        return await self._fetch_resource(path, params=params, skip=skip)
+
+    async def _fetch_resource(self, path, *, params=None, skip=None):
+        logger.debug(f"LABS {path} params={params} skip={skip}")
+
+        if not params:
+            params = {}
+
+        params.update(COMMON_LABS_API_PARAMS)
+        if skip is not None:
+            params.update(skip=skip)
+
+        r = await self._call_labs_authenticated("GET", path, params=params)
+
+        d = Addict(r.json())
+        deep_freeze(d)
+        return d
 
     async def _call_labs_authenticated(
         self, method, path, headers=None, params=None, **kwargs

@@ -1,3 +1,4 @@
+from datetime import timezone
 import inspect
 import logging
 import re
@@ -12,13 +13,16 @@ logger = logging.getLogger(__name__)
 
 
 def setup_logging(is_debug, package=__package__):
+    format = "%(asctime)s %(name)-12s %(levelname)-8s %(message)s"
     if not logging.getLogger().handlers:
-        # not needed if coloredlogs is used
-        format = "%(asctime)s %(name)-12s %(levelname)-8s %(message)s"
+        # coloredlogs is used
         logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=format)
-
-    # coloredlogs changes the level of the handler
-    logging.getLogger().handlers[0].setLevel(logging.NOTSET)
+    else:
+        # Colored_logs has installed its own handler but not configured the way
+        # I want
+        logging.getLogger().handlers[0].formatter.datefmt = "%Y-%m-%d,%H:%M:%S,%f"
+        # coloredlogs changes the level of the handler
+        logging.getLogger().handlers[0].setLevel(logging.NOTSET)
 
     logger = logging.getLogger(package)
     if is_debug:
@@ -56,6 +60,14 @@ def module_info():
     frm = inspect.stack()[1]
     mod = inspect.getmodule(frm[0])
     return mod.__spec__.name
+
+
+def isoformat_with_z(d):
+    # like the date format used by the JNC API
+    if d.tzinfo != timezone.utc:
+        # just in case but shouldn't happen : only date in UTC is used in the code
+        raise ValueError("Date not in UTC !")
+    return d.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def deep_freeze(data):

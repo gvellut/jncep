@@ -47,6 +47,15 @@ console = utils.getConsole()
         "new part is detected during the update"
     ),
 )
+@click.option(
+    "-e",
+    "--force-events",
+    "is_force_events",
+    is_flag=True,
+    default=False,
+    envvar="JNCEP_FORCE_EVENTS",
+    help="Flag to use the events feed to check for updates",
+)
 @coro
 async def update_tracked(
     jnc_url,
@@ -60,6 +69,7 @@ async def update_tracked(
     style_css_path,
     is_sync,
     is_whole_volume,
+    is_force_events,
 ):
     epub_generation_options = core.EpubGenerationOptions(
         output_dirpath,
@@ -91,7 +101,7 @@ async def update_tracked(
         if jnc_url:
             console.status(f"Update '{jnc_url}'...")
 
-            is_tracking_updated = await update.update_url_series(
+            await update.update_url_series(
                 session,
                 jnc_url,
                 epub_generation_options,
@@ -99,20 +109,21 @@ async def update_tracked(
                 is_sync,
                 new_synced,
                 is_whole_volume,
+                is_force_events,
             )
 
         else:
             console.status("Update all series...")
 
-            is_tracking_updated = await update.update_all_series(
+            await update.update_all_series(
                 session,
                 epub_generation_options,
                 tracked_series,
                 is_sync,
                 new_synced,
                 is_whole_volume,
+                is_force_events,
             )
 
-        if is_tracking_updated:
-            track_manager.write_tracked_series(tracked_series)
-            logger.debug("Data for tracked series sucessfully updated!")
+        # always update and do not notifiy user
+        track_manager.write_tracked_series(tracked_series)

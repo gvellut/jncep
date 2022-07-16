@@ -34,6 +34,14 @@ EpubGenerationOptions = namedtuple(
     ],
 )
 
+EventFeed = namedtuple(
+    "EventFeed",
+    [
+        "event_feed",
+        "has_reached_limit",
+    ],
+)
+
 
 @attr.s
 class IdentifierSpec:
@@ -783,3 +791,19 @@ async def _write_bytes(filepath, content):
 async def _write_str(filepath, content):
     async with await trio.open_file(filepath, "w", encoding="utf-8") as img_f:
         await img_f.write(content)
+
+
+async def fetch_events(session: JNCEPSession, start_date_s):
+    session_now = utils.isoformat_with_z(session.now)
+
+    # max 200 previous events : 2-3 weeks, so if updating more often, will be less
+    limit = 200
+    # already ordered by launch desc
+    params = {"limit": limit, "end_date": session_now, "start_date": start_date_s}
+
+    events_with_pagination = await session.api.fetch_events(**params)
+
+    events = events_with_pagination.events
+    pagination = events_with_pagination.pagination
+    has_reached_limit = not pagination.lastPage
+    return EventFeed(events, has_reached_limit)

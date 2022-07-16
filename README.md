@@ -182,7 +182,7 @@ In the cases of `add` and `rm`, a URL link to a part or volume or series on the 
 
 The tracking is performed by updating the local config file `<home>/.jncep/tracked.json` (where `<home>` is either `/Users/<user>` on macOS, `C:\Users\<user>` on Windows or `/home/<user>` on Linux). That file will be created by the tool if it doesn't exist.
 
-The `tracked.json` file can be updated manually with a text editor if needed. It is a JSON dictionary with keys the canonical URLs of the series and values another dictionary with keys "name", "part" and "part_date". The value for "part_date" is the launch date for the last downloaded part and is used for the `update` command to find out if new parts have been released. The value for "part" is a string in relative format (`<volume>.<part>`) that corresponds to the last downloaded part: It is only used in the `track list` subcommand.
+The `tracked.json` file can be updated manually with a text editor if really needed but should generally be left alone (or the `jncep` could malfunction).
 
 ### Options
 
@@ -308,6 +308,7 @@ Options:
   -w, --whole             Flag to indicate whether the whole volume should be
                           regenerated when a new part is detected during the
                           update
+  -e, --force-events      Flag to use the events feed to check for updates
   --help                  Show this message and exit.
 ```
 
@@ -338,6 +339,17 @@ All series are already up to date!
 The `--sync` flag can be passed (together with the other options), in which case the list of tracked series is first updated based on the list of followed series on the J-Novel Club website (equivalent of `jncep track sync`), then, only for the newly added series, an EPUB is created with the parts from the beginning.
 
 It can be useful for when a new series starts publishing: It can be set as Followed on the website then this `jncep update --sync` command can be launched to subscribe to the series and get all the newly released parts in one go, and without having to copy/paste a URL.
+
+#### Events feed
+
+If you have a lot of followed series and update sufficiently often, the flag `--force-events` can be used. In that case, the `update` command will first check the events feed provided by J-Novel Club: It includes all the part releases and can be used to know which series will need to be downloaded. With this flag, the tool saves time by not checking all the series individually.
+
+#### Environment variables
+
+The `update` subcommands has the additional environment variable:
+- JNCEP_FORCE_EVENTS
+
+It should have a value like `1` if set.
 
 ### Automation
 

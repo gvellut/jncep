@@ -141,11 +141,14 @@ async def track_series(session, tracked_series, series):
         )
 
     series_url = jncweb.url_from_series_slug(series.raw_data.slug)
+    # TODO class for trackData
     tracked_series[series_url] = Addict(
         {
             "part_date": pdate,
             "part": pn,  # now just for show
             "name": series.raw_data.title,
+            "series_id": series.series_id,
+            "last_check_date": utils.isoformat_with_z(session.now),
         }
     )
 

@@ -33,6 +33,7 @@ async def update_url_series(
     is_sync,
     new_synced,
     is_whole_volume,
+    is_force_events,
 ):
     # for single url => if error no catch : let it crash and report to the user
     jnc_resource = jncweb.resource_from_url(jnc_url)
@@ -61,16 +62,26 @@ async def update_url_series(
 
     series_details = tracked_series[series_url]
 
-    # the series has just been synced so force EPUB gen from start
-    is_force_from_beginning = is_sync
-    update_result = await _create_epub_for_new_parts(
-        session,
-        series_details,
-        series_meta,
-        epub_generation_options,
-        is_whole_volume,
-        is_force_from_beginning,
-    )
+    is_need_check = True
+    if is_force_events and _can_use_events_feed(series_details):
+        console.info("Checking J-Novel Club event feed...")
+        start_date = series_details.last_check_date
+        events = await core.fetch_events(session, start_date)
+        is_need_check = _verify_series_needs_update_check(events, series_details)
+        if not is_need_check:
+            update_result = UpdateResult(is_updated=False)
+
+    if is_need_check:
+        # the series has just been synced so force EPUB gen from start
+        is_force_from_beginning = is_sync
+        update_result = await _create_epub_for_new_parts(
+            session,
+            series_details,
+            series_meta,
+            epub_generation_options,
+            is_whole_volume,
+            is_force_from_beginning,
+        )
 
     if update_result.is_updated:
         emoji = ""
@@ -88,11 +99,7 @@ async def update_url_series(
             style="success",
         )
 
-    is_tracking_updated = _update_tracking_data(
-        series_details, series_meta, update_result
-    )
-
-    return is_tracking_updated
+    _update_tracking_data(series_details, series_meta, update_result, session.now)
 
 
 async def update_all_series(
@@ -102,7 +109,16 @@ async def update_all_series(
     is_sync,
     new_synced,
     is_whole_volume,
+    is_force_events,
 ):
+    # is_sync: all parts from beginning so no need for the events
+    if not is_sync and is_force_events and _can_any_use_events_feed(tracked_series):
+        console.status("Checking J-Novel Club event feed...")
+        start_date = _min_last_check_date(tracked_series)
+        events = await core.fetch_events(session, start_date)
+    else:
+        events = None
+
     series_details_a = []
     tasks = []
     for series_url, series_details in tracked_series.items():
@@ -116,6 +132,7 @@ async def update_all_series(
                 is_sync,
                 new_synced,
                 is_whole_volume,
+                events,
             )
         )
         series_details_a.append(series_details)
@@ -124,13 +141,14 @@ async def update_all_series(
 
     num_updated = 0
     num_errors = 0
-    is_tracking_updated = False
     update_result: UpdateResult
     for i, update_result in enumerate(results):
+        series_details = series_details_a[i]
+
+        # --sync has bee used and series is not part of the synced series so
+        # has not been checked
         if not update_result.is_considered:
             continue
-
-        series_details = series_details_a[i]
 
         if update_result.is_updated:
             num_updated += 1
@@ -139,12 +157,10 @@ async def update_all_series(
             num_errors += 1
         else:
             # the update of tracking has some conditions besides
-            # just the series udpated
-            is_tracking_updated_for_series = _update_tracking_data(
-                series_details, update_result.series, update_result
+            # just the series updated
+            _update_tracking_data(
+                series_details, update_result.series, update_result, session.now
             )
-            if is_tracking_updated_for_series:
-                is_tracking_updated = True
 
     if num_errors > 0:
         console.error("Some series could not be updated!")
@@ -166,12 +182,18 @@ async def update_all_series(
             style="success",
         )
 
-    return is_tracking_updated
 
+def _update_tracking_data(series_details, series_meta, update_result, check_date):
+    # alway update this : in case --force-events is used
+    series_details.last_check_date = utils.isoformat_with_z(check_date)
 
-def _update_tracking_data(series_details, series_meta, update_result):
+    # not always available (if series not checked for example)
+    if series_meta:
+        # should stay always the same
+        series_details.series_id = series_meta.series_id
+
     if not (update_result.is_updated or update_result.is_force_set_updated):
-        return False
+        return
 
     parts = core.all_parts_meta(series_meta)
     assert bool(parts)
@@ -183,8 +205,6 @@ def _update_tracking_data(series_details, series_meta, update_result):
     series_details.part_date = pdate
     series_details.part = pn
 
-    return True
-
 
 async def _handle_series(
     session,
@@ -194,11 +214,18 @@ async def _handle_series(
     is_sync,
     new_synced,
     is_whole_volume,
+    events,
 ):
     series_meta = None
     try:
         if is_sync and series_url not in new_synced:
             return UpdateResult(is_considered=False)
+
+        if events and _can_use_events_feed(series_details):
+            is_need_check = _verify_series_needs_update_check(events, series_details)
+            if not is_need_check:
+                return UpdateResult(is_updated=False)
+            # else the standard check continues
 
         jnc_resource = jncweb.resource_from_url(series_url)
         series_meta = await core.resolve_series(session, jnc_resource)
@@ -243,6 +270,71 @@ async def _handle_series(
         logger.debug(f"Error _handle_series: {ex}", exc_info=sys.exc_info())
         # series_meta may be None if error during retrieval
         return UpdateResult(is_error=True)
+
+
+def _verify_series_needs_update_check(event_feed, series_details):
+    last_check_date = dateutil.parser.parse(series_details.last_check_date)
+
+    events, has_reached_limit = event_feed
+
+    # shortcuts for some special cases
+
+    if len(events) == 0:
+        # events only contain the necessary events for dates between last_check and now:
+        # no events => no update
+        return False
+
+    if has_reached_limit:
+        # events doesn't go far enough in the past: Not possible to know for sure
+        # if there are no updates
+        # assumes need check
+        return True
+
+    series_id = series_details.series_id
+
+    for event in events:
+        if "details" in event and event.details.startswith("Release of Part"):
+            # no s in JNC attr
+            series = event.serie
+            if series.legacyId != series_id:
+                continue
+
+            launch_date = dateutil.parser.parse(event.launch)
+            # <= : last_check_date is the session.now of the previous check so if
+            # equal to last_check_date, already included in previous check
+            # see core.fetch_events prune
+            # TODO or do the check for dates in the future here instead of
+            # core.fetch_events
+            if launch_date <= last_check_date:
+                # the events are ordered by launch desc so can never be false after
+                break
+
+            # return only that there has been updates
+            # the standard check for the series will be done after
+            # TODO return specific parts ?
+            return True
+
+    return False
+
+
+def _can_any_use_events_feed(tracking_data):
+    return any(
+        (
+            _can_use_events_feed(series_details)
+            for series_details in tracking_data.values()
+        )
+    )
+
+
+def _min_last_check_date(tracking_data):
+    # all dates are encoded in the same ISO format
+    min_series = min(tracking_data.values(), key=lambda x: x.last_check_date)
+    return min_series.last_check_date
+
+
+def _can_use_events_feed(series_details):
+    # the 2 attributes have been added later so may not always be there
+    return "series_id" in series_details and "last_check_date" in series_details
 
 
 # TODO too complex ; refactor
