@@ -64,15 +64,16 @@ async def update_url_series(
 
     is_need_check = True
     if is_force_events and _can_use_events_feed(series_details):
-        console.info("Checking J-Novel Club event feed...")
+        console.info("Checking J-Novel Club events feed...", clear=False)
         start_date = series_details.last_check_date
         events = await core.fetch_events(session, start_date)
         is_need_check = _verify_series_needs_update_check(events, series_details)
         if not is_need_check:
             update_result = UpdateResult(is_updated=False)
+        console.pop_status()
 
     if is_need_check:
-        # the series has just been synced so force EPUB gen from start
+        # the series has just been synced so force EPUB gen from start in this case
         is_force_from_beginning = is_sync
         update_result = await _create_epub_for_new_parts(
             session,
@@ -113,9 +114,10 @@ async def update_all_series(
 ):
     # is_sync: all parts from beginning so no need for the events
     if not is_sync and is_force_events and _can_any_use_events_feed(tracked_series):
-        console.status("Checking J-Novel Club event feed...")
+        console.status("Checking J-Novel Club events feed...", clear=False)
         start_date = _min_last_check_date(tracked_series)
         events = await core.fetch_events(session, start_date)
+        console.pop_status()
     else:
         events = None
 
@@ -328,8 +330,10 @@ def _can_any_use_events_feed(tracking_data):
 
 def _min_last_check_date(tracking_data):
     # all dates are encoded in the same ISO format
-    min_series = min(tracking_data.values(), key=lambda x: x.last_check_date)
-    return min_series.last_check_date
+    check_dates = (
+        d.last_check_date for d in tracking_data.values() if _can_use_events_feed(d)
+    )
+    return min(check_dates)
 
 
 def _can_use_events_feed(series_details):

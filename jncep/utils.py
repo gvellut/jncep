@@ -1,3 +1,4 @@
+from collections import deque
 from datetime import timezone
 import inspect
 import logging
@@ -160,6 +161,7 @@ class RootConsole:
     def __init__(self):
         # default
         self.console = DebugConsole()
+        self.stack_status = deque()
 
     def info(self, message, *args, **kwargs):
         self.console.info(message, *args, **kwargs)
@@ -170,7 +172,15 @@ class RootConsole:
     def error(self, message, *args, **kwargs):
         self.console.error(message, *args, **kwargs)
 
-    def status(self, message, **kwargs_spinner_style):
+    def status(self, message, clear=True, **kwargs_spinner_style):
+        if clear:
+            self.stack_status.clear()
+        self.stack_status.append((message, kwargs_spinner_style))
+        self.console.status(message, **kwargs_spinner_style)
+
+    def pop_status(self):
+        self.stack_status.pop()
+        message, kwargs_spinner_style = self.stack_status[-1]
         self.console.status(message, **kwargs_spinner_style)
 
     def stop_status(self):
