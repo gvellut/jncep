@@ -255,7 +255,7 @@ That subcommand doesn't need a login or password (it only reads the local `track
 
 Withouth the `--details` option, only the index and the series titles are shown.
 
-The index inside the `[..]` can be used in the `rm` subcommnand instead of the URL.
+The index inside the `[..]` can be used in the `rm` subcommand instead of the URL.
 
 #### Sync
 
@@ -308,7 +308,7 @@ Options:
   -w, --whole             Flag to indicate whether the whole volume should be
                           regenerated when a new part is detected during the
                           update
-  -e, --force-events      Flag to use the events feed to check for updates
+  -e, --use-events        Flag to use the events feed to check for updates
   --help                  Show this message and exit.
 ```
 
@@ -342,12 +342,12 @@ It can be useful for when a new series starts publishing: It can be set as Follo
 
 #### Events feed
 
-If you have a lot of followed series and update sufficiently often, the flag `--force-events` can be used. In that case, the `update` command will first check the events feed provided by J-Novel Club: It includes all the part releases and can be used to know which series will need to be downloaded. With this flag, the tool saves time by not checking all the series individually.
+If you have a lot of followed series, the flag `--use-events` can be used. In that case, the `update` command will first check the events feed provided by J-Novel Club: It includes all the part releases and can be used to know which series will need to be downloaded. With this flag, the tool saves time by not checking all the series individually.
 
 #### Environment variables
 
-The `update` subcommands has the additional environment variable:
-- JNCEP_FORCE_EVENTS
+The `update` subcommand has the additional environment variable:
+- JNCEP_USE_EVENTS
 
 It should have a value like `1` if set.
 

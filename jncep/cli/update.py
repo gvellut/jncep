@@ -49,11 +49,11 @@ console = utils.getConsole()
 )
 @click.option(
     "-e",
-    "--force-events",
-    "is_force_events",
+    "--use-events",
+    "is_use_events",
     is_flag=True,
     default=False,
-    envvar="JNCEP_FORCE_EVENTS",
+    envvar="JNCEP_USE_EVENTS",
     help="Flag to use the events feed to check for updates",
 )
 @coro
@@ -69,7 +69,7 @@ async def update_tracked(
     style_css_path,
     is_sync,
     is_whole_volume,
-    is_force_events,
+    is_use_events,
 ):
     epub_generation_options = core.EpubGenerationOptions(
         output_dirpath,
@@ -109,7 +109,7 @@ async def update_tracked(
                 is_sync,
                 new_synced,
                 is_whole_volume,
-                is_force_events,
+                is_use_events,
             )
 
         else:
@@ -122,7 +122,7 @@ async def update_tracked(
                 is_sync,
                 new_synced,
                 is_whole_volume,
-                is_force_events,
+                is_use_events,
             )
 
         # always update and do not notifiy user

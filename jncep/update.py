@@ -33,7 +33,7 @@ async def update_url_series(
     is_sync,
     new_synced,
     is_whole_volume,
-    is_force_events,
+    is_use_events,
 ):
     # for single url => if error no catch : let it crash and report to the user
     jnc_resource = jncweb.resource_from_url(jnc_url)
@@ -63,7 +63,7 @@ async def update_url_series(
     series_details = tracked_series[series_url]
 
     is_need_check = True
-    if is_force_events and _can_use_events_feed(series_details):
+    if is_use_events and _can_use_events_feed(series_details):
         console.info("Checking J-Novel Club events feed...", clear=False)
         start_date = series_details.last_check_date
         events = await core.fetch_events(session, start_date)
@@ -110,10 +110,10 @@ async def update_all_series(
     is_sync,
     new_synced,
     is_whole_volume,
-    is_force_events,
+    is_use_events,
 ):
     # is_sync: all parts from beginning so no need for the events
-    if not is_sync and is_force_events and _can_any_use_events_feed(tracked_series):
+    if not is_sync and is_use_events and _can_any_use_events_feed(tracked_series):
         console.status("Checking J-Novel Club events feed...", clear=False)
         start_date = _min_last_check_date(tracked_series)
         events = await core.fetch_events(session, start_date)
@@ -186,7 +186,7 @@ async def update_all_series(
 
 
 def _update_tracking_data(series_details, series_meta, update_result, check_date):
-    # alway update this : in case --force-events is used
+    # alway update this : in case --use-events is used
     series_details.last_check_date = utils.isoformat_with_z(check_date)
 
     # not always available (if series not checked for example)
