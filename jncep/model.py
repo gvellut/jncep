@@ -14,7 +14,6 @@ class Volume:
     volume_id = attr.ib()
     num = attr.ib()
     parts = attr.ib(None)
-    is_analyzed = attr.ib(False)
     cover = attr.ib(None)
     series = attr.ib(None)
 
