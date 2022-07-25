@@ -2,6 +2,7 @@ from collections import deque
 from datetime import timezone
 import inspect
 import logging
+import os
 import re
 import sys
 import unicodedata
@@ -53,6 +54,28 @@ def to_safe_filename(name):
     safe = re.sub(r"[^0-9a-zA-Z_]+", "_", name)
     safe = safe.strip("_")
     return safe
+
+
+def to_max_len_filepath(original_path):
+    max_len = 255
+    if len(original_path) > max_len:
+        # too long for windows
+        # TODO also check dir path => if too long, display useful error message
+        path, ext = os.path.splitext(original_path)
+        max_path_len = max_len - len(ext)
+        short_path = path[:max_path_len]
+        original_path = short_path + ext
+
+        counter = 0
+        while os.path.exists(original_path):
+            # find one that doesn't exist
+            counter += 1
+            suffix = f" ({counter})"
+            max_path_len = max_len - len(ext) - len(suffix)
+            short_path = path[:max_path_len]
+            original_path = short_path + suffix + ext
+
+    return original_path
 
 
 def module_info():

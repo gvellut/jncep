@@ -23,6 +23,7 @@ class UpdateResult:
     # will set to latest part or will always have error
     # if stalled
     is_force_set_updated = attr.ib(False)
+    is_update_last_checked = attr.ib(True)
 
 
 async def update_url_series(
@@ -63,8 +64,9 @@ async def update_url_series(
     series_details = tracked_series[series_url]
 
     is_need_check = True
-    if is_use_events and _can_use_events_feed(series_details):
-        console.info("Checking J-Novel Club events feed...", clear=False)
+    is_check_events = is_use_events and _can_use_events_feed(series_details)
+    if is_check_events:
+        console.status("Checking J-Novel Club events feed...", clear=False)
         start_date = series_details.last_check_date
         events = await core.fetch_events(session, start_date)
         is_need_check = _verify_series_needs_update_check(events, series_details)
@@ -99,6 +101,11 @@ async def update_url_series(
             "to date!",
             style="success",
         )
+        if is_check_events and is_need_check:
+            # events feed said the series was updated but checking the series says
+            # there was no update => incoherent : for now, do not update the checl
+            # date
+            update_result.is_update_last_checked = False
 
     _update_tracking_data(series_details, series_meta, update_result, session.now)
 
@@ -187,7 +194,8 @@ async def update_all_series(
 
 def _update_tracking_data(series_details, series_meta, update_result, check_date):
     # alway update this : in case --use-events is used
-    series_details.last_check_date = utils.isoformat_with_z(check_date)
+    if update_result.is_update_last_checked:
+        series_details.last_check_date = utils.isoformat_with_z(check_date)
 
     # not always available (if series not checked for example)
     if series_meta:
@@ -223,7 +231,9 @@ async def _handle_series(
         if is_sync and series_url not in new_synced:
             return UpdateResult(is_considered=False)
 
-        if events and _can_use_events_feed(series_details):
+        is_need_check = False
+        is_check_events = events and _can_use_events_feed(series_details)
+        if is_check_events:
             is_need_check = _verify_series_needs_update_check(events, series_details)
             if not is_need_check:
                 return UpdateResult(is_updated=False)
@@ -252,6 +262,13 @@ async def _handle_series(
                 "been updated!",
                 style="success",
             )
+        else:
+            if is_check_events and is_need_check:
+                # incoherence between feed and series data
+                # assumes maybe advertised part has not been released yet (but will be)
+                # so do not advance check_date (so next check, if the part is released
+                # it will be picked up)
+                update_result.is_update_last_checked = False
 
         return update_result
 

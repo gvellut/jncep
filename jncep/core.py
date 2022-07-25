@@ -16,7 +16,7 @@ import trio
 from . import epub, jnclabs, jncweb, spec, utils
 from .model import Image, Part, Series, Volume
 from .trio_utils import bag
-from .utils import to_safe_filename
+from .utils import to_max_len_filepath, to_safe_filename
 
 logger = logging.getLogger(__name__)
 console = utils.getConsole()
@@ -114,6 +114,11 @@ async def create_epub(series, volumes, parts, epub_generation_options):
         output_filepath = os.path.join(
             epub_generation_options.output_dirpath, output_filename
         )
+        # TODO shorten title but leave volume + part indication
+        # have component in titles (real title + volume + part)
+        # cf Backstabbed
+        output_filepath = to_max_len_filepath(output_filepath)
+
         # TODO write to memory then async fs write here ? (uses epublib
         # which is sync anyway)
         # or trio.to_thread.run_sync or inside
@@ -287,6 +292,8 @@ async def extract_images(parts, epub_generation_options):
                     # extension at the end
                     + f"_Image_{image.order_in_part}{ext}"
                 )
+                # TODO if too long, have a way to keep volume + part and shorten just
+                # the title part
                 img_filepath = os.path.join(
                     epub_generation_options.output_dirpath, img_filename
                 )
@@ -297,6 +304,8 @@ async def extract_content(parts, epub_generation_options):
     async with trio.open_nursery() as n:
         for part in parts:
             content = part.content
+            # TODO if too long, have a way to keep volume + part and shorten just
+            # the title part
             content_filename = to_safe_filename(part.raw_data.title) + ".html"
             content_filepath = os.path.join(
                 epub_generation_options.output_dirpath, content_filename
@@ -784,11 +793,13 @@ def _rename_cover_images(volumes):
 
 
 async def _write_bytes(filepath, content):
+    filepath = to_max_len_filepath(filepath)
     async with await trio.open_file(filepath, "wb") as img_f:
         await img_f.write(content)
 
 
 async def _write_str(filepath, content):
+    filepath = to_max_len_filepath(filepath)
     async with await trio.open_file(filepath, "w", encoding="utf-8") as img_f:
         await img_f.write(content)
 
