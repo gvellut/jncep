@@ -105,6 +105,8 @@ async def update_url_series(
             # events feed said the series was updated but checking the series says
             # there was no update => incoherent : for now, do not update the checl
             # date
+            # possible also if tracked.json updated manually : last_checked_date is
+            # before the date of the last downloaded part in the file
             update_result.is_update_last_checked = False
 
     _update_tracking_data(series_details, series_meta, update_result, session.now)

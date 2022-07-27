@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 class BookDetails:
     identifier = attr.ib()
     title = attr.ib()
+    title_segments = attr.ib()
     author = attr.ib()
     collection = attr.ib()
     cover_image = attr.ib()

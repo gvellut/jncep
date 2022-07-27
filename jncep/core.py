@@ -4,6 +4,7 @@ from functools import partial
 from html.parser import HTMLParser
 import logging
 import os
+import platform
 import re
 import sys
 import time
@@ -16,7 +17,7 @@ import trio
 from . import epub, jnclabs, jncweb, spec, utils
 from .model import Image, Part, Series, Volume
 from .trio_utils import bag
-from .utils import to_max_len_filepath, to_safe_filename
+from .utils import to_safe_filename
 
 logger = logging.getLogger(__name__)
 console = utils.getConsole()
@@ -41,6 +42,10 @@ EventFeed = namedtuple(
         "has_reached_limit",
     ],
 )
+
+
+class FilePathTooLongError(Exception):
+    pass
 
 
 @attr.s
@@ -109,15 +114,23 @@ async def create_epub(series, volumes, parts, epub_generation_options):
     if epub_generation_options.is_extract_images:
         await extract_images(parts, epub_generation_options)
 
+    extension = ".epub"
     for book_details_i in book_details:
-        output_filename = to_safe_filename(book_details_i.title) + ".epub"
+        output_filename = to_safe_filename(book_details_i.title) + extension
         output_filepath = os.path.join(
             epub_generation_options.output_dirpath, output_filename
         )
-        # TODO shorten title but leave volume + part indication
-        # have component in titles (real title + volume + part)
-        # cf Backstabbed
-        output_filepath = to_max_len_filepath(output_filepath)
+
+        seg_volume = book_details_i.title_segments["volume"]
+        seg_part = book_details_i.title_segments["part"]
+        output_filepath = _to_max_len_filepath(
+            output_filepath,
+            output_filename,
+            epub_generation_options.output_dirpath,
+            book_details_i.title_segments["series_slug"],
+            f" {seg_volume} {seg_part}",
+            extension,
+        )
 
         # TODO write to memory then async fs write here ? (uses epublib
         # which is sync anyway)
@@ -204,13 +217,20 @@ def _process_single_epub_content(series, volumes, parts):
         # single part => single volume: part numbers relative to
         # that volume
         toc = [f"Part {part_num}"]
+        title_segments = {
+            "series_title": series.raw_data.title,
+            "series_slug": series.raw_data.slug,
+            "volume": f"Volume {volume_num}",
+            "part": f"Part {part_num}",
+        }
     else:
         volume_index = set([v.num for v in volumes])
         if len(volume_index) > 1:
             volume_nums = sorted(list(volume_index))
             volume_nums = [str(vn) for vn in volume_nums]
             volume_nums = ", ".join(volume_nums[:-1]) + " & " + volume_nums[-1]
-            title_base = f"{series.raw_data.title}: Volumes {volume_nums}"
+            volume_segment = f"Volumes {volume_nums}"
+            title_base = f"{series.raw_data.title}: {volume_segment}"
 
             volume_num0 = parts[0].volume.num
             part_num0 = parts[0].num_in_volume
@@ -222,13 +242,19 @@ def _process_single_epub_content(series, volumes, parts):
             if _is_part_final(parts[-1]):
                 suffix = " - Final"
 
-            part_nums = (
+            part_segment = (
                 f"Parts {volume_num0}.{part_num0} to "
                 f"{volume_num1}.{part_num1}{suffix}"
             )
 
             toc = [part.raw_data.title for part in parts]
-            title = f"{title_base} [{part_nums}]"
+            title = f"{title_base} [{part_segment}]"
+            title_segments = {
+                "series_title": series.raw_data.title,
+                "series_slug": series.raw_data.slug,
+                "volume": volume_segment,
+                "part": part_segment,
+            }
         else:
             volume = volumes[0]
             title_base = volume.raw_data.title
@@ -240,22 +266,36 @@ def _process_single_epub_content(series, volumes, parts):
 
             is_complete = _is_volume_complete(volume, parts)
             if is_complete:
-                part_nums = "Complete"
+                part_segment = "Complete"
             else:
                 # check the last part in the epub
                 suffix = ""
                 if _is_part_final(parts[-1]):
                     suffix = " - Final"
-                part_nums = f"Parts {part_num0} to {part_num1}{suffix}"
+                part_segment = f"Parts {part_num0} to {part_num1}{suffix}"
 
-            title = f"{title_base} [{part_nums}]"
+            title = f"{title_base} [{part_segment}]"
+            title_segments = {
+                "series_title": series.raw_data.title,
+                "series_slug": series.raw_data.slug,
+                "volume": f"Volume {volume.num}",
+                "part": part_segment,
+            }
 
     identifier = series.raw_data.slug + str(int(time.time()))
 
     images = [img for part in parts for img in part.images]
 
     book_details = epub.BookDetails(
-        identifier, title, author, collection, cover_image, toc, contents, images
+        identifier,
+        title,
+        title_segments,
+        author,
+        collection,
+        cover_image,
+        toc,
+        contents,
+        images,
     )
 
     return book_details
@@ -287,16 +327,21 @@ async def extract_images(parts, epub_generation_options):
                 # change filename to something more readable since visible to
                 # user
                 _, ext = os.path.splitext(image.local_filename)
-                img_filename = (
-                    to_safe_filename(part.raw_data.title)
-                    # extension at the end
-                    + f"_Image_{image.order_in_part}{ext}"
-                )
-                # TODO if too long, have a way to keep volume + part and shorten just
-                # the title part
+                suffix = f"_Image_{image.order_in_part}"
+                img_filename = to_safe_filename(part.raw_data.title) + suffix + ext
                 img_filepath = os.path.join(
                     epub_generation_options.output_dirpath, img_filename
                 )
+
+                img_filepath = _to_max_len_filepath(
+                    img_filepath,
+                    img_filename,
+                    epub_generation_options.output_dirpath,
+                    part.series.raw_data.slug,
+                    f" Volume {part.volume.num} Part {part.num_in_volume}{suffix}",
+                    ext,
+                )
+
                 n.start_soon(_write_bytes, img_filepath, image.content)
 
 
@@ -304,13 +349,79 @@ async def extract_content(parts, epub_generation_options):
     async with trio.open_nursery() as n:
         for part in parts:
             content = part.content
-            # TODO if too long, have a way to keep volume + part and shorten just
-            # the title part
-            content_filename = to_safe_filename(part.raw_data.title) + ".html"
+            extension = ".html"
+            content_filename = to_safe_filename(part.raw_data.title) + extension
             content_filepath = os.path.join(
                 epub_generation_options.output_dirpath, content_filename
             )
+
+            content_filepath = _to_max_len_filepath(
+                content_filepath,
+                content_filename,
+                epub_generation_options.output_dirpath,
+                part.series.raw_data.slug,
+                f" Volume {part.volume.num} Part {part.num_in_volume}",
+                extension,
+            )
+
             n.start_soon(_write_str, content_filepath, content)
+
+
+def _to_max_len_filepath(
+    original_filepath,
+    original_filename,
+    dirpath,
+    series_slug,
+    suffix,
+    extension,
+):
+    # do some processing or error when writing (for example, see Backstabbed ....)
+
+    system = platform.system()
+    if system == "Windows":
+        max_name_len = 255
+        max_path_len = 255
+    elif system == "Darwin":
+        # mac OS
+        max_name_len = 255
+        max_path_len = 1024
+    elif system == "Linux":
+        max_name_len = 255
+        max_path_len = 4096
+    else:
+        # do nothing for the others
+        return original_filepath
+
+    if len(original_filepath) < max_path_len and len(original_filename) < max_name_len:
+        return original_filepath
+
+    # basic substitution : replace title by slug (usually shorter)
+    subs_filename = to_safe_filename(series_slug + suffix) + extension
+    subs_filepath = os.path.join(dirpath, subs_filename)
+    if len(subs_filepath) < max_path_len and len(subs_filename) < max_name_len:
+        return subs_filepath
+
+    # will need to shorten slug part
+
+    # minimum size for keeping recognizable (arbitrary)
+    min_title_short_len = 10
+    mandatory_len = len(suffix) + len(extension)
+    # to_safe_filename will not lenghten the suffix+ext or title part
+    # (will reduce actually : so final name will possibly be shorter than max_name)
+    max_part_title_short_len = min(
+        max_name_len - mandatory_len, max_path_len - len(dirpath) - 1 - mandatory_len
+    )
+    if max_part_title_short_len < min_title_short_len:
+        # will not manage to create a substition path
+        raise FilePathTooLongError(
+            f"'{original_filepath}' too long for {system} and cannort shorten! "
+            f"PATH_MAX={max_path_len}, NAME_MAX={max_name_len}"
+        )
+
+    title_short = series_slug[:max_part_title_short_len]
+    subs_filename = to_safe_filename(title_short + suffix) + extension
+    subs_filepath = os.path.join(dirpath, subs_filename)
+    return subs_filepath
 
 
 def _extract_author(creators, default="Unknown Author"):
@@ -793,13 +904,11 @@ def _rename_cover_images(volumes):
 
 
 async def _write_bytes(filepath, content):
-    filepath = to_max_len_filepath(filepath)
     async with await trio.open_file(filepath, "wb") as img_f:
         await img_f.write(content)
 
 
 async def _write_str(filepath, content):
-    filepath = to_max_len_filepath(filepath)
     async with await trio.open_file(filepath, "w", encoding="utf-8") as img_f:
         await img_f.write(content)
 

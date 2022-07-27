@@ -2,12 +2,12 @@ from collections import deque
 from datetime import timezone
 import inspect
 import logging
-import os
 import re
 import sys
 import unicodedata
 
 from addict import Dict as Addict
+import dateutil.parser
 import rich.console
 import rich.theme
 
@@ -56,28 +56,6 @@ def to_safe_filename(name):
     return safe
 
 
-def to_max_len_filepath(original_path):
-    max_len = 255
-    if len(original_path) > max_len:
-        # too long for windows
-        # TODO also check dir path => if too long, display useful error message
-        path, ext = os.path.splitext(original_path)
-        max_path_len = max_len - len(ext)
-        short_path = path[:max_path_len]
-        original_path = short_path + ext
-
-        counter = 0
-        while os.path.exists(original_path):
-            # find one that doesn't exist
-            counter += 1
-            suffix = f" ({counter})"
-            max_path_len = max_len - len(ext) - len(suffix)
-            short_path = path[:max_path_len]
-            original_path = short_path + suffix + ext
-
-    return original_path
-
-
 def module_info():
     # for main module : its __name__ is __main__
     # so find out its real name
@@ -92,6 +70,18 @@ def isoformat_with_z(d):
         # just in case but shouldn't happen : only date in UTC is used in the code
         raise ValueError("Date not in UTC !")
     return d.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def compare_date_isoformat(d1, d2):
+    # convert in case ms are used
+    date1 = dateutil.parser.parse(d1)
+    date2 = dateutil.parser.parse(d2)
+
+    if date1 == date2:
+        return 0
+    elif date1 < date2:
+        return -1
+    return 1
 
 
 def deep_freeze(data):
