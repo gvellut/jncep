@@ -10,6 +10,7 @@ import sys
 import time
 from typing import List
 
+from addict import Dict as Addict
 import attr
 import dateutil.parser
 import trio
@@ -121,13 +122,14 @@ async def create_epub(series, volumes, parts, epub_generation_options):
             epub_generation_options.output_dirpath, output_filename
         )
 
-        seg_volume = book_details_i.title_segments["volume"]
-        seg_part = book_details_i.title_segments["part"]
+        seg_volume = book_details_i.title_segments.volume
+        seg_part = book_details_i.title_segments.part
         output_filepath = _to_max_len_filepath(
             output_filepath,
             output_filename,
             epub_generation_options.output_dirpath,
-            book_details_i.title_segments["series_slug"],
+            book_details_i.title_segments.series_title,
+            book_details_i.title_segments.series_slug,
             f" {seg_volume} {seg_part}",
             extension,
         )
@@ -217,12 +219,14 @@ def _process_single_epub_content(series, volumes, parts):
         # single part => single volume: part numbers relative to
         # that volume
         toc = [f"Part {part_num}"]
-        title_segments = {
-            "series_title": series.raw_data.title,
-            "series_slug": series.raw_data.slug,
-            "volume": f"Volume {volume_num}",
-            "part": f"Part {part_num}",
-        }
+        title_segments = Addict(
+            {
+                "series_title": series.raw_data.title,
+                "series_slug": series.raw_data.slug,
+                "volume": f"Volume {volume_num}",
+                "part": f"Part {part_num}",
+            }
+        )
     else:
         volume_index = set([v.num for v in volumes])
         if len(volume_index) > 1:
@@ -249,12 +253,14 @@ def _process_single_epub_content(series, volumes, parts):
 
             toc = [part.raw_data.title for part in parts]
             title = f"{title_base} [{part_segment}]"
-            title_segments = {
-                "series_title": series.raw_data.title,
-                "series_slug": series.raw_data.slug,
-                "volume": volume_segment,
-                "part": part_segment,
-            }
+            title_segments = Addict(
+                {
+                    "series_title": series.raw_data.title,
+                    "series_slug": series.raw_data.slug,
+                    "volume": volume_segment,
+                    "part": part_segment,
+                }
+            )
         else:
             volume = volumes[0]
             title_base = volume.raw_data.title
@@ -275,12 +281,14 @@ def _process_single_epub_content(series, volumes, parts):
                 part_segment = f"Parts {part_num0} to {part_num1}{suffix}"
 
             title = f"{title_base} [{part_segment}]"
-            title_segments = {
-                "series_title": series.raw_data.title,
-                "series_slug": series.raw_data.slug,
-                "volume": f"Volume {volume.num}",
-                "part": part_segment,
-            }
+            title_segments = Addict(
+                {
+                    "series_title": series.raw_data.title,
+                    "series_slug": series.raw_data.slug,
+                    "volume": f"Volume {volume.num}",
+                    "part": part_segment,
+                }
+            )
 
     identifier = series.raw_data.slug + str(int(time.time()))
 
@@ -337,6 +345,7 @@ async def extract_images(parts, epub_generation_options):
                     img_filepath,
                     img_filename,
                     epub_generation_options.output_dirpath,
+                    part.series.raw_data.title,
                     part.series.raw_data.slug,
                     f" Volume {part.volume.num} Part {part.num_in_volume}{suffix}",
                     ext,
@@ -359,6 +368,7 @@ async def extract_content(parts, epub_generation_options):
                 content_filepath,
                 content_filename,
                 epub_generation_options.output_dirpath,
+                part.series.raw_data.title,
                 part.series.raw_data.slug,
                 f" Volume {part.volume.num} Part {part.num_in_volume}",
                 extension,
@@ -371,6 +381,7 @@ def _to_max_len_filepath(
     original_filepath,
     original_filename,
     dirpath,
+    _series_title,
     series_slug,
     suffix,
     extension,
@@ -396,6 +407,8 @@ def _to_max_len_filepath(
         return original_filepath
 
     # basic substitution : replace title by slug (usually shorter)
+    # TODO do not do this ? can be inconsistent depending on suffix length (but should
+    # be rare) + use series_title for shorten instead of slug
     subs_filename = to_safe_filename(series_slug + suffix) + extension
     subs_filepath = os.path.join(dirpath, subs_filename)
     if len(subs_filepath) < max_path_len and len(subs_filename) < max_name_len:
@@ -414,10 +427,11 @@ def _to_max_len_filepath(
     if max_part_title_short_len < min_title_short_len:
         # will not manage to create a substition path
         raise FilePathTooLongError(
-            f"'{original_filepath}' too long for {system} and cannort shorten! "
+            f"'{original_filepath}' too long for {system} and cannot shorten! "
             f"PATH_MAX={max_path_len}, NAME_MAX={max_name_len}"
         )
 
+    # TODO use series instead ?
     title_short = series_slug[:max_part_title_short_len]
     subs_filename = to_safe_filename(title_short + suffix) + extension
     subs_filepath = os.path.join(dirpath, subs_filename)
