@@ -126,8 +126,6 @@ async def create_epub(series, volumes, parts, epub_generation_options):
         seg_part = book_details_i.title_segments.part
         output_filepath = _to_max_len_filepath(
             output_filepath,
-            output_filename,
-            epub_generation_options.output_dirpath,
             book_details_i.title_segments.series_title,
             book_details_i.title_segments.series_slug,
             f" {seg_volume} {seg_part}",
@@ -343,8 +341,6 @@ async def extract_images(parts, epub_generation_options):
 
                 img_filepath = _to_max_len_filepath(
                     img_filepath,
-                    img_filename,
-                    epub_generation_options.output_dirpath,
                     part.series.raw_data.title,
                     part.series.raw_data.slug,
                     f" Volume {part.volume.num} Part {part.num_in_volume}{suffix}",
@@ -366,8 +362,6 @@ async def extract_content(parts, epub_generation_options):
 
             content_filepath = _to_max_len_filepath(
                 content_filepath,
-                content_filename,
-                epub_generation_options.output_dirpath,
                 part.series.raw_data.title,
                 part.series.raw_data.slug,
                 f" Volume {part.volume.num} Part {part.num_in_volume}",
@@ -379,15 +373,12 @@ async def extract_content(parts, epub_generation_options):
 
 def _to_max_len_filepath(
     original_filepath,
-    original_filename,
-    dirpath,
     _series_title,
     series_slug,
     suffix,
     extension,
 ):
     # do some processing or error when writing (for example, see Backstabbed ....)
-
     system = platform.system()
     if system == "Windows":
         max_name_len = 255
@@ -402,6 +393,8 @@ def _to_max_len_filepath(
     else:
         # do nothing for the others
         return original_filepath
+
+    dirpath, original_filename = os.path.split(original_filepath)
 
     if len(original_filepath) < max_path_len and len(original_filename) < max_name_len:
         return original_filepath
@@ -419,8 +412,9 @@ def _to_max_len_filepath(
     # minimum size for keeping recognizable (arbitrary)
     min_title_short_len = 10
     mandatory_len = len(suffix) + len(extension)
-    # to_safe_filename will not lenghten the suffix+ext or title part
-    # (will reduce actually : so final name will possibly be shorter than max_name)
+    # to_safe_filename below will not lenghten the title+suffix part
+    # (will reduce actually: so final name will possibly be shorter than max_name)
+    # -1 for the / between dirpath and filename (not already in dirpath)
     max_part_title_short_len = min(
         max_name_len - mandatory_len, max_path_len - len(dirpath) - 1 - mandatory_len
     )

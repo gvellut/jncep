@@ -342,7 +342,7 @@ It can be useful for when a new series starts publishing: It can be set as Follo
 
 #### Events feed
 
-If you have a lot of followed series, the flag `--use-events` can be used. In that case, the `update` command will first check the events feed provided by J-Novel Club: It includes all the part releases and can be used to know which series will need to be downloaded. With this flag, the tool saves time by not checking all the series individually.
+If you have a lot of followed series and update often, the flag `--use-events` can be used. In that case, the `update` command will first check the events feed provided by J-Novel Club: It includes all the part releases and can be used to know which series will need to be downloaded. With this flag, the tool saves time by not checking all the series individually.
 
 #### Environment variables
 
