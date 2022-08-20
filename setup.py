@@ -30,7 +30,7 @@ setup_args = dict(
     author="Guilhem Vellut",
     author_email="g@vellut.com",
     classifiers=[
-        "Development Status :: 4 - Beta",
+        "Development Status :: 5 - Production/Stable",
         "Environment :: Console",
         "Intended Audience :: Other Audience",
         "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
