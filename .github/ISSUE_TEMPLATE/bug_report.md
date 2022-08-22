@@ -2,7 +2,7 @@
 name: Bug report
 about: If you have an issue with JNCEP
 title: ''
-labels: ''
+labels: bug
 assignees: ''
 
 ---
