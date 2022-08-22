@@ -28,5 +28,5 @@ If the trace is big, copy it to a text file and add that file as attachment to t
 
 **Environment (please complete the following information):**
  - OS: [e.g. Windows 10]
- - Python version [e.g. 3.9.5]
- - JNCEP version [e.g. v38]
+ - Python version: [e.g. 3.9.5]
+ - JNCEP version: [e.g. v38]

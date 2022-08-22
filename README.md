@@ -119,6 +119,13 @@ The tool will then communicate with the J-Novel Club API using the specified cre
 
 If the `--output` or `-o` switch is not present, the EPUB is output in the current directory. The `JNCEP_OUTPUT` env var can also be used instead of the switch to indicate a download directory.
 
+##### URL
+
+To get the URL to pass as argument, you should first go to the series page on the the J-Novel Club website. Then copy the URL found in the browser URL bar:
+- for series: Simply use the URL of the series page on J-Novel Club. It will have a shape like `https://j-novel.club/series/redefining-the-meta-at-vrmmo-academy`.
+- for volumes: Click on the volume you are interested in. The URL in the browser will change to something like `https://j-novel.club/series/redefining-the-meta-at-vrmmo-academy#volume-2`.
+- for parts: Click on one of the available parts below a specific volume. The web reader will then open and the URL will be somethinkg like `https://j-novel.club/read/redefining-the-meta-at-vrmmo-academy-volume-1-part-1`.
+
 #### Range of parts
 
 The following command will create a single EPUB file with Parts 5 to 10 of Volume 1 of the 'Tearmoon Empire' novel (as long as the pre-pubs have not expired) in the current directory:
@@ -143,6 +150,15 @@ Here are examples of valid values for the argument:
 - `:3.5` => From the first part in the series until part 5 of volume 3
 - `:` => The whole series
 - `2` => All the parts of volume 2
+
+##### A note about volume numbers
+
+The volume number used in the `--parts` option is the internal one used by J-Novel Club and is a single number. For most series, it is identical to the volume number as indicated on the series page on the J-Novel Club website: *Volume 7* means `7` can be passed to the `--parts` option. However, for some series, the volume numbering scheme is different. For example:
+- The volumes of *Ascendance of a Bookworm* are written as *Part x Volume y*
+- *Min-Maxing My TRPG Build* has *Volume 4 Canto II*
+- There are also some series with a side-stories volume that has been inserted in the normal series but which doesn't follow the volume numbering scheme: This volume will shift the internal numbering for the volumes that come after.
+
+In order to get the volume number to use for the `--parts` option for those series, you should go to the series page on J-Nobel Club, then click on the volume you want. Then the URL in the brower will change to add `#volume-xx` at then end. This number can be used for `jncep`. For example, for *Ascendance of a Bookworm Part 4 Volume 8*, the URL in the browser will change to something like `https://j-novel.club/series/ascendance-of-a-bookworm#volume-20`. It means you should use `20` as the volume number for the command. 
 
 ### Rare Unicode characters
 
