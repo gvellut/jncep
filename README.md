@@ -160,7 +160,7 @@ However, for some series, the volume numbering scheme is different. For example:
 - *Min-Maxing My TRPG Build* has *Volume 4 Canto I* and *Volume 4 Canto II*. Internally, J-Novel Club describes the first as volume `4` and the second as volume `5`.
 - There are also some series with a side-stories volume that has been inserted in the normal series but which doesn't follow the volume numbering scheme: This volume will shift the internal numbering for the volumes that come after.
 
-In order to get the volume number to use for the `--parts` option for those series, you should go to the series page on J-Nobel Club, then click on the volume you want. Then the URL in the brower will change with `#volume-xx` added at then end. This number can be used for `jncep`. For example, for *Ascendance of a Bookworm Part 4 Volume 8*, the URL in the browser will change to something like `https://j-novel.club/series/ascendance-of-a-bookworm#volume-20`. It means you should use `20` as the volume number for the command. 
+In order to get the volume number to use for the `--parts` option for those series, you should go to the series page on J-Nobel Club, then click on the volume you want. Then the URL in the brower will change with `#volume-xx` added at the end. This number `xx` can be used for `jncep`. For example, for *Ascendance of a Bookworm Part 4 Volume 8*, the URL in the browser will change to something like `https://j-novel.club/series/ascendance-of-a-bookworm#volume-20`. It means you should use `20` as the volume number for the command.
 
 ### Rare Unicode characters
 
@@ -352,17 +352,17 @@ Or if no tracked series has seen any updates:
 All series are already up to date!
 ```
 
-#### Sync
+### Sync
 
 The `--sync` flag can be passed (together with the other options), in which case the list of tracked series is first updated based on the list of followed series on the J-Novel Club website (equivalent of `jncep track sync`), then, only for the newly added series, an EPUB is created with the parts from the beginning.
 
 It can be useful for when a new series starts publishing: It can be set as Followed on the website then this `jncep update --sync` command can be launched to subscribe to the series and get all the newly released parts in one go, and without having to copy/paste a URL.
 
-#### Events feed
+### Events feed
 
 If you have a lot of followed series and update often, the flag `--use-events` can be used. In that case, the `update` command will first check the events feed provided by J-Novel Club: It includes all the part releases and can be used to know which series will need to be downloaded. With this flag, the tool saves time by not checking all the series individually.
 
-#### Environment variables
+### Environment variables
 
 The `update` subcommand has the additional environment variable:
 - JNCEP_USE_EVENTS
