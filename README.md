@@ -160,7 +160,7 @@ However, for some series, the volume numbering scheme is different. For example:
 - *Min-Maxing My TRPG Build* has *Volume 4 Canto I* and *Volume 4 Canto II*. Internally, J-Novel Club describes the first as volume `4` and the second as volume `5`.
 - There are also some series with a side-stories volume that has been inserted in the normal series but which doesn't follow the volume numbering scheme: This volume will shift the internal numbering for the volumes that come after.
 
-In order to get the volume number to use for the `--parts` option for those series, you should go to the series page on J-Nobel Club, then click on the volume you want. Then the URL in the brower will change with `#volume-xx` added at the end. This number `xx` can be used for `jncep`. For example, for *Ascendance of a Bookworm Part 4 Volume 8*, the URL in the browser will change to something like `https://j-novel.club/series/ascendance-of-a-bookworm#volume-20`. It means you should use `20` as the volume number for the command.
+In order to get the volume number to use for the `--parts` option for those series, you should go to the series page on J-Nobel Club, then click on the volume you want. Then the URL in the brower will change with `#volume-xx` added at the end. This number `xx` can be used for `jncep`. For example, for *Ascendance of a Bookworm Part 4 Volume 8*, the URL in the browser will change to `https://j-novel.club/series/ascendance-of-a-bookworm#volume-20`. It means you should use `20` as the volume number for the command.
 
 ### Rare Unicode characters
 

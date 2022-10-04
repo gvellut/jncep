@@ -210,12 +210,19 @@ def _update_tracking_data(series_details, series_meta, update_result, check_date
     parts = core.all_parts_meta(series_meta)
     assert bool(parts)
 
-    last_part = parts[-1]
-    pn = spec.to_relative_spec_from_part(last_part)
-    pdate = last_part.raw_data.launch
+    # this is only used for display to the user in track list
+    last_part_number = parts[-1]
+    pn = spec.to_relative_spec_from_part(last_part_number)
+    series_details.part = pn
+
+    # if series has more than one volume in parallel, it can happen that the last
+    # part (in number) is released before (in date) a part that comes before (in number)
+    # we use the part_date for the update process => last part (in date) for this
+    # instead of using the date of the last part (in number)
+    last_part_date = max(parts, key=lambda x: x.raw_data.launch)
+    pdate = last_part_date.raw_data.launch
 
     series_details.part_date = pdate
-    series_details.part = pn
 
 
 async def _handle_series(
