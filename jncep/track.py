@@ -110,13 +110,9 @@ async def track_series(session, tracked_series, series):
     await fill_meta_last_part(session, series)
     parts = core.all_parts_meta(series)
 
-    last_part = None
-    if parts:
-        last_part = parts[-1]
-
     # record current last part + name
-    if not last_part:
-        # no parts yet
+    if not parts:
+        # no parts yet, special value 0: processed in update with special case
         pn = 0
         # 0000-... not a valid date so 1111-...
         pdate = "1111-11-11T11:11:11.111Z"
@@ -127,15 +123,30 @@ async def track_series(session, tracked_series, series):
             style="success",
         )
     else:
-        pn = spec.to_relative_spec_from_part(last_part)
-        pdate = last_part.raw_data.launch
+        last_part_number = parts[-1]
 
-        relative_part = spec.to_relative_spec_from_part(last_part)
-        part_date = dateutil.parser.parse(last_part.raw_data.launch)
+        # for the tracking, need the last date: almost always the date of the last part
+        # but for some series with volumes released in parallel, can be different
+        # see GH #28, also update._update_tracking_data
+        # so do additional work for this
+
+        # TOC below part in API
+        toc = await session.api.fetch_data("parts", last_part_number.part_id, "toc")
+        # toc.parts has pagination struct (but all parts seem to be there anyway)
+        # ie lastPage = true
+        # TODO assert?
+        last_part_date_raw = max(toc.parts.parts, key=lambda x: x.launch)
+
+        pn = spec.to_relative_spec_from_part(last_part_number)
+        pdate = last_part_date_raw.launch
+
+        part_date = dateutil.parser.parse(pdate)
         part_date_formatted = part_date.strftime("%b %d, %Y")
+        # TODO display something in case last_part_number and last_part_date_raw do not
+        # correspond to the same part?
         console.info(
             f"The series '[highlight]{series.raw_data.title}[/]' is now tracked, "
-            f"starting after part [highlight]{relative_part} [{part_date_formatted}]"
+            f"starting after part [highlight]{pn} [{part_date_formatted}]"
             f"[/]",
             style="success",
         )
@@ -145,7 +156,7 @@ async def track_series(session, tracked_series, series):
     tracked_series[series_url] = Addict(
         {
             "part_date": pdate,
-            "part": pn,  # now just for show
+            "part": pn,  # now just for showing to the user in track list
             "name": series.raw_data.title,
             "series_id": series.series_id,
             "last_check_date": utils.isoformat_with_z(session.now),
