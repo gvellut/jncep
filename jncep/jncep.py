@@ -2,6 +2,8 @@ import logging
 
 import click
 
+import jncep
+
 from .cli.epub import generate_epub
 from .cli.track import track_series
 from .cli.update import update_tracked
@@ -14,6 +16,7 @@ logger = logging.getLogger(module_info())
     help="Simple command-line tool to generate EPUB files for J-Novel Club pre-pub "
     "novels"
 )
+@click.version_option(jncep.__version__, message="v%(version)s")
 @click.option(
     "-d",
     "--debug",
