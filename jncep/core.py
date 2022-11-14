@@ -18,7 +18,7 @@ import trio
 from . import epub, jnclabs, jncweb, spec, utils
 from .model import Image, Part, Series, Volume
 from .trio_utils import bag
-from .utils import to_safe_filename
+from .utils import to_safe_filename, is_debug
 
 logger = logging.getLogger(__name__)
 console = utils.getConsole()
@@ -87,13 +87,23 @@ class JNCEPSession:
         return False
 
     async def login(self, email, password):
-        console.status(f"Login with email '[highlight]{email}[/]'...")
+        display_email = email
+        if is_debug():
+            # hide for privacy in case the trace is copied to GH issue tracker
+            display_email = re.sub(
+                r"(?<=.)(.*?)(?=@)", lambda x: "*" * len(x.group(1)), email
+            )
+            display_email = re.sub(
+                r"(?<=@.)(.*?)(?=\.)", lambda x: "*" * len(x.group(1)), display_email
+            )
+        msg = f"Login with email '[highlight]{display_email}[/]'..."
+        console.status(msg)
         token = await self.api.login(email, password)
 
         emoji = ""
         if console.is_advanced():
             emoji = "\u26A1 "
-        console.info(f"{emoji}Logged in with email '[highlight]{email}[/]'")
+        console.info(f"{emoji}Logged in with email '[highlight]{display_email}[/]'")
         console.status("...")
         return token
 
