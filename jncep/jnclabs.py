@@ -13,14 +13,17 @@ logger = logging.getLogger(__name__)
 console = utils.getConsole()
 
 CDN_IMG_URL_BASE = "https://d2dq7ifhe7bu0f.cloudfront.net"
-LABS_API_JNC_URL_BASE = "https://labs.j-novel.club"
-JNC_API_URL_BASE = "https://api.j-novel.club"
 
-LABS_API_JNC_PATH_BASE = "/app/v1"
-JNC_API_PATH_BASE = "/api"
-
-COMMON_API_HEADERS = {"accept": "application/json", "content-type": "application/json"}
+LABS_API_URL_BASE = "https://labs.j-novel.club"
+LABS_API_PATH_BASE = "/app/v1"
 COMMON_LABS_API_PARAMS = {"format": "json"}
+
+LEGACY_API_URL_BASE = "https://api.j-novel.club"
+LEGACY_API_PATH_BASE = "/api"
+COMMON_LEGACY_API_HEADERS = {
+    "accept": "application/json",
+    "content-type": "application/json",
+}
 
 
 class InvalidCDNRequestException(Exception):
@@ -84,27 +87,30 @@ def _copy_or_raw(data):
 class JNCLabsAPI:
     def __init__(
         self,
-        jnc_connections=10,
+        labs_api_connections=10,
+        legacy_api_connections=10,
         cdn_connections=20,
         jncweb_connections=10,
         labs_api_default_timeout=20,
-        jnc_api_default_timeout=20,
+        legacy_api_default_timeout=20,
         cdn_default_timeout=30,
         jncweb_default_timeout=20,
         connection_timeout=None,
     ):
-        # jnc_connections params used for both labs and api (but in the code only 1 req
-        # at a time to api so doesn't really matter)
         # connection timeout is disabled by default => no timeout waiting for a
         # connection to be available from the rate limiter
-        self.jnc_api_session = asks.Session(
-            JNC_API_URL_BASE, connections=jnc_connections, headers=COMMON_API_HEADERS
-        )
         self.labs_api_session = asks.Session(
-            LABS_API_JNC_URL_BASE,
-            connections=jnc_connections,
-            headers=COMMON_API_HEADERS,
+            LABS_API_URL_BASE,
+            connections=labs_api_connections,
+            headers=COMMON_LEGACY_API_HEADERS,
         )
+
+        self.legacy_api_session = asks.Session(
+            LEGACY_API_URL_BASE,
+            connections=legacy_api_connections,
+            headers=COMMON_LEGACY_API_HEADERS,
+        )
+
         # CDN_IMG_URL_BASE not really necessary
         self.cdn_session = asks.Session(CDN_IMG_URL_BASE, connections=cdn_connections)
 
@@ -113,7 +119,7 @@ class JNCLabsAPI:
         )
 
         self.labs_api_default_timeout = labs_api_default_timeout
-        self.jnc_api_default_timeout = jnc_api_default_timeout
+        self.legacy_api_default_timeout = legacy_api_default_timeout
         self.cdn_default_timeout = cdn_default_timeout
         self.jncweb_default_timeout = jncweb_default_timeout
 
@@ -125,14 +131,8 @@ class JNCLabsAPI:
     def is_logged_in(self):
         return self.token is not None
 
-    def api_authentication(self):
-        return {"authorization": self.token}
-
-    def labs_authentication(self):
-        return {"Authorization": f"Bearer {self.token}"}
-
     async def login(self, email, password):
-        path = f"{LABS_API_JNC_PATH_BASE}/auth/login"
+        path = f"{LABS_API_PATH_BASE}/auth/login"
         payload = {"login": email, "password": password, "slim": True}
         params = {**COMMON_LABS_API_PARAMS}
 
@@ -149,8 +149,8 @@ class JNCLabsAPI:
         self.token = data["id"]
 
     async def logout(self):
-        path = f"{LABS_API_JNC_PATH_BASE}/auth/logout"
-        await self._call_labs_authenticated("POST", path)
+        path = f"{LABS_API_PATH_BASE}/auth/logout"
+        await self._call_labs_api_authenticated("POST", path)
         self.token = None
 
     @with_cache
@@ -158,21 +158,18 @@ class JNCLabsAPI:
         if sub_resource:
             sub_resource = f"/{sub_resource}"
 
-        path = f"{LABS_API_JNC_PATH_BASE}/{resource_type}/{slug_id}{sub_resource}"
+        path = f"{LABS_API_PATH_BASE}/{resource_type}/{slug_id}{sub_resource}"
         return await self._fetch_resource(path, skip=skip)
 
-    async def paginate(self, func):
+    async def paginate(self, func, key):
         skip = 0
         while True:
-            j = await func(skip=skip)
-
-            pagination = Addict(j.pop("pagination"))
-
-            # besides pagination there is one other kv with the data we want
-            items = list(j.values())
-            for item in items[0]:
+            page = await func(skip=skip)
+            # flatten the pages
+            for item in page[key]:
                 yield item
 
+            pagination = page.pagination
             if pagination.lastPage:
                 break
             skip += pagination.limit
@@ -184,12 +181,12 @@ class JNCLabsAPI:
 
         logger.debug(f"LABS EMBED {path}")
 
-        r = await self._call_labs_authenticated("GET", path)
+        r = await self._call_labs_api_authenticated("GET", path)
         return r.text
 
     @with_cache
     async def fetch_events(self, skip=None, **params):
-        path = f"{LABS_API_JNC_PATH_BASE}/events"
+        path = f"{LABS_API_PATH_BASE}/events"
         return await self._fetch_resource(path, params=params, skip=skip)
 
     async def _fetch_resource(self, path, *, params=None, skip=None):
@@ -202,17 +199,18 @@ class JNCLabsAPI:
         if skip is not None:
             params.update(skip=skip)
 
-        r = await self._call_labs_authenticated("GET", path, params=params)
+        r = await self._call_labs_api_authenticated("GET", path, params=params)
 
         d = Addict(r.json())
         deep_freeze(d)
         return d
 
-    async def _call_labs_authenticated(
+    async def _call_labs_api_authenticated(
         self, method, path, headers=None, params=None, **kwargs
     ):
-        # TODO does almost nothing => remove ?
-        auth = self.labs_authentication()
+        # ~common base path + params set in caller: some calls (embed) to the Labs API
+        # do not have them
+        auth = {"Authorization": f"Bearer {self.token}"}
         r = await self._call_authenticated(
             self.labs_api_session,
             method,
@@ -227,26 +225,26 @@ class JNCLabsAPI:
 
         return r
 
-    async def _call_api_authenticated(
+    async def _call_legacy_api_authenticated(
         self, method, path, headers=None, params=None, **kwargs
     ):
-        auth = self.api_authentication()
+        auth = {"authorization": self.token}
         if not headers:
-            headers = COMMON_API_HEADERS
+            headers = COMMON_LEGACY_API_HEADERS
         else:
-            headers = {**COMMON_API_HEADERS, **headers}
+            headers = {**COMMON_LEGACY_API_HEADERS, **headers}
 
-        path = f"{JNC_API_PATH_BASE}{path}"
+        path = f"{LEGACY_API_PATH_BASE}{path}"
 
         r = await self._call_authenticated(
-            self.jnc_api_session,
+            self.legacy_api_session,
             method,
             path,
             auth,
             headers,
             params,
             connection_timeout=self.connection_timeout,
-            timeout=self.jnc_api_default_timeout,
+            timeout=self.legacy_api_default_timeout,
             **kwargs,
         )
 
@@ -272,7 +270,7 @@ class JNCLabsAPI:
         qfilter = {"include": [{"serieFollows": "serie"}]}
         payload = {"filter": json.dumps(qfilter)}
 
-        r = await self._call_api_authenticated("GET", path, params=payload)
+        r = await self._call_legacy_api_authenticated("GET", path, params=payload)
         r.raise_for_status()
 
         me_data = Addict(r.json())
@@ -300,12 +298,12 @@ class JNCLabsAPI:
         await self._set_follow(series_id, False)
 
     async def _set_follow(self, series_id, is_follow):
-        action = "follow" if is_follow else "unfollow"
-        path = f"/users/me/{action}"
+        verb = "PUT" if is_follow else "DELETE"
+        path = f"{LABS_API_PATH_BASE}/me/follow/{series_id}"
 
-        payload = {"serieId": series_id, "serieType": 1}
+        logger.debug(f"FOLLOW {verb} {path}")
 
-        r = await self._call_api_authenticated("POST", path, json=payload)
+        r = await self._call_labs_api_authenticated(verb, path)
         r.raise_for_status()
 
     @with_cache

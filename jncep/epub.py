@@ -74,8 +74,6 @@ def output_epub(output_filepath, book_details: BookDetails, style_css_path=None)
         {"property": "collection-type", "refines": f"#{collection_meta.collection_id}"},
     )
 
-    # as position, set the volume number of the first part in the epub
-    # in Calibre, display 1 (I) if not set so a bit better
     book.add_metadata(
         "OPF",
         "group-position",

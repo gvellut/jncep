@@ -18,7 +18,7 @@ import trio
 from . import epub, jnclabs, jncweb, spec, utils
 from .model import Image, Part, Series, Volume
 from .trio_utils import bag
-from .utils import to_safe_filename, is_debug
+from .utils import is_debug, to_safe_filename
 
 logger = logging.getLogger(__name__)
 console = utils.getConsole()
@@ -91,10 +91,10 @@ class JNCEPSession:
         if is_debug():
             # hide for privacy in case the trace is copied to GH issue tracker
             display_email = re.sub(
-                r"(?<=.)(.*?)(?=@)", lambda x: "*" * len(x.group(1)), email
+                r"(?<=.)(.*)(?=@)", lambda x: "*" * len(x.group(1)), email
             )
             display_email = re.sub(
-                r"(?<=@.)(.*?)(?=\.)", lambda x: "*" * len(x.group(1)), display_email
+                r"(?<=@.)(.*)(?=\.)", lambda x: "*" * len(x.group(1)), display_email
             )
         msg = f"Login with email '[highlight]{display_email}[/]'..."
         console.status(msg)
@@ -193,17 +193,14 @@ def process_series(
 def _process_single_epub_content(series, volumes, parts):
     # order of volumes and parts must match
 
-    # representative volume
+    # representative volume: First
     repr_volume = volumes[0]
     author = _extract_author(repr_volume.raw_data.creators)
+    volume_num = repr_volume.num
 
-    # representative part
-    repr_part = parts[0]
-    volume_num = repr_part.volume.num
-    part_num = repr_part.num_in_volume
-
-    # TODO in case multiple volumes, do not set volume num? or do
-    # something else
+    # in case of multiple volumes, this will set the number of the first volume
+    # in the epub
+    # in Calibre, display 1 (I) if not set so a bit better
     collection = epub.CollectionMetadata(
         series.raw_data.legacyId, series.raw_data.title, volume_num
     )
@@ -598,7 +595,7 @@ async def fetch_volumes_for_series(session, series_id):
     volumes = [
         volume
         async for volume in session.api.paginate(
-            partial(session.api.fetch_data, "series", series_id, "volumes")
+            partial(session.api.fetch_data, "series", series_id, "volumes"), "volumes"
         )
     ]
     return volumes
@@ -608,7 +605,7 @@ async def fetch_parts_for_volume(session, volume_id):
     parts = [
         part
         async for part in session.api.paginate(
-            partial(session.api.fetch_data, "volumes", volume_id, "parts")
+            partial(session.api.fetch_data, "volumes", volume_id, "parts"), "parts"
         )
     ]
     return parts
