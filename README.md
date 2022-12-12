@@ -18,7 +18,11 @@ The command above will install the `jncep` Python library and its dependencies. 
 
 This tool only works with J-Novel Club __novels__, not manga.
 
-`jncep` is completely unaffiliated with J-Novel Club (it simply uses their API) so, if you have an issue with the tool, it would be unrealistic to expect support from them (but an issue may be filed on the [bug tracker](https://github.com/gvellut/jncep/issues) of this project on Github).
+`jncep` is completely unaffiliated with J-Novel Club (it simply uses their API).
+
+# Issues
+
+Report issues at https://github.com/gvellut/jncep/issues
 
 # Usage
 
@@ -374,10 +378,6 @@ It should have a value like `1` if set.
 The `update` command can be called in the background from launchd (on macOS) or a scheduled task (on Windows) or cron (on Linux) in order to regularly download new content if available and create EPUBs (for example, once a day). 
 
 There is no notification built in the `jncep update` command but the text output can be combined with other tools to make something suitable. If there are updates, the `jncep update` command outputs something like `2 series sucessfully updated!`, which can be processed by another tool do create a notification.
-
-# Issues
-
-Report issues at https://github.com/gvellut/jncep/issues
 
 # TODO (maybe)
 
