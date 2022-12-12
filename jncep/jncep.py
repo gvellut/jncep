@@ -13,8 +13,7 @@ logger = logging.getLogger(module_info())
 
 
 @click.group(
-    help="Simple command-line tool to generate EPUB files for J-Novel Club pre-pub "
-    "novels"
+    help="Command-line tool to generate EPUB files for J-Novel Club pre-pub novels"
 )
 @click.version_option(jncep.__version__, message="v%(version)s")
 @click.option(

@@ -21,8 +21,7 @@ setup_args = dict(
     name="jncep",
     version=version,
     description=(
-        "Simple command-line tool to generate EPUB files for "
-        "J-Novel Club pre-pub novels"
+        "Command-line tool to generate EPUB files for J-Novel Club pre-pub novels"
     ),
     long_description=readme,
     long_description_content_type="text/markdown",
