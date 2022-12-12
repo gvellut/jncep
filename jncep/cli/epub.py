@@ -61,22 +61,16 @@ async def generate_epub(
 
     async with core.JNCEPSession(email, password) as session:
         jnc_resource = jncweb.resource_from_url(jnc_url)
+        series_id = await core.resolve_series(session, jnc_resource)
+        series = await core.fetch_meta(session, series_id)
 
         if part_spec:
             console.info(f"Use part specification '[highlight]{part_spec}[/]'")
             part_spec_analyzed = spec.analyze_part_specs(part_spec)
         else:
-            part_spec_analyzed = await core.to_part_spec(session, jnc_resource)
+            part_spec_analyzed = await core.to_part_spec(session, series, jnc_resource)
 
         console.status("Get content...")
-
-        series = await core.resolve_series(session, jnc_resource)
-        series_meta = await core.fill_meta(
-            session, series, volume_callback=part_spec_analyzed.has_volume
-        )
-
-        # TODO event ? Think better logging system / notification to the user
-        # to support maybe GUI
 
         has_unavailable_parts = False
 
@@ -92,7 +86,7 @@ async def generate_epub(
         (
             volumes_to_download,
             parts_to_download,
-        ) = core.relevant_volumes_and_parts_for_content(series_meta, part_filter)
+        ) = core.relevant_volumes_and_parts_for_content(series, part_filter)
 
         if not parts_to_download:
             console.error(
@@ -116,7 +110,7 @@ async def generate_epub(
         console.status("Create EPUB...")
 
         await core.create_epub(
-            series_meta,
+            series,
             volumes_to_download,
             parts_to_download,
             epub_generation_options,

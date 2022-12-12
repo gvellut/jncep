@@ -6,7 +6,7 @@ import attr
 import dateutil
 import trio
 
-from . import core, jncweb, model, spec, track, utils
+from . import core, jncweb, spec, utils
 from .trio_utils import bag
 
 logger = logging.getLogger(__package__)
@@ -38,13 +38,14 @@ async def update_url_series(
 ):
     # for single url => if error no catch : let it crash and report to the user
     jnc_resource = jncweb.resource_from_url(jnc_url)
-    series_meta = await core.resolve_series(session, jnc_resource)
+    series_id = await core.resolve_series(session, jnc_resource)
+    series = await core.fetch_meta(session, series_id)
 
-    series_url = jncweb.url_from_series_slug(series_meta.raw_data.slug)
+    series_url = jncweb.url_from_series_slug(series.raw_data.slug)
 
     if series_url not in tracked_series:
         console.warning(
-            f"The series '[highlight]{series_meta.raw_data.title}[/]' is not tracked! "
+            f"The series '[highlight]{series.raw_data.title}[/]' is not tracked! "
             f"Use the 'jncep track add' command first."
         )
         return
@@ -55,7 +56,7 @@ async def update_url_series(
         # to mirror case with no URL argument
         if series_url not in new_synced:
             console.warning(
-                f"The series '[highlight]{series_meta.raw_data.title}[/]' is not "
+                f"The series '[highlight]{series.raw_data.title}[/]' is not "
                 "among the tracked series added from syncing. Use 'jncep update' "
                 "without --sync."
             )
@@ -80,7 +81,7 @@ async def update_url_series(
         update_result = await _create_epub_for_new_parts(
             session,
             series_details,
-            series_meta,
+            series,
             epub_generation_options,
             is_whole_volume,
             is_force_from_beginning,
@@ -91,13 +92,13 @@ async def update_url_series(
         if console.is_advanced():
             emoji = "\u2714 "
         console.info(
-            f"{emoji}The series '[highlight]{series_meta.raw_data.title}[/]' has "
+            f"{emoji}The series '[highlight]{series.raw_data.title}[/]' has "
             "been updated!",
             style="success",
         )
     else:
         console.info(
-            f"The series '[highlight]{series_meta.raw_data.title}[/]' is already up "
+            f"The series '[highlight]{series.raw_data.title}[/]' is already up "
             "to date!",
             style="success",
         )
@@ -109,7 +110,7 @@ async def update_url_series(
             # before the date of the last downloaded part in the file
             update_result.is_update_last_checked = False
 
-    _update_tracking_data(series_details, series_meta, update_result, session.now)
+    _update_tracking_data(series_details, series, update_result, session.now)
 
 
 async def update_all_series(
@@ -235,7 +236,7 @@ async def _handle_series(
     is_whole_volume,
     events,
 ):
-    series_meta = None
+    series = None
     try:
         if is_sync and series_url not in new_synced:
             return UpdateResult(is_considered=False)
@@ -249,14 +250,15 @@ async def _handle_series(
             # else the standard check continues
 
         jnc_resource = jncweb.resource_from_url(series_url)
-        series_meta = await core.resolve_series(session, jnc_resource)
+        series_id = await core.resolve_series(session, jnc_resource)
+        series = await core.fetch_meta(session, series_id)
 
         # generate from the start if the series is newly sync
         is_force_from_beginning = is_sync
         update_result = await _create_epub_for_new_parts(
             session,
             series_details,
-            series_meta,
+            series,
             epub_generation_options,
             is_whole_volume,
             is_force_from_beginning,
@@ -267,7 +269,7 @@ async def _handle_series(
             if console.is_advanced():
                 emoji = "\u2714 "
             console.info(
-                f"{emoji}The series '[highlight]{series_meta.raw_data.title}[/]' has "
+                f"{emoji}The series '[highlight]{series.raw_data.title}[/]' has "
                 "been updated!",
                 style="success",
             )
@@ -282,8 +284,8 @@ async def _handle_series(
         return update_result
 
     except (trio.MultiError, Exception) as ex:
-        if series_meta and series_meta.raw_data:
-            title = series_meta.raw_data.title
+        if series and series.raw_data:
+            title = series.raw_data.title
         else:
             title = series_url
 
@@ -371,15 +373,12 @@ def _can_use_events_feed(series_details):
 async def _create_epub_for_new_parts(
     session,
     series_details,
-    series_meta,
+    series,
     epub_generation_options,
     is_whole_volume=False,
     is_force_from_beginning=False,
 ):
-    # sufficient for here
-    # quick to check
-    await track.fill_meta_last_part(session, series_meta)
-    parts = core.all_parts_meta(series_meta)
+    parts = core.all_parts_meta(series)
 
     if series_details.part == 0 or is_force_from_beginning:
         # Firt clause: special processing : means there was no part available when the
@@ -390,19 +389,16 @@ async def _create_epub_for_new_parts(
             return UpdateResult(is_updated=False)
         else:
             console.info(
-                f"The series '[highlight]{series_meta.raw_data.title}[/]' "
+                f"The series '[highlight]{series.raw_data.title}[/]' "
                 "will be updated..."
             )
-
-            # complete series from beginning
-            await core.fill_meta(session, series_meta)
 
             part_filter = partial(core.is_part_available, session.now)
 
             (
                 volumes_to_download,
                 parts_to_download,
-            ) = core.relevant_volumes_and_parts_for_content(series_meta, part_filter)
+            ) = core.relevant_volumes_and_parts_for_content(series, part_filter)
             volumes_for_cover = core.relevant_volumes_for_cover(
                 volumes_to_download, epub_generation_options.is_by_volume
             )
@@ -411,21 +407,18 @@ async def _create_epub_for_new_parts(
                 session, volumes_for_cover, parts_to_download
             )
             await core.create_epub(
-                series_meta,
+                series,
                 volumes_to_download,
                 parts_to_download,
                 epub_generation_options,
             )
 
-            return UpdateResult(series_meta, is_updated=True)
+            return UpdateResult(series, is_updated=True)
     else:
-
         if not series_details.part_date:
             # if here => old format, first lookup date of last part and use that
             # still useful for stalled series so keep it
             part_spec = spec.analyze_part_specs(series_details.part)
-            await core.fill_meta(session, series_meta, part_spec.has_volume)
-            parts = core.all_parts_meta(series_meta)
             for part in parts:
                 if part_spec.has_part(part):
                     # will be filled if the part still exists (it should)
@@ -440,24 +433,13 @@ async def _create_epub_for_new_parts(
 
         last_update_date = dateutil.parser.parse(last_update_date)
 
-        # TOC is below a part in the Labs API
-        last_part = parts[-1]
-        toc = await session.api.fetch_data("parts", last_part.part_id, "toc")
-        # weird struct for the response : toc.parts has pagination struct (but all
-        # parts seem to be there anyway) and parts property in turn
-        # parts_release_after_date is a list of Parts but has reduced data (no num,
-        # no series, no volume)
         parts_release_after_date = _filter_parts_released_after_date(
-            last_update_date, toc.parts.parts
+            last_update_date, parts
         )
 
         if not parts_release_after_date:
             # not updated
-            return UpdateResult(series_meta, is_updated=False)
-
-        # filling in the series ; necessary to check availability
-        for part in parts_release_after_date:
-            part.series = series_meta
+            return UpdateResult(series, is_updated=False)
 
         available_parts_to_download = [
             part
@@ -467,7 +449,7 @@ async def _create_epub_for_new_parts(
 
         if not available_parts_to_download:
             console.warning(
-                f"All updated parts for '[highlight]{series_meta.raw_data.title}[/]' "
+                f"All updated parts for '[highlight]{series.raw_data.title}[/]' "
                 "have expired!"
             )
             # not updated but the series will still have its tracking data changed
@@ -475,26 +457,19 @@ async def _create_epub_for_new_parts(
             # should be rare (if updating often) ; also first part is preview
             # so even rarer
             return UpdateResult(
-                series=series_meta, is_updated=False, is_force_set_updated=True
+                series=series, is_updated=False, is_force_set_updated=True
             )
 
         console.info(
-            f"The series '[highlight]{series_meta.raw_data.title}[/]' will "
-            "be updated..."
+            f"The series '[highlight]{series.raw_data.title}[/]' will " "be updated..."
         )
 
         # after the to update notification
         if len(available_parts_to_download) != len(parts_release_after_date):
             console.warning(
-                f"Some parts for '[highlight]{series_meta.raw_data.title}[/]' have "
+                f"Some parts for '[highlight]{series.raw_data.title}[/]' have "
                 "expired!"
             )
-
-        # we need the volumes for titles and covers
-        # so fetch the meta to prepare
-        await fill_meta_for_update(session, series_meta, available_parts_to_download)
-        # normally if in this branch parts should not be empty
-        parts = core.all_parts_meta(series_meta)
 
         parts_id_to_download = set(
             (part.part_id for part in available_parts_to_download)
@@ -507,7 +482,7 @@ async def _create_epub_for_new_parts(
         (
             volumes_to_download,
             parts_to_download,
-        ) = core.relevant_volumes_and_parts_for_content(series_meta, simple_part_filter)
+        ) = core.relevant_volumes_and_parts_for_content(series, simple_part_filter)
 
         if is_whole_volume:
             # second pass : filter on the volumes_to_download
@@ -524,7 +499,7 @@ async def _create_epub_for_new_parts(
                 volumes_to_download,
                 parts_to_download,
             ) = core.relevant_volumes_and_parts_for_content(
-                series_meta, whole_volume_part_filter
+                series, whole_volume_part_filter
             )
 
         volumes_for_cover = core.relevant_volumes_for_cover(
@@ -536,59 +511,28 @@ async def _create_epub_for_new_parts(
         )
 
         await core.create_epub(
-            series_meta,
+            series,
             volumes_to_download,
             parts_to_download,
             epub_generation_options,
         )
 
-        return UpdateResult(series_meta, is_updated=True)
-
-
-async def fill_meta_for_update(session, series, parts_to_download):
-    await core.fill_volumes_meta(session, series)
-    volumes = series.volumes
-
-    parts_id_to_download = set((part.part_id for part in parts_to_download))
-
-    # in order not to do too many requests:
-    # first try last 2 volumes => in most update scenarios (if updated frequently),
-    # this should be enough
-    # then do the rest if not sufficient
-    last_2_volumes = volumes[-2:]
-    rest_volumes = volumes[:-2]
-    await core.fill_parts_meta_for_volumes(session, last_2_volumes)
-    for volume in last_2_volumes:
-        for part in volume.parts:
-            # check if has part before the reference date
-            # => means the parts relased after are all there
-            # (except possibly when multiple volumes > 2 published at the same time)
-            if part.part_id in parts_id_to_download:
-                parts_id_to_download.remove(part.part_id)
-        if len(parts_id_to_download) == 0:
-            # found them all
-            break
-    else:
-        # some parts to download have not been found in the last 2 volumes
-        # just give up and request everything
-        await core.fill_parts_meta_for_volumes(session, rest_volumes)
+        return UpdateResult(series, is_updated=True)
 
 
 def _is_released_after_date(date, part_date_s):
+    # all date strings are in ISO format
+    # so no need to parse really
+    # parsing just to be safe
+    # in case different shape like ms part or not (which throws str comp off)
     launch_date = dateutil.parser.parse(part_date_s)
     return launch_date > date
 
 
-def _filter_parts_released_after_date(date, parts_raw):
-    # parts is the raw Part struct from JNC Labs API
+def _filter_parts_released_after_date(date, parts):
     parts_to_download = []
-    for part_raw in parts_raw:
-        # all date strings are in ISO format
-        # so no need to parse really
-        # parsing just to be safe
-        # in case different shape like ms part or not (which throws str comp off)
-        if _is_released_after_date(date, part_raw.launch):
-            # num in volume is unknown at this point
-            parts_to_download.append(model.Part(part_raw, part_raw.legacyId, -1))
+    for part in parts:
+        if _is_released_after_date(date, part.raw_data.launch):
+            parts_to_download.append(part)
 
     return parts_to_download

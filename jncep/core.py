@@ -11,7 +11,6 @@ import time
 from typing import List
 
 from addict import Dict as Addict
-import attr
 import dateutil.parser
 import trio
 
@@ -47,26 +46,6 @@ EventFeed = namedtuple(
 
 class FilePathTooLongError(Exception):
     pass
-
-
-@attr.s
-class IdentifierSpec:
-    type_ = attr.ib()
-    volume_id = attr.ib(None)
-    part_id = attr.ib(None)
-
-    def has_volume(self, volume) -> bool:
-        if self.type_ == spec.SERIES:
-            return True
-
-        return self.volume_id == volume.volume_id
-
-    def has_part(self, part) -> bool:
-        # assumes has_volume already checked with the volume_id
-        if self.type_ in (spec.SERIES, spec.VOLUME):
-            return True
-
-        return self.part_id == part.part_id
 
 
 class JNCEPSession:
@@ -473,17 +452,18 @@ def all_parts_meta(series):
     return [part for volume in series.volumes if volume.parts for part in volume.parts]
 
 
-async def to_part_spec(session, jnc_resource):
+async def to_part_spec(session, series, jnc_resource):
     if jnc_resource.resource_type == jncweb.RESOURCE_TYPE_SERIES:
-        return IdentifierSpec(spec.SERIES)
+        # if here, the URL in resource must have been correct (since series is filled)
+        return spec.IdentifierSpec(spec.SERIES)
 
     elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_VOLUME:
         if jnc_resource.is_new_website:
             # for volume on new website => where is a tuple (series_slug,
             # volume num)
-            series_slug, volume_number = jnc_resource.slug
+            _, volume_number = jnc_resource.slug
 
-            volumes = await fetch_volumes_for_series(session, series_slug)
+            volumes = series.volumes
 
             volume_index = volume_number - 1
             if volume_index not in range(len(volumes)):
@@ -494,121 +474,89 @@ async def to_part_spec(session, jnc_resource):
             volume = volumes[volume_index]
         else:
             volume_slug = jnc_resource.slug
-            volume = await session.api.fetch_data("volumes", volume_slug)
+            for volume in series.volumes:
+                if volume.raw_data.slug == volume_slug:
+                    break
+            else:
+                raise jncweb.BadWebURLError(
+                    f"Incorrect URL for volume: {jnc_resource.url}"
+                )
 
-        return IdentifierSpec(spec.VOLUME, volume.legacyId)
+        return spec.IdentifierSpec(spec.VOLUME, volume.volume_id)
 
     elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_PART:
-        tasks = [
-            partial(session.api.fetch_data, "parts", jnc_resource.slug),
-            partial(session.api.fetch_data, "parts", jnc_resource.slug, "volume"),
-        ]
-        part, volume = await bag(tasks)
-        return IdentifierSpec(spec.PART, volume.legacyId, part.legacyId)
+        part_slug = jnc_resource.slug
+        for volume in series.volumes:
+            for part in volume.parts:
+                if part.raw_data.slug == part_slug:
+                    break
+            else:
+                continue
+            break
+        else:
+            raise jncweb.BadWebURLError(f"Incorrect URL for part: {jnc_resource.url}")
+
+        return spec.IdentifierSpec(spec.PART, volume.volume_id, part.part_id)
 
 
 async def resolve_series(session, jnc_resource):
+    # id or slug to identify the series
     if jnc_resource.resource_type == jncweb.RESOURCE_TYPE_SERIES:
         series_slug = jnc_resource.slug
-        series_raw_data = await session.api.fetch_data("series", series_slug)
+        return series_slug
     elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_VOLUME:
         if jnc_resource.is_new_website:
             series_slug, _ = jnc_resource.slug
-            series_raw_data = await session.api.fetch_data("series", series_slug)
+            return series_slug
         else:
             volume_slug = jnc_resource.slug
             series_raw_data = await session.api.fetch_data(
                 "volumes", volume_slug, "serie"
             )
+            return series_raw_data.legacyId
     elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_PART:
         part_slug = jnc_resource.slug
         series_raw_data = await session.api.fetch_data("parts", part_slug, "serie")
+        return series_raw_data.legacyId
 
+
+async def fetch_meta(session, series_id_or_slug):
+    series_agg = await session.api.fetch_data("series", series_id_or_slug, "aggregate")
+    series_raw_data = series_agg.series
     series = Series(series_raw_data, series_raw_data.legacyId)
-    return series
 
+    volumes = []
+    # maybe could happen there is no volumes attr (will need to check when there is a
+    # new series)
+    if "volumes" in series_agg:
+        for i, volume_with_parts in enumerate(series_agg.volumes):
+            volume_raw_data = volume_with_parts.volume
+            volume_id = volume_raw_data.legacyId
+            volume_num = i + 1
 
-async def fill_meta(session, series, volume_callback=None):
-    await fill_volumes_meta(session, series)
-    volumes = series.volumes
+            volume = Volume(volume_raw_data, volume_id, volume_num)
+            volumes.append(volume)
 
-    await fill_parts_meta_for_volumes(session, volumes, volume_callback)
+            parts = []
+            if "parts" in volume_with_parts:
+                parts_raw_data = volume_with_parts.parts
+                for i, part_raw_data in enumerate(parts_raw_data):
+                    part_id = part_raw_data.legacyId
+                    part_num = i + 1
+                    part = Part(part_raw_data, part_id, part_num)
+                    parts.append(part)
+
+            volume.parts = parts
+            for part in parts:
+                part.volume = volume
+                part.series = series
+
+        series.volumes = volumes
+        for volume in volumes:
+            volume.series = series
 
     # similar to what we got from the original JNC API
     return series
-
-
-async def fetch_volumes_meta(session, series_id):
-    volumes_raw_data = await fetch_volumes_for_series(session, series_id)
-
-    volumes = []
-    for i, volume_raw_data in enumerate(volumes_raw_data):
-        volume_id = volume_raw_data.legacyId
-        volume_num = i + 1
-
-        volume = Volume(volume_raw_data, volume_id, volume_num)
-        volumes.append(volume)
-
-    return volumes
-
-
-async def fill_volumes_meta(session, series):
-    volumes = await fetch_volumes_meta(session, series.series_id)
-    series.volumes = volumes
-    for volume in volumes:
-        volume.series = series
-
-
-async def fill_parts_meta_for_volumes(session, volumes, volume_callback=None):
-    volumes_meta = []
-    tasks = []
-    for volume in volumes:
-        if volume_callback and not volume_callback(volume):
-            continue
-        tasks.append(partial(fetch_parts_meta_for_volume, session, volume.volume_id))
-        volumes_meta.append(volume)
-    all_parts = await bag(tasks)
-
-    for i, parts in enumerate(all_parts):
-        volume = volumes_meta[i]
-
-        volume.parts = parts
-        for part in parts:
-            part.volume = volume
-            part.series = volume.series
-
-
-async def fetch_parts_meta_for_volume(session, volume_id):
-    parts_raw_data = await fetch_parts_for_volume(session, volume_id)
-    parts = []
-
-    for i, part_raw_data in enumerate(parts_raw_data):
-        part_id = part_raw_data.legacyId
-        part_num = i + 1
-        part = Part(part_raw_data, part_id, part_num)
-        parts.append(part)
-
-    return parts
-
-
-async def fetch_volumes_for_series(session, series_id):
-    volumes = [
-        volume
-        async for volume in session.api.paginate(
-            partial(session.api.fetch_data, "series", series_id, "volumes"), "volumes"
-        )
-    ]
-    return volumes
-
-
-async def fetch_parts_for_volume(session, volume_id):
-    parts = [
-        part
-        async for part in session.api.paginate(
-            partial(session.api.fetch_data, "volumes", volume_id, "parts"), "parts"
-        )
-    ]
-    return parts
 
 
 async def fetch_content(session, parts):

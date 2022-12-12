@@ -35,7 +35,8 @@ async def add_track_series(jnc_url, email, password):
         console.status("Check tracking status...")
 
         jnc_resource = jncweb.resource_from_url(jnc_url)
-        series = await core.resolve_series(session, jnc_resource)
+        series_id = await core.resolve_series(session, jnc_resource)
+        series = await core.fetch_meta(session, series_id)
 
         series_url = jncweb.url_from_series_slug(series.raw_data.slug)
         if series_url in tracked_series:
@@ -147,7 +148,8 @@ async def rm_track_series(jnc_url_or_index, email, password):
         async with core.JNCEPSession(email, password) as session:
             console.status("Check tracking status...")
             jnc_resource = jncweb.resource_from_url(jnc_url_or_index)
-            series = await core.resolve_series(session, jnc_resource)
+            series_id = await core.resolve_series(session, jnc_resource)
+            series = await core.fetch_meta(session, series_id)
             series_url = jncweb.url_from_series_slug(series.raw_data.slug)
 
             if series_url not in tracked_series:

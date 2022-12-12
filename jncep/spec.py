@@ -125,6 +125,31 @@ class Interval:
                 return ref_part.num_in_volume <= pn2
 
 
+@attr.s
+class IdentifierSpec:
+    # not really a spec (part:part) => represents a requests for series, vol or part by
+    # id
+    type_ = attr.ib()
+    volume_id = attr.ib(None)
+    part_id = attr.ib(None)
+
+    def has_volume(self, volume) -> bool:
+        # assumes : only check a single series with the spec
+        if self.type_ == SERIES:
+            return True
+
+        return self.volume_id == volume.volume_id
+
+    def has_part(self, part) -> bool:
+        if self.type_ == SERIES:
+            return True
+
+        if self.type_ == VOLUME:
+            return self.volume_id == part.volume.volume_id
+
+        return self.part_id == part.part_id
+
+
 def to_relative_spec_from_part(part):
     volume_number = part.volume.num
     part_number = part.num_in_volume

@@ -40,7 +40,8 @@ def with_cache(f):
             api.__cache = ({}, {})
         cache, events = api.__cache
 
-        key = (*args, *kwargs.items())
+        # first arg is the API instance
+        key = (*args[1:], *kwargs.items())
         while True:
             if key in events:
                 # query running

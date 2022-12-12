@@ -78,36 +78,7 @@ class TrackConfigManager:
         self.config_file_path.parent.mkdir(parents=False, exist_ok=True)
 
 
-async def fill_meta_last_part(session, series):
-    await core.fill_volumes_meta(session, series)
-    volumes = series.volumes
-
-    if volumes:
-        # at first just the last 2 : I saw some empty volumes are added with no parts
-        # the last 2 should make sure the last part is in there
-        last_2_volumes = volumes[-2:]
-        await core.fill_parts_meta_for_volumes(session, last_2_volumes)
-        for volume in last_2_volumes:
-            if volume.parts:
-                # has a part
-                return
-
-        # just in case handle the case no part in last 2
-        # should be pretty rare to pass through here
-        # one at a time
-        # TODO or all at once (since parallel) ?
-        # go backwards since the later volume are more likely to be requested for update
-        # so cached already
-        rest_volumes = volumes[-3::-1]
-        for volume in rest_volumes:
-            await core.fill_parts_meta_for_volumes(session, [volume])
-            if volume.parts:
-                # has a part
-                return
-
-
 async def track_series(session, tracked_series, series):
-    await fill_meta_last_part(session, series)
     parts = core.all_parts_meta(series)
 
     # record current last part + name
@@ -123,22 +94,17 @@ async def track_series(session, tracked_series, series):
             style="success",
         )
     else:
-        last_part_number = parts[-1]
-
         # for the tracking, need the last date: almost always the date of the last part
         # but for some series with volumes released in parallel, can be different
         # see GH #28, also update._update_tracking_data
         # so do additional work for this
 
-        # TOC below part in API
-        toc = await session.api.fetch_data("parts", last_part_number.part_id, "toc")
-        # toc.parts has pagination struct (but all parts seem to be there anyway)
-        # ie lastPage = true
-        # TODO assert?
-        last_part_date_raw = max(toc.parts.parts, key=lambda x: x.launch)
+        parts = core.all_parts_meta(series)
+        last_part_date = max(parts, key=lambda x: x.raw_data.launch)
 
+        last_part_number = parts[-1]
         pn = spec.to_relative_spec_from_part(last_part_number)
-        pdate = last_part_date_raw.launch
+        pdate = last_part_date.raw_data.launch
 
         part_date = dateutil.parser.parse(pdate)
         part_date_formatted = part_date.strftime("%b %d, %Y")
@@ -170,7 +136,8 @@ async def sync_series_forward(session, follows, tracked_series, is_delete):
     del_synced = []
 
     async def do_track(jnc_resource):
-        series = await core.resolve_series(session, jnc_resource)
+        series_id = await core.resolve_series(session, jnc_resource)
+        series = await core.fetch_meta(session, series_id)
         await track_series(session, tracked_series, series)
 
         series_url = jncweb.url_from_series_slug(series.raw_data.slug)
@@ -209,8 +176,8 @@ async def sync_series_backward(session, follows, tracked_series, is_delete):
 
     async def do_follow(jnc_resource):
         console.info(f"Fetch metadata for '{jnc_resource}'...")
-        series = await core.resolve_series(session, jnc_resource)
-        series_id = series.series_id
+        series_id = await core.resolve_series(session, jnc_resource)
+        series = await core.fetch_meta(session, series_id)
         title = series.raw_data.title
 
         console.info(f"Follow '{title}'...")
