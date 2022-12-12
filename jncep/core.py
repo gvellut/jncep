@@ -452,7 +452,7 @@ def all_parts_meta(series):
     return [part for volume in series.volumes if volume.parts for part in volume.parts]
 
 
-async def to_part_spec(session, series, jnc_resource):
+async def to_part_spec(series, jnc_resource):
     if jnc_resource.resource_type == jncweb.RESOURCE_TYPE_SERIES:
         # if here, the URL in resource must have been correct (since series is filled)
         return spec.IdentifierSpec(spec.SERIES)
@@ -462,9 +462,7 @@ async def to_part_spec(session, series, jnc_resource):
             # for volume on new website => where is a tuple (series_slug,
             # volume num)
             _, volume_number = jnc_resource.slug
-
             volumes = series.volumes
-
             volume_index = volume_number - 1
             if volume_index not in range(len(volumes)):
                 raise jncweb.BadWebURLError(
@@ -526,6 +524,7 @@ async def fetch_meta(session, series_id_or_slug):
     series = Series(series_raw_data, series_raw_data.legacyId)
 
     volumes = []
+    series.volumes = volumes
     # maybe could happen there is no volumes attr (will need to check when there is a
     # new series)
     if "volumes" in series_agg:
@@ -534,28 +533,21 @@ async def fetch_meta(session, series_id_or_slug):
             volume_id = volume_raw_data.legacyId
             volume_num = i + 1
 
-            volume = Volume(volume_raw_data, volume_id, volume_num)
+            volume = Volume(volume_raw_data, volume_id, volume_num, series=series)
             volumes.append(volume)
 
             parts = []
+            volume.parts = parts
             if "parts" in volume_with_parts:
                 parts_raw_data = volume_with_parts.parts
                 for i, part_raw_data in enumerate(parts_raw_data):
                     part_id = part_raw_data.legacyId
                     part_num = i + 1
-                    part = Part(part_raw_data, part_id, part_num)
+                    part = Part(
+                        part_raw_data, part_id, part_num, volume=volume, series=series
+                    )
                     parts.append(part)
 
-            volume.parts = parts
-            for part in parts:
-                part.volume = volume
-                part.series = series
-
-        series.volumes = volumes
-        for volume in volumes:
-            volume.series = series
-
-    # similar to what we got from the original JNC API
     return series
 
 
