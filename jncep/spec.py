@@ -34,17 +34,17 @@ class Single:
         vn, _ = self.spec
         return volume.num == vn
 
-    def has_part(self, ref_part) -> bool:
+    def has_part(self, part) -> bool:
         if self.type_ == SERIES:
             return True
 
-        if not self.has_volume(ref_part.volume):
+        if not self.has_volume(part.volume):
             return False
         if self.type_ == VOLUME:
             return True
 
         _, pn = self.spec
-        return ref_part.num_in_volume == pn
+        return part.num_in_volume == pn
 
     def normalize_and_verify(self, series):
         if self.type_ == SERIES:
@@ -94,42 +94,42 @@ class Interval:
         vn2, _ = self.end.spec
         return vn <= volume.num <= vn2
 
-    def has_part(self, ref_part) -> bool:
+    def has_part(self, part) -> bool:
         if self.start == START_OF_SERIES:
             # spec is a tuple (see comment in has_volume)
             vn2, pn2 = self.end.spec
-            if ref_part.volume.num < vn2:
+            if part.volume.num < vn2:
                 return True
 
-            if ref_part.volume.num > vn2:
+            if part.volume.num > vn2:
                 return False
 
             # same volume
             if pn2 == END_OF_VOLUME:
                 return True
 
-            return ref_part.num_in_volume <= pn2
+            return part.num_in_volume <= pn2
 
         # spec is a tuple
         vn, pn = self.start.spec
         if self.end == END_OF_SERIES:
-            if ref_part.volume.num > vn:
+            if part.volume.num > vn:
                 return True
 
-            if ref_part.volume.num < vn:
+            if part.volume.num < vn:
                 return False
 
             # same volume
             if pn == START_OF_VOLUME:
                 return True
 
-            return ref_part.num_in_volume >= pn
+            return part.num_in_volume >= pn
 
         vn2, pn2 = self.end.spec
-        if vn < ref_part.volume.num < vn2:
+        if vn < part.volume.num < vn2:
             return True
 
-        if ref_part.volume.num < vn or ref_part.volume.num > vn2:
+        if part.volume.num < vn or part.volume.num > vn2:
             return False
 
         if vn == vn2:
@@ -137,24 +137,24 @@ class Interval:
                 if pn2 == END_OF_VOLUME:
                     return True
 
-                return ref_part.num_in_volume <= pn2
+                return part.num_in_volume <= pn2
             else:
                 if pn2 == END_OF_VOLUME:
-                    return ref_part.num_in_volume >= pn
+                    return part.num_in_volume >= pn
 
-                return pn <= ref_part.num_in_volume <= pn2
+                return pn <= part.num_in_volume <= pn2
         else:
-            if ref_part.volume.num == vn:
+            if part.volume.num == vn:
                 if pn == START_OF_VOLUME:
                     return True
 
-                return ref_part.num_in_volume >= pn
+                return part.num_in_volume >= pn
             else:
-                assert ref_part.volume.num == vn2
+                assert part.volume.num == vn2
                 if pn2 == END_OF_VOLUME:
                     return True
 
-                return ref_part.num_in_volume <= pn2
+                return part.num_in_volume <= pn2
 
     def normalize_and_verify(self, series):
         if self.start != START_OF_SERIES:
