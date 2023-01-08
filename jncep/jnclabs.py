@@ -16,11 +16,11 @@ CDN_IMG_URL_BASE = "https://d2dq7ifhe7bu0f.cloudfront.net"
 
 LABS_API_URL_BASE = "https://labs.j-novel.club"
 LABS_API_PATH_BASE = "/app/v1"
-COMMON_LABS_API_PARAMS = {"format": "json"}
+LABS_API_COMMON_PARAMS = {"format": "json"}
 
 LEGACY_API_URL_BASE = "https://api.j-novel.club"
 LEGACY_API_PATH_BASE = "/api"
-COMMON_LEGACY_API_HEADERS = {
+LEGACY_API_COMMON_HEADERS = {
     "accept": "application/json",
     "content-type": "application/json",
 }
@@ -103,13 +103,13 @@ class JNCLabsAPI:
         self.labs_api_session = asks.Session(
             LABS_API_URL_BASE,
             connections=labs_api_connections,
-            headers=COMMON_LEGACY_API_HEADERS,
+            headers=LEGACY_API_COMMON_HEADERS,
         )
 
         self.legacy_api_session = asks.Session(
             LEGACY_API_URL_BASE,
             connections=legacy_api_connections,
-            headers=COMMON_LEGACY_API_HEADERS,
+            headers=LEGACY_API_COMMON_HEADERS,
         )
 
         # CDN_IMG_URL_BASE not really necessary
@@ -135,7 +135,7 @@ class JNCLabsAPI:
     async def login(self, email, password):
         path = f"{LABS_API_PATH_BASE}/auth/login"
         payload = {"login": email, "password": password, "slim": True}
-        params = {**COMMON_LABS_API_PARAMS}
+        params = {**LABS_API_COMMON_PARAMS}
 
         r = await self.labs_api_session.post(
             path=path,
@@ -196,7 +196,7 @@ class JNCLabsAPI:
         if not params:
             params = {}
 
-        params.update(COMMON_LABS_API_PARAMS)
+        params.update(LABS_API_COMMON_PARAMS)
         if skip is not None:
             params.update(skip=skip)
 
@@ -231,9 +231,9 @@ class JNCLabsAPI:
     ):
         auth = {"authorization": self.token}
         if not headers:
-            headers = COMMON_LEGACY_API_HEADERS
+            headers = LEGACY_API_COMMON_HEADERS
         else:
-            headers = {**COMMON_LEGACY_API_HEADERS, **headers}
+            headers = {**LEGACY_API_COMMON_HEADERS, **headers}
 
         path = f"{LEGACY_API_PATH_BASE}{path}"
 
