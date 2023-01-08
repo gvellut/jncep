@@ -16,6 +16,10 @@ START_OF_SERIES = "START_OF_SERIES"
 END_OF_SERIES = "END_OF_SERIES"
 
 
+class SpecError(Exception):
+    pass
+
+
 @attr.s
 class Single:
     type_ = attr.ib()
@@ -41,6 +45,34 @@ class Single:
 
         _, pn = self.spec
         return ref_part.num_in_volume == pn
+
+    def normalize_and_verify(self, series):
+        if self.type_ == SERIES:
+            return
+        elif self.type_ == VOLUME:
+            original_spec = self.spec
+            self.spec = _normalize_volume(self.spec, series)
+            if 1 <= self.spec <= len(series.volumes):
+                return
+            raise SpecError(f"Bad spec for series: Volume '{original_spec}' not found")
+        # part
+        vn, pn = self.spec
+        original_spec = self.spec
+
+        vn = _normalize_volume(vn, series)
+        self.spec = (vn, pn)
+        if vn < 1 or vn > len(series.volumes):
+            raise SpecError(
+                f"Bad spec for series: Volume '{original_spec[0]}' not found"
+            )
+
+        volume = series.volumes[vn - 1]
+        if 1 <= pn <= len(volume.parts):
+            return
+        raise SpecError(
+            f"Bad spec for series: Part '{original_spec[0]}.{original_spec[1]}' "
+            "not found"
+        )
 
 
 @attr.s
@@ -124,6 +156,81 @@ class Interval:
 
                 return ref_part.num_in_volume <= pn2
 
+    def normalize_and_verify(self, series):
+        if self.start != START_OF_SERIES:
+            vn, pn = self.start.spec
+            original_spec1 = self.start.spec
+            vn = _normalize_volume(vn, series)
+            self.start.spec = (vn, pn)
+
+            if vn < 1 or vn > len(series.volumes):
+                raise SpecError(
+                    f"Bad left spec for series: Volume '{original_spec1[0]}' not found"
+                )
+
+            if pn != START_OF_VOLUME:
+                volume = series.volumes[vn - 1]
+                if pn < 1 or pn > len(volume.parts):
+                    raise SpecError(
+                        "Bad left spec for series: Part "
+                        f"'{original_spec1[0]}.{original_spec1[1]}' "
+                        "not found"
+                    )
+
+        if self.end != END_OF_SERIES:
+            vn, pn = self.end.spec
+            original_spec2 = self.end.spec
+            vn = _normalize_volume(vn, series)
+            self.end.spec = (vn, pn)
+
+            if vn < 1 or vn > len(series.volumes):
+                raise SpecError(
+                    f"Bad right spec for series: Volume '{original_spec2[0]}' "
+                    "not found"
+                )
+
+            if pn != END_OF_VOLUME:
+                volume = series.volumes[vn - 1]
+                if pn < 1 or pn > len(volume.parts):
+                    raise SpecError(
+                        "Bad right spec for series: Part "
+                        f"'{original_spec2[0]}.{original_spec2[1]}' "
+                        "not found"
+                    )
+
+        # already tested that both sides are valid in the series
+        # test if left <= right
+        if self.start != START_OF_SERIES and self.end != END_OF_SERIES:
+            vn1, pn1 = self.start.spec
+            vn2, pn2 = self.end.spec
+
+            if vn2 > vn1:
+                return
+
+            if vn2 < vn1:
+                raise SpecError(
+                    f"Bad spec for series: Volume '{original_spec2[0]}' is before "
+                    f"Volume '{original_spec1[0]}'"
+                )
+
+            # vn1 == vn2:
+            if pn1 != START_OF_VOLUME and pn2 != END_OF_VOLUME:
+                if pn2 < pn1:
+                    raise SpecError(
+                        "Bad spec for series: "
+                        f"Part '{original_spec2[0]}.{original_spec2[1]}' "
+                        "is before "
+                        f"Part '{original_spec1[0]}.{original_spec1[1]}'"
+                    )
+
+
+def _normalize_volume(vn, series):
+    # handle negative volume numbers
+    if vn < 0:
+        # numerotation of volumes in spec start at 1
+        return len(series.volumes) + vn + 1
+    return vn
+
 
 @attr.s
 class IdentifierSpec:
@@ -172,7 +279,7 @@ def _analyze_volume_part_specs(part_specs):
     if len(sides) > 2:
         raise ValueError("Multiple ':' in part specs")
 
-    reg = r"^\s*(\d+)(?:\.(\d+))?\s*$"
+    reg = r"^\s*(-?\d+)(?:\.(\d+))?\s*$"
     if len(sides) == 1:
         # not a range: single part
         m = re.match(reg, sides[0])

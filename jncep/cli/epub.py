@@ -67,6 +67,7 @@ async def generate_epub(
         if part_spec:
             console.info(f"Use part specification '[highlight]{part_spec}[/]'")
             part_spec_analyzed = spec.analyze_part_specs(part_spec)
+            part_spec_analyzed.normalize_and_verify(series)
         else:
             part_spec_analyzed = await core.to_part_spec(series, jnc_resource)
 
