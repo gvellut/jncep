@@ -3,6 +3,7 @@ import logging
 import click
 
 from . import __version__ as JNCEP_VERSION
+from .cli.config import config_manage
 from .cli.epub import generate_epub
 from .cli.track import track_series
 from .cli.update import update_tracked
@@ -30,6 +31,7 @@ def main(is_debug):
 main.add_command(generate_epub)
 main.add_command(track_series)
 main.add_command(update_tracked)
+main.add_command(config_manage)
 
 if __name__ == "__main__":
     main()

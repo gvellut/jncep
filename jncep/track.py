@@ -8,16 +8,15 @@ from addict import Dict as Addict
 from atomicwrites import atomic_write
 import dateutil.parser
 
-from . import core, jncweb, spec, utils
+from . import config, core, jncweb, spec, utils
 from .trio_utils import bag
 
 logger = logging.getLogger(__package__)
 console = utils.getConsole()
 
+TRACK_FILE_NAME = "tracked.json"
 
-# TODO change => in App folder for windows
-# TODO config file there too (login, passsword) as requested by someone no GH tracker
-DEFAULT_CONFIG_FILEPATH = Path.home() / ".jncep" / "tracked.json"
+DEFAULT_CONFIG_FILEPATH = config.config_dir() / TRACK_FILE_NAME
 
 
 class TrackConfigManager:
