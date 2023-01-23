@@ -3,8 +3,9 @@ import logging
 import click
 
 from . import options
-from .. import core, jncweb, spec, utils
+from .. import core, jncweb, spec, track, utils
 from ..trio_utils import coro
+from ..utils import tryint
 from .base import CatchAllExceptionsCommand
 
 logger = logging.getLogger(__name__)
@@ -16,7 +17,7 @@ console = utils.getConsole()
     help="Generate EPUB files for J-Novel Club pre-pub novels",
     cls=CatchAllExceptionsCommand,
 )
-@click.argument("jnc_url", metavar="JNOVEL_CLUB_URL", required=True)
+@click.argument("jnc_url_or_index", metavar="JNOVEL_CLUB_URL", required=True)
 @options.login_option
 @options.password_option
 @options.output_option
@@ -38,7 +39,7 @@ console = utils.getConsole()
 @options.css_option
 @coro
 async def generate_epub(
-    jnc_url,
+    jnc_url_or_index,
     email,
     password,
     part_spec,
@@ -58,6 +59,22 @@ async def generate_epub(
         is_not_replace_chars,
         style_css_path,
     )
+
+    index = tryint(jnc_url_or_index)
+    if index is not None:
+        track_manager = track.TrackConfigManager()
+        tracked_series = track_manager.read_tracked_series()
+
+        index0 = index - 1
+        if index0 < 0 or index0 >= len(tracked_series):
+            console.warning(f"Index '{index}' is not valid! (Use 'track list')")
+            return
+        series_url_list = list(tracked_series.keys())
+        jnc_url = series_url_list[index0]
+        series_name = tracked_series[jnc_url].name
+        console.info(f"Resolve to series '[highlight]{series_name}'[/]")
+    else:
+        jnc_url = jnc_url_or_index
 
     async with core.JNCEPSession(email, password) as session:
         jnc_resource = jncweb.resource_from_url(jnc_url)
