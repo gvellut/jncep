@@ -23,12 +23,11 @@ def config_list():
         return
 
     if not config_dir.is_dir:
-        console.warning(f"not a directory: [highlight]{config_dir}[/]")
+        console.warning(f"Not a directory: [highlight]{config_dir}[/]")
 
     console.info(f"Config directory: [highlight]{config_dir}[/]")
     files = list(config_dir.iterdir())
     for f_ in files:
-        # no subdirectory
         if f_.is_file():
             if f_.name == track.TRACK_FILE_NAME:
                 console.info(f"Found tracking file: [highlight]{f_.name}[/]")
@@ -55,11 +54,20 @@ def _config_file_summary(file_path):
         console.warning("No [JNCEP] section")
         return
     jncep_s = config_options[config.TOP_SECTION]
-    # ignorer other non listed in OPTIONS
-    for option in config.OPTIONS.values():
+    # ignore other non listed in OPTIONS
+    for option in config.list_config_options():
         if option not in jncep_s:
             continue
         console.info(f"Option '[highlight]{option}[/]': {jncep_s[option]}")
+
+
+@config_manage.command(
+    name="set", help="Set configuration option", cls=CatchAllExceptionsCommand
+)
+@click.argument("option", metavar="OPTION", required=True)
+@click.argument("value", metavar="VALUE", required=True)
+def set_option(option, value):
+    config.set_config_option(option, value)
 
 
 @config_manage.command(
