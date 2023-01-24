@@ -1,3 +1,5 @@
+import shutil
+
 import click
 
 from .. import config, track, utils
@@ -19,7 +21,7 @@ def config_list():
     config_dir = config.config_dir()
     if not config_dir.exists():
         console.warning("No suitable configuration directory found!")
-        console.info(f"The recommanded location is: [highlight]{config_dir}[/]")
+        console.info(f"The recommended location is: [highlight]{config_dir}[/]")
         return
 
     if not config_dir.is_dir:
@@ -58,7 +60,7 @@ def _config_file_summary(file_path):
     for option in config.list_config_options():
         if option not in jncep_s:
             continue
-        console.info(f"Option '[highlight]{option}[/]': {jncep_s[option]}")
+        console.info(f"Option: [highlight]{option}[/] => [green]{jncep_s[option]}[/]")
 
 
 @config_manage.command(
@@ -67,13 +69,89 @@ def _config_file_summary(file_path):
 @click.argument("option", metavar="OPTION", required=True)
 @click.argument("value", metavar="VALUE", required=True)
 def set_option(option, value):
-    config.set_config_option(option, value)
+    config_manager = config.ConfigManager(config.DEFAULT_CONFIG_FILEPATH)
+    config_options = config_manager.read_config_options()
+    try:
+        option = config.set_config_option(config_options, option, value)
+        console.info(
+            f"Option '[highlight]{option}[/]' set to '[highlight]{value}[/]'",
+            style="success",
+        )
+    except config.InvalidOptionError:
+        raise
+    config_manager.write_config_options(config_options)
+
+
+@config_manage.command(
+    name="unset", help="Delete configuration option", cls=CatchAllExceptionsCommand
+)
+@click.argument("option", metavar="OPTION", required=True)
+def unset_option(option):
+    config_manager = config.ConfigManager(config.DEFAULT_CONFIG_FILEPATH)
+    config_options = config_manager.read_config_options()
+    try:
+        option, is_deleted = config.unset_config_option(config_options, option)
+        if not is_deleted:
+            console.warning(f"Option '[highlight]{option}[/]' not set in config")
+        else:
+            console.info(f"Option '[highlight]{option}[/]' unset", style="success")
+    except config.InvalidOptionError:
+        raise
+    config_manager.write_config_options(config_options)
+
+
+@config_manage.command(
+    name="init", help="Create configuration file", cls=CatchAllExceptionsCommand
+)
+def init_config():
+    config_filepath = config.DEFAULT_CONFIG_FILEPATH
+    if config_filepath.exists():
+        console.warning(f"Config file alread exists: [highlight]{config_filepath}[/]")
+        return
+
+    config_manager = config.ConfigManager(config_filepath)
+    # will create empty config file
+    config_options = config_manager.read_config_options()
+    config_manager.write_config_options(config_options)
+
+    console.info(
+        f"New empty config file created: [highlight]{config_filepath}[/]",
+        style="success",
+    )
 
 
 @config_manage.command(
     name="migrate",
-    help="Migrate to standard configuration folder",
+    help=f"Migrate to standard configuration folder [{config.APPDATA_CONFIG_DIR}]",
     cls=CatchAllExceptionsCommand,
 )
 def config_migrate():
-    console.info(f"Configuration will be migrated to {config.APPDATA_CONFIG_DIR}")
+    current_config_dir = config.config_dir()
+    if current_config_dir == config.APPDATA_CONFIG_DIR:
+        console.warning(
+            f"Configuration is already in: [highlight]{config.APPDATA_CONFIG_DIR}[/]"
+        )
+        return
+
+    migrate_config_dir = config.APPDATA_CONFIG_DIR
+
+    # configuration is in legacy_config_dir : migrate
+
+    migrate_config_dir.mkdir(parents=True)
+
+    from_track_filepath = current_config_dir / track.TRACK_FILE_NAME
+    if from_track_filepath.exists():
+        to_track_filepath = migrate_config_dir / track.TRACK_FILE_NAME
+        shutil.copy2(from_track_filepath, to_track_filepath)
+
+    from_config_filepath = current_config_dir / config.CONFIG_FILE_NAME
+    if from_config_filepath.exists():
+        to_config_filepath = migrate_config_dir / config.CONFIG_FILE_NAME
+        shutil.copy2(from_config_filepath, to_config_filepath)
+
+    console.info(
+        "[success]"
+        f"The configuration is now in: [highlight]{migrate_config_dir}[/]"
+        "[/] "
+        f"You may delete: [highlight]{current_config_dir}[/]"
+    )

@@ -188,7 +188,7 @@ Just like the login and password, other options that are shared between the `epu
 - JNCEP_CONTENT
 - JNCEP_NOREPLACE
 
-The environment variables which set flags (JNCEP_BYVOLUME and below in the list above) should have a value like `1`.
+The environment variables which set flags (JNCEP_BYVOLUME and below in the list above) should have one of the following values: "1", "true", "t", "yes", "y" or "on". The value can be in upper case. For unsetting, the simplest is to remove the environment variable (the default value for all those flags is "False"). If a value is passed, it should be one of the following: "0", "false", "f", "no", "n" or "off".
 
 ## track
 

@@ -25,6 +25,8 @@ class UnrecoverableJNCEPError(click.ClickException):
         self.exc_info = exc_info
 
     def show(self):
+        console.stop_status()
+
         emoji = ""
         if console.is_advanced():
             emoji = "\u274C "

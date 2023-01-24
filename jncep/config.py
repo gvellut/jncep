@@ -1,23 +1,22 @@
-from collections import defaultdict
 from configparser import ConfigParser
+from io import StringIO
+import os
 from pathlib import Path
 
-from addict import Dict as Addict
-from appdirs import user_config_dir
-from click import Context
+from click import Context, get_app_dir
 
 LEGACY_CONFIG_DIR = Path.home() / ".jncep"
-# appdata on Windows but will be somthing relevant to the platform for other OS's
-APPDATA_CONFIG_DIR = Path(user_config_dir("jncep", roaming=True))
+# appdata on Windows but will be something relevant to the platform for other OS's
+APPDATA_CONFIG_DIR = Path(get_app_dir("jncep", roaming=True))
 
 
 def config_dir():
     if APPDATA_CONFIG_DIR.exists():
-        # default if exists
+        # default if exists (if LEGACY_CONFIG_DIR is still there => will be ignored)
         return APPDATA_CONFIG_DIR
     elif LEGACY_CONFIG_DIR.exists():
         return LEGACY_CONFIG_DIR
-    # none exists => will be created
+    # none exists => will need to be created
     return APPDATA_CONFIG_DIR
 
 
@@ -26,6 +25,8 @@ CONFIG_FILE_NAME = "config.ini"
 DEFAULT_CONFIG_FILEPATH = config_dir() / CONFIG_FILE_NAME
 
 TOP_SECTION = "JNCEP"
+
+ENVVAR_PREFIX = "JNCEP_"
 
 
 # TODO error hierarchy with JNCEPError at the top
@@ -42,9 +43,8 @@ def list_config_options():
         envvars = []
         _extract_envvars(info, envvars)
         envvars = list(set(envvars))
-        prefix = "JNCEP_"
         no_prefix_envvars = sorted(
-            [ev[len(prefix) :] for ev in envvars if ev.startswith(prefix)]
+            [ev[len(ENVVAR_PREFIX) :] for ev in envvars if ev.startswith(ENVVAR_PREFIX)]
         )
         return no_prefix_envvars
 
@@ -62,18 +62,43 @@ def _extract_envvars(info, acc):
                         _extract_envvars(i, acc)
 
 
-def set_config_option(option, value):
+def set_config_option(config, option, value):
+    option = _validate_option(option)
+    config[TOP_SECTION][option] = value
+    # returns options since its case may have been modified
+    return option
+
+
+def unset_config_option(config, option):
+    option = _validate_option(option)
+    is_deleted = config.remove_option(None, option)
+    return option, is_deleted
+
+
+def _validate_option(option):
+    option = option.upper()
     allowed_options = list_config_options()
-    if option not in allowed_options:
+    if option.upper() not in allowed_options:
         raise InvalidOptionError(
             f"Option '{option}' is not valid. Valid options are: "
-            f"{', '.joint(allowed_options)}"
+            f"{', '.join(allowed_options)}"
         )
+    return option
 
-    config_manager = ConfigManager(DEFAULT_CONFIG_FILEPATH)
-    config = config_manager.read_config_options()
-    config[TOP_SECTION][option] = value
-    config_manager.write_config_options(config)
+
+def apply_options_from_config():
+    # sets the envvar corresponding to the options in config file
+    # needs to be launched before the main click command is launched
+    # click will pick up the envvars, in the same way as if they were set outside
+    config_manager = ConfigManager()
+    config_options = config_manager.read_config_options()
+    for option, value in config_options[TOP_SECTION].items():
+        option_envvar = f"{ENVVAR_PREFIX}{option}"
+        # priority to envvars set outside the config file
+        # in that case, ignore the value in the config file
+        if os.environ.get(option_envvar) is not None:
+            continue
+        os.environ[option_envvar] = value
 
 
 class ConfigManager:
@@ -89,7 +114,10 @@ class ConfigManager:
     def read_config_options(self):
         config = JNCEPConfigParser()
         try:
-            config.read(self.config_file_path, encoding="utf-8")
+            with open(self.config_file_path, "r", encoding="utf-8") as f:
+                # add a section transparently to conform to a .ini file
+                config_string = f"[{TOP_SECTION}]\n" + f.read()
+                config.read_string(config_string)
         except FileNotFoundError:
             # TODO verif error class
             # first run ? just return the parser (which will be empty)
@@ -97,21 +125,19 @@ class ConfigManager:
         return config
 
     def write_config_options(self, config):
+        buffer = StringIO()
+        config.write(buffer)
+        buffer.seek(0)
+        config_str = buffer.read()
+        # remove section
+        config_str = config_str.replace(f"[{TOP_SECTION}]", "").lstrip()
         with open(self.config_file_path, "w", encoding="utf-8") as f:
-            config.write(f)
+            f.write(config_str)
 
 
 class JNCEPConfigParser(ConfigParser):
     def __init__(self):
-        # TOP_SECTION will be automatically created
+        # TOP_SECTION will be automatically created if new file
         super().__init__(default_section=TOP_SECTION)
+        # will return the keys in upper case (instead of default lower)
         self.optionxform = lambda x: x.upper()
-
-    # TODO suppr ?
-    def as_dict(self):
-        dictionary = defaultdict(dict)
-        for section in self.sections():
-            for option in self.options(section):
-                dictionary[section][option] = self.get(section, option)
-
-        return Addict(dictionary)

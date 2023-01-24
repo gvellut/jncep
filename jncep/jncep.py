@@ -7,9 +7,12 @@ from .cli.config import config_manage
 from .cli.epub import generate_epub
 from .cli.track import track_series
 from .cli.update import update_tracked
-from .utils import module_info, setup_logging
+from .config import apply_options_from_config, DEFAULT_CONFIG_FILEPATH
+from .utils import getConsole, module_info, setup_logging
 
 logger = logging.getLogger(module_info())
+
+console = getConsole()
 
 
 @click.group(
@@ -34,4 +37,11 @@ main.add_command(update_tracked)
 main.add_command(config_manage)
 
 if __name__ == "__main__":
+    try:
+        apply_options_from_config()
+    except Exception:
+        console.warning(
+            "There was an error reading the configuration at: "
+            f"{DEFAULT_CONFIG_FILEPATH}. Continuing..."
+        )
     main()
