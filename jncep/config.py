@@ -34,7 +34,7 @@ class InvalidOptionError(Exception):
     pass
 
 
-def list_config_options():
+def list_available_config_options():
     # to prevent import loops
     from .jncep import main
 
@@ -77,7 +77,7 @@ def unset_config_option(config, option):
 
 def _validate_option(option):
     option = option.upper()
-    allowed_options = list_config_options()
+    allowed_options = list_available_config_options()
     if option.upper() not in allowed_options:
         raise InvalidOptionError(
             f"Option '{option}' is not valid. Valid options are: "
@@ -113,16 +113,18 @@ class ConfigManager:
 
     def read_config_options(self):
         config = JNCEPConfigParser()
-        try:
-            with open(self.config_file_path, "r", encoding="utf-8") as f:
-                # add a section transparently to conform to a .ini file
-                config_string = f"[{TOP_SECTION}]\n" + f.read()
-                config.read_string(config_string)
-        except FileNotFoundError:
-            # TODO verif error class
-            # first run ? just return the parser (which will be empty)
-            pass
-        return config
+        if not self.config_file_path.exists():
+            # first run ? just return the parser (which will be empty except for the
+            # default section)
+            return config
+
+        with open(self.config_file_path, "r", encoding="utf-8") as f:
+            # add a section transparently to conform to a .ini file
+            # it is also the default section in the parser so will be
+            # there even if
+            config_string = f"[{TOP_SECTION}]\n" + f.read()
+            config.read_string(config_string)
+            return config
 
     def write_config_options(self, config):
         buffer = StringIO()

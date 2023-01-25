@@ -52,12 +52,10 @@ def _track_file_summary(file_path):
 def _config_file_summary(file_path):
     config_manager = config.ConfigManager(file_path)
     config_options = config_manager.read_config_options()
-    if config.TOP_SECTION not in config_options:
-        console.warning("No [JNCEP] section")
-        return
+    # TOP_SECTION is always there (default section)
     jncep_s = config_options[config.TOP_SECTION]
     # ignore other non listed in OPTIONS
-    for option in config.list_config_options():
+    for option in config.list_available_config_options():
         if option not in jncep_s:
             continue
         console.info(f"Option: [highlight]{option}[/] => [green]{jncep_s[option]}[/]")
@@ -106,7 +104,7 @@ def unset_option(option):
 def init_config():
     config_filepath = config.DEFAULT_CONFIG_FILEPATH
     if config_filepath.exists():
-        console.warning(f"Config file alread exists: [highlight]{config_filepath}[/]")
+        console.warning(f"Config file already exists: [highlight]{config_filepath}[/]")
         return
 
     config_manager = config.ConfigManager(config_filepath)
