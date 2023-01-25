@@ -16,7 +16,6 @@ def config_manage():
 @config_manage.command(
     name="show", help="List configuration details", cls=CatchAllExceptionsCommand
 )
-# TODO option to hide / show option values ?
 def config_list():
     config_dir = config.config_dir()
     if not config_dir.exists():
@@ -67,17 +66,23 @@ def _config_file_summary(file_path):
 @click.argument("option", metavar="OPTION", required=True)
 @click.argument("value", metavar="VALUE", required=True)
 def set_option(option, value):
-    config_manager = config.ConfigManager(config.DEFAULT_CONFIG_FILEPATH)
+    config_manager = config.ConfigManager()
     config_options = config_manager.read_config_options()
-    try:
-        option = config.set_config_option(config_options, option, value)
-        console.info(
-            f"Option '[highlight]{option}[/]' set to '[highlight]{value}[/]'",
-            style="success",
-        )
-    except config.InvalidOptionError:
-        raise
+
+    option = config.set_config_option(config_options, option, value)
+    console.info(
+        f"Option '[highlight]{option}[/]' set to '[highlight]{value}[/]'",
+        style="success",
+    )
+
+    is_needs_created = not config_manager.config_file_path.exists()
+    # if config file didn't exist, this will create it
     config_manager.write_config_options(config_options)
+    if is_needs_created:
+        # mention the creation to user
+        console.info(
+            f"Config file created at: [highlight]{config_manager.config_file_path}[/]"
+        )
 
 
 @config_manage.command(
@@ -85,16 +90,23 @@ def set_option(option, value):
 )
 @click.argument("option", metavar="OPTION", required=True)
 def unset_option(option):
-    config_manager = config.ConfigManager(config.DEFAULT_CONFIG_FILEPATH)
+    config_manager = config.ConfigManager()
+
+    if not config_manager.config_file_path.exists():
+        console.warning(
+            f"No config file found at: [highlight]{config_manager.config_file_path}[/]"
+        )
+        return
+
     config_options = config_manager.read_config_options()
-    try:
-        option, is_deleted = config.unset_config_option(config_options, option)
-        if not is_deleted:
-            console.warning(f"Option '[highlight]{option}[/]' not set in config")
-        else:
-            console.info(f"Option '[highlight]{option}[/]' unset", style="success")
-    except config.InvalidOptionError:
-        raise
+
+    option, is_deleted = config.unset_config_option(config_options, option)
+    if not is_deleted:
+        console.warning(f"Option '[highlight]{option}[/]' not set in config")
+        return
+    else:
+        console.info(f"Option '[highlight]{option}[/]' unset", style="success")
+
     config_manager.write_config_options(config_options)
 
 
@@ -133,7 +145,7 @@ def config_migrate():
 
     migrate_config_dir = config.APPDATA_CONFIG_DIR
 
-    # configuration is in legacy_config_dir : migrate
+    # configuration is in legacy_config_dir => migrate to appdir
 
     migrate_config_dir.mkdir(parents=True)
 

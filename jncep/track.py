@@ -74,7 +74,7 @@ class TrackConfigManager:
         return converted_b
 
     def _ensure_config_dirpath_exists(self):
-        self.config_file_path.parent.mkdir(parents=False, exist_ok=True)
+        self.config_file_path.parent.mkdir(parents=True, exist_ok=True)
 
 
 async def track_series(session, tracked_series, series):

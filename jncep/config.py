@@ -127,6 +127,9 @@ class ConfigManager:
             return config
 
     def write_config_options(self, config):
+        # make sure the folder exists
+        self._ensure_config_dirpath_exists()
+
         buffer = StringIO()
         config.write(buffer)
         buffer.seek(0)
@@ -135,6 +138,9 @@ class ConfigManager:
         config_str = config_str.replace(f"[{TOP_SECTION}]", "").lstrip()
         with open(self.config_file_path, "w", encoding="utf-8") as f:
             f.write(config_str)
+
+    def _ensure_config_dirpath_exists(self):
+        self.config_file_path.parent.mkdir(parents=True, exist_ok=True)
 
 
 class JNCEPConfigParser(ConfigParser):
