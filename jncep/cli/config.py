@@ -53,11 +53,28 @@ def _config_file_summary(file_path):
     config_options = config_manager.read_config_options()
     # TOP_SECTION is always there (default section)
     jncep_s = config_options[config.TOP_SECTION]
-    # ignore other non listed in OPTIONS
-    for option in config.list_available_config_options():
-        if option not in jncep_s:
+    allowed_options = config.list_available_config_options()
+    for option in jncep_s:
+        # ignore others that are unknown to JNCEP
+        if option not in allowed_options:
             continue
         console.info(f"Option: [highlight]{option}[/] => [green]{jncep_s[option]}[/]")
+
+
+@config_manage.command(
+    name="list", help="List configuration options", cls=CatchAllExceptionsCommand
+)
+def list_options():
+    options = config.list_available_config_options()
+
+    # for alignment
+    max_len = 0
+    for option in options:
+        max_len = max(max_len, len(option))
+
+    for option, help_ in options.items():
+        # TODO arrange
+        console.info(f"[highlight]{option:<{max_len + 5}}[/][green]{help_}[/]")
 
 
 @config_manage.command(

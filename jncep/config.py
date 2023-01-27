@@ -40,20 +40,25 @@ def list_available_config_options():
 
     with Context(main) as ctx:
         info = ctx.to_info_dict()
-        envvars = []
+        envvars = {}
         _extract_envvars(info, envvars)
-        envvars = list(set(envvars))
         no_prefix_envvars = sorted(
-            [ev[len(ENVVAR_PREFIX) :] for ev in envvars if ev.startswith(ENVVAR_PREFIX)]
+            [
+                (ev[len(ENVVAR_PREFIX) :], help_)
+                for ev, help_ in envvars.items()
+                if ev.startswith(ENVVAR_PREFIX)
+            ],
+            key=lambda x: x[0],
         )
+        no_prefix_envvars = dict(no_prefix_envvars)
         return no_prefix_envvars
 
 
 def _extract_envvars(info, acc):
-    for k, v in info.items():
-        if k == "envvar" and v is not None:
-            acc.append(v)
-        else:
+    if "envvar" in info and info["envvar"]:
+        acc[info["envvar"]] = info.get("help", "")
+    else:
+        for v in info.values():
             if isinstance(v, dict):
                 _extract_envvars(v, acc)
             elif isinstance(v, list):
@@ -77,7 +82,7 @@ def unset_config_option(config, option):
 
 def _validate_option(option):
     option = option.upper()
-    allowed_options = list_available_config_options()
+    allowed_options = list_available_config_options().keys()
     if option.upper() not in allowed_options:
         raise InvalidOptionError(
             f"Option '{option}' is not valid. Valid options are: "
