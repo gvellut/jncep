@@ -67,14 +67,19 @@ def _config_file_summary(file_path):
 def list_options():
     options = config.list_available_config_options()
 
-    # for alignment
+    rows = [(f"[highlight]{o}[/]", f"[green]{h}[/]") for o, h in options.items()]
+
+    # option column: adjust with max margin of 5
     max_len = 0
     for option in options:
         max_len = max(max_len, len(option))
+    column_width = max_len + 5
 
-    for option, help_ in options.items():
-        # TODO arrange
-        console.info(f"[highlight]{option:<{max_len + 5}}[/][green]{help_}[/]")
+    console.info_table(rows, maxcolwidths=(column_width, 40))
+
+
+def _wrap(wrapper, text):
+    return "\n".join(wrapper.wrap(text))
 
 
 @config_manage.command(
@@ -179,6 +184,6 @@ def config_migrate():
     console.info(
         "[success]"
         f"The configuration is now in: [highlight]{migrate_config_dir}[/]"
-        "[/] "
+        "[/]\n"
         f"You may delete: [highlight]{current_config_dir}[/]"
     )

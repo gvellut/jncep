@@ -9,6 +9,7 @@ import unicodedata
 from addict import Dict as Addict
 import dateutil.parser
 import rich.console
+from rich.table import Column, Table
 import rich.theme
 
 logger = logging.getLogger(__name__)
@@ -148,6 +149,22 @@ class RichConsole:
     def is_advanced(self):
         return not self.console.legacy_windows
 
+    def info_table(self, rows, maxcolwidths):
+        if not rows:
+            return
+        num_cols = len(rows[0])
+        columns = [Column() for _ in range(num_cols)]
+
+        if maxcolwidths:
+            for i, c in enumerate(columns):
+                c.width = maxcolwidths[i]
+
+        table = Table.grid(*columns)
+        for row in rows:
+            table.add_row(*[str(c) for c in row])
+
+        self.info(table)
+
 
 class DebugConsole:
     def __init__(self):
@@ -173,6 +190,10 @@ class DebugConsole:
 
     def is_advanced(self):
         return False
+
+    def info_table(self, rows, maxcolwidths):
+        for row in rows:
+            self.info("|".join([str(c) for c in row]))
 
 
 class RootConsole:
@@ -209,6 +230,9 @@ class RootConsole:
 
     def is_advanced(self):
         return self.console.is_advanced()
+
+    def info_table(self, rows, maxcolwidths=None):
+        self.console.info_table(rows, maxcolwidths)
 
 
 ROOT_CONSOLE = RootConsole()
