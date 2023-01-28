@@ -44,7 +44,7 @@ class TrackConfigManager:
             return Addict({})
 
     def write_tracked_series(self, tracked):
-        self._ensure_config_dirpath_exists()
+        utils.ensure_directory_exists(self.config_file_path.parent)
         with atomic_write(str(self.config_file_path.resolve()), overwrite=True) as f:
             f.write(json.dumps(tracked, sort_keys=True, indent=2))
 
@@ -72,9 +72,6 @@ class TrackConfigManager:
             converted_b[new_series_url] = value
 
         return converted_b
-
-    def _ensure_config_dirpath_exists(self):
-        self.config_file_path.parent.mkdir(parents=True, exist_ok=True)
 
 
 async def track_series(session, tracked_series, series):

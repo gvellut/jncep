@@ -2,6 +2,7 @@ from collections import deque
 from datetime import timezone
 import inspect
 import logging
+from pathlib import Path
 import re
 import sys
 import unicodedata
@@ -88,6 +89,10 @@ def compare_date_isoformat(d1, d2):
     elif date1 < date2:
         return -1
     return 1
+
+
+def ensure_directory_exists(path):
+    Path(path).mkdir(parents=True, exist_ok=True)
 
 
 def deep_freeze(data):

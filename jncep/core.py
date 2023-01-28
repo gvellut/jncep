@@ -98,6 +98,8 @@ class JNCEPSession:
 async def create_epub(series, volumes, parts, epub_generation_options):
     book_details = process_series(series, volumes, parts, epub_generation_options)
 
+    utils.ensure_directory_exists(epub_generation_options.output_dirpath)
+
     if epub_generation_options.is_extract_content:
         await extract_content(parts, epub_generation_options)
 

@@ -22,10 +22,11 @@ output_option = click.option(
     "-o",
     "--output",
     "output_dirpath",
-    type=click.Path(exists=True, resolve_path=True, file_okay=False, writable=True),
+    type=click.Path(resolve_path=True, file_okay=False, writable=True),
     default=os.getcwd(),
     envvar="JNCEP_OUTPUT",
-    help="Existing folder to write the output [default: The current directory]",
+    help="Folder to write the output files. It will be created if it doesn't exist "
+    "[default: The current directory]",
 )
 
 byvolume_option = click.option(
