@@ -28,9 +28,10 @@ Report issues at https://github.com/gvellut/jncep/issues
 
 The `jncep` tool must be launched on the command-line. It has 3 commands:
 
-- `epub`: To simply generate an EPUB file
-- `track`: To tell the tool that a series is of interest
-- `update`: To generate EPUB files for newly updated series of interest
+- [`epub`](#epub): To simply generate an EPUB file
+- [`track`](#track): To tell the tool that a series is of interest
+- [`update`](#update): To generate EPUB files for newly updated series of interest
+- [`config`](#config): To manage an optional configuration file
 
 ## J-Novel Club account credentials
 
@@ -168,7 +169,7 @@ In order to get the volume number to use for the `--parts` option for those seri
 
 ### Rare Unicode characters
 
-Originally, the tool copied into the EPUB the text obtained from J-Novel Club as is, simply adding a bit of styling through an external CSS. Depending on the font used by the ePub reader, some rare Unicode characters did not display. I noticed it in a series where the string used as the scene separator is [♱](https://emojipedia.org/emoji/%E2%99%B1/) (East Syriac Cross): My Kobo eBook reader would not show it with any of the fonts present on the device. Using [Crimson Text](https://www.typewolf.com/site-of-the-day/fonts/crimson-text), the font used by J-Novel Club for its web reader, gave the same result. It turns out it was only rendered in the web reader by a fallback font, which on my Mac is Menlo (a monospace font by Apple). This issue also happened with the Calibre EPUB reader. However, the iBooks reader app on macOS displayed the character.
+Originally, the tool copied into the EPUB the text obtained from J-Novel Club as is. Depending on the font used by the ePub reader, some rare Unicode characters did not display. I noticed it in a series where the string used as the scene separator is [♱](https://emojipedia.org/emoji/%E2%99%B1/) (East Syriac Cross): My Kobo eBook reader would not show it with any of the fonts present on the device. Using [Crimson Text](https://www.typewolf.com/site-of-the-day/fonts/crimson-text), the font used by J-Novel Club for its web reader, gave the same result. It turns out it was only rendered in the web reader by a fallback font, which on my Mac is Menlo (a monospace font by Apple). This issue also happened with the Calibre EPUB reader. However, the iBooks reader app on macOS displayed the character.
 
 To solve this issue (without having to mess with fonts), by default, this specific character is now replaced with "\*\*". This behaviour can be overridden with the `-n` switch. Both the characters to replace and the replacement string are hardcoded. If another character is unable to display properly, [an issue can be filed](https://github.com/gvellut/jncep/issues) and it will be processed by the tool in a later version.
 
@@ -190,6 +191,18 @@ Just like the login and password, other options that are shared between the `epu
 
 The environment variables which set flags (JNCEP_BYVOLUME and below in the list above) should have one of the following values: "1", "true", "t", "yes", "y" or "on". The value can be in upper case. For unsetting, the simplest is to remove the environment variable (the default value for all those flags is "False"). If a value is passed, it should be one of the following: "0", "false", "f", "no", "n" or "off".
 
+### Configuration file
+
+Configuration options corresponding to the environment variables (but without the `JNCEP_` prefix) can also be set in a configuration file. [See the paragraph about it](#config) further in this page.
+
+### Priority order for option values
+
+The priority order for option values is as follows:
+1. If a value is passed on the command-line, it has the highest priority
+2. If no value is passed, the value is taken from an environment variable if present
+3. After that, the value is taken from the configuration file
+4. Some options have a default value defined in the code: If no value has been explicitly passed using one of the 3 methods above, that default value will be used. Some options have no default values and are instead required: If no value is passed using one of the 3 methods just described, it will raise an error.
+
 ## track
 
 This command is used to manage series to track. It has 4 subcommands:
@@ -202,7 +215,14 @@ In the cases of `add` and `rm`, a URL link to a part or volume or series on the 
 
 ### Tracking configuration
 
-The tracking is performed by updating the local config file `<home>/.jncep/tracked.json` (where `<home>` is either `/Users/<user>` on macOS, `C:\Users\<user>` on Windows or `/home/<user>` on Linux). That file will be created by the tool if it doesn't exist.
+The tracking is performed by updating a local config file called `tracked.json` and located inside the configuration folder that is either:
+- `/Users/<user>/Library/Application Support/jncep` on macOS
+- `C:\Users\<user>\AppData\Roaming\jncep` on Windows
+- `/home/<user>/.config/jncep` on Linux
+
+That file will be created by the tool if it doesn't exist.
+
+Note: On `jncep v41` and before, the configuration folder was at a different location (and will be kept there by default if you have upgraded `jncep` from such a version). See the paragaph about the [Configuration folder](#configuation-folder) in the documentation on the `config` command.
 
 The `tracked.json` file can be updated manually with a text editor if really needed but should generally be left alone (or the `jncep` could malfunction).
 
@@ -379,7 +399,20 @@ The `update` command can be called in the background from launchd (on macOS) or 
 
 There is no notification built in the `jncep update` command but the text output can be combined with other tools to make something suitable. If there are updates, the `jncep update` command outputs something like `2 series sucessfully updated!`, which can be processed by another tool do create a notification.
 
+## config
+
+This command is used to manage configuration options, as an alternative to passing values on the command line or through environment variables.
+
+### Configuration folder
+
+The configuation files are located inside the configuration folder that is either:
+- `/Users/<user>/Library/Application Support/jncep` on macOS
+- `C:\Users\<user>\AppData\Roaming\jncep` on Windows
+- `/home/<user>/.config/jncep` on Linux
+
+**Note**: On `jncep v41` and before, the configuration folder was created at `<HOME>/.jncep` (where `<HOME>` is either `/Users/<user>` on macOS, `C:\Users\<user>` on Windows or `/home/<user>` on Linux). If the folder was created at that location because such a version was previously used, it will stay there even if you update to a later version. The command `config migrate` can be used for migrating to the new location. The command `config show` can be used to make sure where the configuration folder is located.
+
 # TODO (maybe)
 
 - self-contained executable for macOS and Windows with PyInstaller
-- config file for account
+- simple GUI
