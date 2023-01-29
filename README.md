@@ -131,6 +131,12 @@ To get the URL to pass as argument, you should first go to the series page on th
 - For volumes: Click on the volume you are interested in. The URL in the browser will change to something like `https://j-novel.club/series/redefining-the-meta-at-vrmmo-academy#volume-2`.
 - For parts: Click on one of the available parts below a specific volume. The web reader will then open and the URL will be something like `https://j-novel.club/read/redefining-the-meta-at-vrmmo-academy-volume-1-part-1`.
 
+It is also possible to pass the index of the series shown using the [`track list`](#list-tracked-series) command:
+
+```console
+jncep epub 5
+```
+
 #### Range of parts
 
 The following command will create a single EPUB file with Parts 5 to 10 of Volume 1 of the 'Tearmoon Empire' novel (as long as the pre-pubs have not expired) in the current directory:
@@ -297,7 +303,7 @@ That subcommand doesn't need a login or password (it only reads the local `track
 
 Withouth the `--details` option, only the index and the series titles are shown.
 
-The index inside the `[..]` can be used in the `rm` subcommand instead of the URL.
+The index inside the `[..]` can be used in the `rm` subcommand instead of the URL, as well as the `epub` command.
 
 #### Sync
 
