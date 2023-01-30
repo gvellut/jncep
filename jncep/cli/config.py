@@ -67,7 +67,7 @@ def _config_file_summary(file_path):
 def list_options():
     options = config.list_available_config_options()
 
-    rows = [(f"[highlight]{o}[/]", f"[green]{h}[/]") for o, h in options.items()]
+    rows = [(f"[highlight]{o}[/]", h) for o, h in options.items()]
 
     # option column: adjust with max margin of 5
     max_len = 0

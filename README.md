@@ -228,7 +228,7 @@ The tracking is performed by updating a local config file called `tracked.json` 
 
 That file will be created by the tool if it doesn't exist.
 
-Note: On `jncep v41` and before, the configuration folder was at a different location (and will be kept there by default if you have upgraded `jncep` from such a version). See the paragaph about the [Configuration folder](#configuation-folder) in the documentation on the `config` command.
+**Note**: On `jncep v41` and before, the configuration folder was at a different location (and will be kept there by default if you have upgraded `jncep` from such a version). See the paragaph about the [Configuration folder](#configuation-folder) in the documentation on the `config` command.
 
 The `tracked.json` file can be updated manually with a text editor if really needed but should generally be left alone (or the `jncep` could malfunction).
 
@@ -407,7 +407,17 @@ There is no notification built in the `jncep update` command but the text output
 
 ## config
 
-This command is used to manage configuration options, as an alternative to passing values on the command line or through environment variables.
+This command is used to manage configuration options, as an alternative to passing values on the command line or through environment variables. 
+
+It has 6 subcommands:
+- `show`: Show some general info about the configuration (folder, actual configuration files, configuration values)
+- `list`: Shows available options that can be set
+- `set`: Set the value of an option
+- `unset`:  Unset an option
+- `init`: Create an empty `config.ini` file (for manual editing)
+- `migrate`: Migrate configuration files to the post-v41 configuration folder
+
+The configuration options are stored inside a `config.ini` file in the configuration folder. The file essentially uses the `.ini` file format for properties, except it doesn't support the `[...]` headers. Using the `set`, commands, the file will be created as needed.
 
 ### Configuration folder
 
@@ -416,7 +426,127 @@ The configuation files are located inside the configuration folder that is eithe
 - `C:\Users\<user>\AppData\Roaming\jncep` on Windows
 - `/home/<user>/.config/jncep` on Linux
 
-**Note**: On `jncep v41` and before, the configuration folder was created at `<HOME>/.jncep` (where `<HOME>` is either `/Users/<user>` on macOS, `C:\Users\<user>` on Windows or `/home/<user>` on Linux). If the folder was created at that location because such a version was previously used, it will stay there even if you update to a later version. The command `config migrate` can be used for migrating to the new location. The command `config show` can be used to make sure where the configuration folder is located.
+**Note**: On `jncep v41` and before, the configuration folder was created at `<HOME>/.jncep` (where `<HOME>` is either `/Users/<user>` on macOS, `C:\Users\<user>` on Windows or `/home/<user>` on Linux). If the folder was created at that location because such a version was previously used, it will stay there even if you update to a later version. The command `config migrate` can be used for migrating to the new location. The command `config show` can be used to make sure of the location of the configuration folder.
+
+The folder contains both the `tracked.json` file used by the `track` and `update` commands, as well as a `config.ini` file that contains general configuration values used by all commands.
+
+### show
+
+The `show` subcommand shows some general info about the configuration:
+
+```console
+jncep config show
+```
+
+This will display something like:
+
+```console
+Config directory: C:\Users\gvellut\AppData\Roaming\jncep
+Found config file: config.ini
+Option: OUTPUT => output_test2
+Option: BYVOLUME => Y
+Found tracking file: tracked.json
+13 series tracked
+```
+
+### list
+
+The `list` subcommand shows available options that can be set:
+
+```console
+jncep config list
+```
+
+This will display something like:
+
+```console
+BYVOLUME       Flag to indicate that the parts of      
+               different volumes shoud be output in    
+               separate EPUBs
+CONTENT        Flag to indicate that the raw content of
+               the parts should be extracted into the  
+               output folder
+CSS            Path to custom CSS file for the EPUBs   
+EMAIL          Login email for J-Novel Club account
+...
+```
+
+They are the same options than can be set using environment variables (except there is no `JNCEP_` prefix).
+
+### set
+
+The `set` subcommand can be used to set the value for a configuration option:
+
+```console
+jncep config set EMAIL "jnclogin@aol.com"
+```
+
+This will display something like:
+
+```console
+Option 'EMAIL' set to 'jnclogin@aol.com'
+```
+
+The `config.ini` file will be created if needed and will contain the following line:
+
+```
+EMAIL = jnclogin@aol.com
+```
+
+**Warning**: When using that command from the command-line, the shell may need some characters to be escaped. The rules vary depending on what shell is used. Review the output to check if the option was set correctly.
+
+An alternative to using this command (as well as `unset`) is to edit the `config.ini` file with a text editor. The file must be saved in the **UTF-8 encoding**.
+
+### unset
+
+The `unset` subcommand can be used to remove a configuration option:
+
+```console
+jncep config unset OUTPUT
+```
+
+This will display something like:
+
+```console
+Option 'OUTPUT' unset
+```
+
+This will delete the `OUTPUT` option from the configuration file.
+
+### init
+
+The `init` subcommand creates an empty `config.ini` file:
+
+```console
+jncep config init
+```
+
+This will display something like:
+
+```console
+New empty config file created: C:\Users\gvellut\AppData\Roaming\jncep\config.ini
+```
+
+Then the file can be edited manually (or using the `set` and `unset` commands). After editing, the file must be saved using the **UTF-8 encoding**.
+
+### migrate
+
+The `migrate` subcommand can be used to migrate cconfiguration files to the post-v41 standard configuration folder:
+
+```console
+jncep config migrate
+```
+
+This will display something like:
+
+```console
+The configuration is now in: C:\Users\gvellut\AppData\Roaming\jncep
+You may delete: C:\Users\gvellut\.jncep
+```
+
+It creates the new folder and performs a simple copy of the files.
+
+**Note**: `jncep` will keep functioning with the `<HOME>/.jncep` folder so it is not actually necessary to run this command.
 
 # TODO (maybe)
 
