@@ -19,14 +19,14 @@ def config_manage():
 def config_list():
     config_dir = config.config_dir()
     if not config_dir.exists():
-        console.warning("No suitable configuration directory found!")
+        console.warning("No configuration folder found!")
         console.info(f"The recommended location is: [highlight]{config_dir}[/]")
         return
 
     if not config_dir.is_dir:
-        console.warning(f"Not a directory: [highlight]{config_dir}[/]")
+        console.warning(f"Not a folder: [highlight]{config_dir}[/]")
 
-    console.info(f"Config directory: [highlight]{config_dir}[/]")
+    console.info(f"Config folder: [highlight]{config_dir}[/]")
     files = list(config_dir.iterdir())
     for f_ in files:
         if f_.is_file():
@@ -53,6 +53,9 @@ def _config_file_summary(file_path):
     config_options = config_manager.read_config_options()
     # TOP_SECTION is always there (default section)
     jncep_s = config_options[config.TOP_SECTION]
+    if len(jncep_s) == 0:
+        console.info("No option set")
+
     allowed_options = config.list_available_config_options()
     for option in jncep_s:
         # ignore others that are unknown to JNCEP
@@ -158,6 +161,13 @@ def init_config():
     cls=CatchAllExceptionsCommand,
 )
 def config_migrate():
+    if not config.has_config_dir():
+        console.warning("No configuration folder found!")
+        console.info(
+            f"The recommended location is: [highlight]{config.APPDATA_CONFIG_DIR}[/]"
+        )
+        return
+
     current_config_dir = config.config_dir()
     if current_config_dir == config.APPDATA_CONFIG_DIR:
         console.warning(

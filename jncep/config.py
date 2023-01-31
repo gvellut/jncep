@@ -20,6 +20,10 @@ def config_dir():
     return APPDATA_CONFIG_DIR
 
 
+def has_config_dir():
+    return config_dir().exists()
+
+
 CONFIG_FILE_NAME = "config.ini"
 
 DEFAULT_CONFIG_FILEPATH = config_dir() / CONFIG_FILE_NAME
