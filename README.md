@@ -43,6 +43,33 @@ Those credentials can be passed directly on the command line using the `--email`
 jncep epub --email user@example.com --password "foo%bar666!" https://j-novel.club/series/tearmoon-empire
 ```
 
+### Passing the credentials indirectly
+
+It is also possible to pass the credentials indirectly in one of 2 ways:
+- configuration file
+- environment variables
+
+Then it is possible to omit the `--email` and `--passaword` options.
+
+#### Configuration file
+
+It is possible to set the login and password using the configuration file:
+
+```console
+jncep config set EMAIL "user@example.com"
+jncep config set PASSWORD "foo%bar666!"
+```
+
+Then, the same command as above can be simply launched as follows:
+
+```console
+jncep epub https://j-novel.club/series/tearmoon-empire
+```
+
+See the [general documentation on managing the configuration](#config).
+
+#### Environment variables
+
 Optionally, the __JNCEP_EMAIL__ and __JNCEP_PASSWORD__ env vars can be set instead of passing the `--email` and `--password` arguments when launching the commands. For example, if they are set in the .bashrc in the following way:
 
 ```console
@@ -56,7 +83,7 @@ Then, the same command as above can be simply launched as follows:
 jncep epub https://j-novel.club/series/tearmoon-empire
 ```
 
-In order to make them more readable, all the examples in the rest of this documentation will assume that the env vars are set.
+See the [general documentation on environment variables](#environment-variables-1).
 
 ### Credentials when signing in at J-Novel Club with Google or Facebook
 
@@ -68,7 +95,7 @@ Here is what needs to be done:
 - Click on the __Password__ section on the left hand side.
 - Set a password on that screen.
 
-Then the login email of the Facebook or Google account, together with that new password, can be used as credentials for the `jncep` tool.
+Then the login email of the Facebook or Google account, together with that new password, can be used as credentials for the `jncep` tool, either directly or using one of the indirect methods.
 
 ## epub
 
@@ -183,23 +210,49 @@ To solve this issue (without having to mess with fonts), by default, this specif
 
 The default CSS used by the tool and embedded in the generated EPUB files can be found [in the repository](https://raw.githubusercontent.com/gvellut/jncep/master/jncep/res/style.css). It is possible to download it and customize it. Then you can tell the `epub` command to use your own version by passing the `-t/--css` option with the path to your custom CSS as value.
 
+### Configuration file
+
+Some configuration options can be set in a configuration file. Most of them are options that are shared between the `epub` and `update` subcommands. 
+
+The configuration options are:
+
+- EMAIL
+- PASSWORD
+- OUTPUT
+- CSS
+- BYVOLUME
+- IMAGES
+- CONTENT
+- NOREPLACE
+- USE_EVENTS (used only for the `update` command. See the [section about it](#events-feed))
+
+The options that set flags (BYVOLUME and below in the list above) should have one of the following values: "1", "true", "t", "yes", "y" or "on". The value can be in upper case. For unsetting, the simplest is to remove the environment variable (the default value for all those flags is "False"). If a value is passed, it should be one of the following: "0", "false", "f", "no", "n" or "off".
+
+To set an option, use the `jncep config set` command. Foe example:
+
+```console
+jncep config set OUTPUT "/user/gvellut/documents/jncepubs"
+```
+
+This will add a value for the OUTPUT configuration option. When the `jncep epub` command is run, the value of the `--output` option will be taken from the configuration file, unless the `--output` option is actually present on the command-line, in which case it will take priority.
+
+[See the paragraph about managing the configuration](#config) further in this page.
+
 ### Environment variables
 
-Just like the login and password, other options that are shared between the `epub` and `update` subcommands can be set using an environment variable. These are:
-- JNCEP_EMAIL
+Just like the login and password, other options can also be set using an environment variable. They are the same as the configuration options, but with a `JNCEP_` prefix:
+
+For example:
 - JNCEP_PASSWORD
 - JNCEP_OUTPUT
 - JNCEP_CSS
-- JNCEP_BYVOLUME
-- JNCEP_IMAGES
-- JNCEP_CONTENT
-- JNCEP_NOREPLACE
+- and so on ...
 
-The environment variables which set flags (JNCEP_BYVOLUME and below in the list above) should have one of the following values: "1", "true", "t", "yes", "y" or "on". The value can be in upper case. For unsetting, the simplest is to remove the environment variable (the default value for all those flags is "False"). If a value is passed, it should be one of the following: "0", "false", "f", "no", "n" or "off".
+The specifig way of setting them will depend on your shell. For example, with Bash:
 
-### Configuration file
-
-Configuration options corresponding to the environment variables (but without the `JNCEP_` prefix) can also be set in a configuration file. [See the paragraph about it](#config) further in this page.
+```console
+export JNCEP_BYVOLUME=1
+```
 
 ### Priority order for option values
 
@@ -221,14 +274,9 @@ In the cases of `add` and `rm`, a URL link to a part or volume or series on the 
 
 ### Tracking configuration
 
-The tracking is performed by updating a local config file called `tracked.json` and located inside the configuration folder that is either:
-- `/Users/<user>/Library/Application Support/jncep` on macOS
-- `C:\Users\<user>\AppData\Roaming\jncep` on Windows
-- `/home/<user>/.config/jncep` on Linux
+The tracking is performed by updating a local config file called `tracked.json` and located inside the configuration folder. The location of the folder will vary depending on the OS. See the [section dedicated to the configuration](#configuration-folder) for more details.
 
-That file will be created by the tool if it doesn't exist.
-
-**Note**: On `jncep v41` and before, the configuration folder was at a different location (and will be kept there by default if you have upgraded `jncep` from such a version). See the paragaph about the [Configuration folder](#configuation-folder) in the documentation on the `config` command.
+The configuration folder, as well the `tracked.json` file will be created by the tool if they don't exist.
 
 The `tracked.json` file can be updated manually with a text editor if really needed but should generally be left alone (or the `jncep` could malfunction).
 
@@ -264,7 +312,7 @@ The `add` subcommand sets up tracking for a series by passing a URL to either th
 jncep track add https://j-novel.club/series/tearmoon-empire
 ```
 
-An entry with key "https://j-novel.club/series/tearmoon-empire" will be added to the `tracked.json` file. Note that no Epub is generated by this command: Use the `epub` command to generate a file for the parts released until now.
+An entry with key `https://j-novel.club/series/tearmoon-empire` will be added to the `tracked.json` file. Note that no Epub is generated by this command: Use the `epub` command to generate a file for the parts released until now.
 
 #### Untracking
 
@@ -426,9 +474,9 @@ The configuation files are located inside the configuration folder that is eithe
 - `C:\Users\<user>\AppData\Roaming\jncep` on Windows
 - `/home/<user>/.config/jncep` on Linux
 
-**Note**: On `jncep v41` and before, the configuration folder was created at `<HOME>/.jncep` (where `<HOME>` is either `/Users/<user>` on macOS, `C:\Users\<user>` on Windows or `/home/<user>` on Linux). If the folder was created at that location because such a version was previously used, it will stay there even if you update to a later version. The command `config migrate` can be used for migrating to the new location. The command `config show` can be used to make sure of the location of the configuration folder.
+**Note**: On `jncep v41` and before, the configuration folder was created at `<HOME>/.jncep` (where `<HOME>` is either `/Users/<user>` on macOS, `C:\Users\<user>` on Windows or `/home/<user>` on Linux). If the folder was created at that location because such a version was previously used, it will stay there and `jncep` should keep working even if you update to a later version. The command `config migrate` can be used for migrating to the new location. The command `config show` can be used to make sure of the location of the configuration folder.
 
-The folder contains both the `tracked.json` file used by the `track` and `update` commands, as well as a `config.ini` file that contains general configuration values used by all commands.
+The folder contains both the `tracked.json` file used by the [`track`](#track) and [`update`](#update) commands, as well as the `config.ini` file that contains general configuration values used by all commands.
 
 ### show
 
