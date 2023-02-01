@@ -212,9 +212,7 @@ The default CSS used by the tool and embedded in the generated EPUB files can be
 
 ### Configuration file
 
-Some configuration options can be set in a configuration file. Most of them are options that are shared between the `epub` and `update` subcommands. 
-
-The configuration options are:
+Some configuration options can be set in a configuration file. Here are the options that are used by the `epub` subcommand (and also by `update`):
 
 - EMAIL
 - PASSWORD
@@ -224,11 +222,10 @@ The configuration options are:
 - IMAGES
 - CONTENT
 - NOREPLACE
-- USE_EVENTS (used only for the `update` command. See the [section about it](#events-feed))
 
 The options that set flags (BYVOLUME and below in the list above) should have one of the following values: "1", "true", "t", "yes", "y" or "on". The value can be in upper case. For unsetting, the simplest is to remove the environment variable (the default value for all those flags is "False"). If a value is passed, it should be one of the following: "0", "false", "f", "no", "n" or "off".
 
-To set an option, use the `jncep config set` command. Foe example:
+To set an option, use the `jncep config set` command. For example:
 
 ```console
 jncep config set OUTPUT "/user/gvellut/documents/jncepubs"
@@ -440,12 +437,15 @@ It can be useful for when a new series starts publishing: It can be set as Follo
 
 If you have a lot of followed series and update often, the flag `--use-events` can be used. In that case, the `update` command will first check the events feed provided by J-Novel Club: It includes all the part releases and can be used to know which series will need to be downloaded. With this flag, the tool saves time by not checking all the series individually.
 
-### Environment variables
+### Configuration & environment variables
 
-The `update` subcommand has the additional environment variable:
+The `update` subcommand understands the additional configuration option related:
+- USE_EVENTS
+
+It should have a value like `1` or `y` if set.
+
+It is also available as an environment variable:
 - JNCEP_USE_EVENTS
-
-It should have a value like `1` if set.
 
 ### Automation
 
@@ -459,13 +459,38 @@ This command is used to manage configuration options, as an alternative to passi
 
 It has 6 subcommands:
 - `show`: Show some general info about the configuration (folder, actual configuration files, configuration values)
-- `list`: Shows available options that can be set
+- `list`: Show available options that can be set
 - `set`: Set the value of an option
-- `unset`:  Unset an option
+- `unset`: Unset an option
 - `init`: Create an empty `config.ini` file (for manual editing)
 - `migrate`: Migrate configuration files to the post-v41 configuration folder
 
-The configuration options are stored inside a `config.ini` file in the configuration folder. The file essentially uses the `.ini` file format for properties, except it doesn't support the `[...]` headers. Using the `set`, commands, the file will be created as needed.
+The configuration options are stored inside a `config.ini` file in the configuration folder. The file essentially uses the `.ini` file format for properties, except it doesn't support the `[...]` headers. When using the `set` command, the file will be created if needed.
+
+### Options
+
+To get some help about the `config` command, just launch with the `--help` option:
+
+```console
+~$ jncep config --help
+Usage: jncep config [OPTIONS] COMMAND [ARGS]...
+
+  Manage configuration
+
+Options:
+  --help  Show this message and exit.
+
+Commands:
+  init     Create configuration file
+  list     List configuration options
+  migrate  Migrate to standard configuration folder...
+  set      Set configuration option
+  show     List configuration details
+  unset    Delete configuration option
+(jncep) C:\Users\gvellut\Documents\projects\
+```
+
+In turn, the subcommands can be called with `--help` to get details about their arguments.
 
 ### Configuration folder
 
@@ -553,7 +578,7 @@ The `unset` subcommand can be used to remove a configuration option:
 jncep config unset OUTPUT
 ```
 
-This will display something like:
+It will display something like:
 
 ```console
 Option 'OUTPUT' unset
@@ -592,7 +617,7 @@ The configuration is now in: C:\Users\gvellut\AppData\Roaming\jncep
 You may delete: C:\Users\gvellut\.jncep
 ```
 
-It creates the new folder and performs a simple copy of the files.
+It creates the new folder and performs a simple copy of the files present in the old directory.
 
 **Note**: `jncep` will keep functioning with the `<HOME>/.jncep` folder so it is not actually necessary to run this command.
 
