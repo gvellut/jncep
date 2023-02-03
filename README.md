@@ -49,7 +49,9 @@ It is also possible to pass the credentials indirectly in one of 2 ways:
 - configuration file
 - environment variables
 
-Then it is possible to omit the `--email` and `--passaword` options.
+Then it is possible to omit the `--email` and `--password` options.
+
+In order to make them more readable, all the examples in the rest of this documentation will assume that the credentials have been passed through one of the two methods above.
 
 #### Configuration file
 
@@ -186,6 +188,8 @@ Here are examples of valid values for the argument:
 - `1:3` => Part 1 of volume 1 to the last part of volume 3
 - `2.7:` => Part 7 of volume 2 until the last part in the series 
 - `:3.5` => From the first part in the series until part 5 of volume 3
+- `-1` => The last volume
+- `-1.3:` => From the third part of the last volume until the last part in the series
 - `:` => The whole series
 - `2` => All the parts of volume 2
 
@@ -200,6 +204,8 @@ However, for some series, the volume numbering scheme is different. For example:
 
 In order to get the volume number to use for the `--parts` option for those series, you should go to the series page on J-Nobel Club, then click on the volume you want. Then the URL in the brower will change with `#volume-xx` added at the end. This number `xx` can be used for `jncep`. For example, for *Ascendance of a Bookworm Part 4 Volume 8*, the URL in the browser will change to `https://j-novel.club/series/ascendance-of-a-bookworm#volume-20`. It means you should use `20` as the volume number for the command.
 
+Alternatively, a negative volume counts from the last volume: `-1` is the last volume, `-2` the penultimate, etc ... So it might be easier to use that for series with many volumes and with an internal numbering that doesn't correspond to the external one.
+
 ### Rare Unicode characters
 
 Originally, the tool copied into the EPUB the text obtained from J-Novel Club as is. Depending on the font used by the ePub reader, some rare Unicode characters did not display. I noticed it in a series where the string used as the scene separator is [♱](https://emojipedia.org/emoji/%E2%99%B1/) (East Syriac Cross): My Kobo eBook reader would not show it with any of the fonts present on the device. Using [Crimson Text](https://www.typewolf.com/site-of-the-day/fonts/crimson-text), the font used by J-Novel Club for its web reader, gave the same result. It turns out it was only rendered in the web reader by a fallback font, which on my Mac is Menlo (a monospace font by Apple). This issue also happened with the Calibre EPUB reader. However, the iBooks reader app on macOS displayed the character.
@@ -212,7 +218,7 @@ The default CSS used by the tool and embedded in the generated EPUB files can be
 
 ### Configuration file
 
-Some configuration options can be set in a configuration file. Here are the options that are used by the `epub` subcommand (and also by `update`):
+Just like the login and password, other options can be set in a configuration file. Here are the options that are used by the `epub` subcommand (and also by `update`):
 
 - EMAIL
 - PASSWORD
@@ -223,7 +229,7 @@ Some configuration options can be set in a configuration file. Here are the opti
 - CONTENT
 - NOREPLACE
 
-The options that set flags (BYVOLUME and below in the list above) should have one of the following values: "1", "true", "t", "yes", "y" or "on". The value can be in upper case. For unsetting, the simplest is to remove the environment variable (the default value for all those flags is "False"). If a value is passed, it should be one of the following: "0", "false", "f", "no", "n" or "off".
+The options that set flags (BYVOLUME and below in the list above) should have one of the following values: `1`, `true`, `t`, `yes`, `y` or `on`. The value can be in upper case. For unsetting, the simplest is to remove the environment variable (the default value for all those flags is `False`). If a value is passed, it should be one of the following: `0`, `false`, `f`, `no`, `n` or `off`.
 
 To set an option, use the `jncep config set` command. For example:
 
@@ -237,7 +243,7 @@ This will add a value for the OUTPUT configuration option. When the `jncep epub`
 
 ### Environment variables
 
-Just like the login and password, other options can also be set using an environment variable. They are the same as the configuration options, but with a `JNCEP_` prefix:
+The options can also be set using an environment variable. They are the same as the configuration options, but with a `JNCEP_` prefix:
 
 For example:
 - JNCEP_PASSWORD
@@ -439,10 +445,10 @@ If you have a lot of followed series and update often, the flag `--use-events` c
 
 ### Configuration & environment variables
 
-The `update` subcommand understands the additional configuration option related:
+Compared to the `epub` command, the `update` command understands the additional configuration option:
 - USE_EVENTS
 
-It should have a value like `1` or `y` if set.
+As a flag, it should have a value like `1`, `true`, `t`, `yes`, `y` or `on` (case insensitive) if set.
 
 It is also available as an environment variable:
 - JNCEP_USE_EVENTS
@@ -487,7 +493,6 @@ Commands:
   set      Set configuration option
   show     List configuration details
   unset    Delete configuration option
-(jncep) C:\Users\gvellut\Documents\projects\
 ```
 
 In turn, the subcommands can be called with `--help` to get details about their arguments.
@@ -604,7 +609,7 @@ Then the file can be edited manually (or using the `set` and `unset` commands). 
 
 ### migrate
 
-The `migrate` subcommand can be used to migrate cconfiguration files to the post-v41 standard configuration folder:
+The `migrate` subcommand can be used to migrate configuration files to the post-v41 standard configuration folder:
 
 ```console
 jncep config migrate
