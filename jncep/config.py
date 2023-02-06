@@ -155,6 +155,6 @@ class ConfigManager:
 class JNCEPConfigParser(ConfigParser):
     def __init__(self):
         # TOP_SECTION will be automatically created if new file
-        super().__init__(default_section=TOP_SECTION)
+        super().__init__(default_section=TOP_SECTION, interpolation=None)
         # will return the keys in upper case (instead of default lower)
         self.optionxform = lambda x: x.upper()
