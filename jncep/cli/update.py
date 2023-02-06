@@ -4,6 +4,7 @@ import click
 
 from . import options
 from .. import core, track, update, utils
+from ..config import ENVVAR_PREFIX
 from ..trio_utils import coro
 from .base import CatchAllExceptionsCommand
 
@@ -41,7 +42,7 @@ console = utils.getConsole()
     "--whole",
     "is_whole_volume",
     is_flag=True,
-    envvar="JNCEP_WHOLE",
+    envvar=f"{ENVVAR_PREFIX}WHOLE",
     help=(
         "Flag to indicate whether the whole volume should be regenerated when a "
         "new part is detected during the update"
@@ -53,7 +54,7 @@ console = utils.getConsole()
     "is_use_events",
     is_flag=True,
     default=False,
-    envvar="JNCEP_USE_EVENTS",
+    envvar=f"{ENVVAR_PREFIX}USE_EVENTS",
     help="Flag to use the events feed to check for updates",
 )
 @coro
@@ -83,20 +84,30 @@ async def update_tracked(
     async with core.JNCEPSession(email, password) as session:
         track_manager = track.TrackConfigManager()
         tracked_series = track_manager.read_tracked_series()
+
+        # process sync first => possibly will add new series to track
+        new_synced = None
+        if is_sync:
+            console.status("Fetch followed series from J-Novel Club...")
+            follows = await session.api.fetch_follows()
+            # new series will also be added to tracked_series
+            new_synced, _ = await track.sync_series_forward(
+                session, follows, tracked_series, False
+            )
+
+            if len(new_synced) == 0:
+                console.warning(
+                    "There are no new series to sync. Use the [highlight]Follow[/] "
+                    "button on a series page on the J-Novel Club website."
+                )
+                return
+
         if len(tracked_series) == 0:
             console.warning(
                 "There are no tracked series! Use the 'jncep track add' command "
                 "first."
             )
             return
-
-        new_synced = None
-        if is_sync:
-            console.status("Fetch followed series from J-Novel Club...")
-            follows = await session.api.fetch_follows()
-            new_synced, _ = await track.sync_series_forward(
-                session, follows, tracked_series, False
-            )
 
         if jnc_url:
             console.status(f"Update '{jnc_url}'...")

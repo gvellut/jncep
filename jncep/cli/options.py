@@ -2,11 +2,13 @@ import os
 
 import click
 
+from ..config import ENVVAR_PREFIX
+
 login_option = click.option(
     "-l",
     "--email",
     required=True,
-    envvar="JNCEP_EMAIL",
+    envvar=f"{ENVVAR_PREFIX}EMAIL",
     help="Login email for J-Novel Club account",
 )
 
@@ -14,7 +16,7 @@ password_option = click.option(
     "-p",
     "--password",
     required=True,
-    envvar="JNCEP_PASSWORD",
+    envvar=f"{ENVVAR_PREFIX}PASSWORD",
     help="Login password for J-Novel Club account",
 )
 
@@ -24,7 +26,7 @@ output_option = click.option(
     "output_dirpath",
     type=click.Path(resolve_path=True, file_okay=False, writable=True),
     default=os.getcwd(),
-    envvar="JNCEP_OUTPUT",
+    envvar=f"{ENVVAR_PREFIX}OUTPUT",
     help="Folder to write the output files. It will be created if it doesn't exist "
     "[default: The current directory]",
 )
@@ -34,7 +36,7 @@ byvolume_option = click.option(
     "--byvolume",
     "is_by_volume",
     is_flag=True,
-    envvar="JNCEP_BYVOLUME",
+    envvar=f"{ENVVAR_PREFIX}BYVOLUME",
     help=(
         "Flag to indicate that the parts of different volumes shoud be output in "
         "separate EPUBs"
@@ -46,7 +48,7 @@ images_option = click.option(
     "--images",
     "is_extract_images",
     is_flag=True,
-    envvar="JNCEP_IMAGES",
+    envvar=f"{ENVVAR_PREFIX}IMAGES",
     help=(
         "Flag to indicate that the images of the novel should be extracted into "
         "the output folder"
@@ -58,7 +60,7 @@ raw_content_option = click.option(
     "--content",
     "is_extract_content",
     is_flag=True,
-    envvar="JNCEP_CONTENT",
+    envvar=f"{ENVVAR_PREFIX}CONTENT",
     help=(
         "Flag to indicate that the raw content of the parts should be extracted into "
         "the output folder"
@@ -72,7 +74,7 @@ no_replace_chars_option = click.option(
     "--no-replace",
     "is_not_replace_chars",
     is_flag=True,
-    envvar="JNCEP_NOREPLACE",
+    envvar=f"{ENVVAR_PREFIX}NOREPLACE",
     help=(
         "Flag to indicate that some unicode characters unlikely to be in an EPUB "
         "reader font should NOT be replaced and instead kept as is"
@@ -85,6 +87,6 @@ css_option = click.option(
     "--css",
     "style_css_path",
     type=click.Path(exists=True, resolve_path=True, file_okay=True, dir_okay=False),
-    envvar="JNCEP_CSS",
+    envvar=f"{ENVVAR_PREFIX}CSS",
     help="Path to custom CSS file for the EPUBs [default: The CSS provided by JNCEP]",
 )

@@ -30,6 +30,7 @@ DEFAULT_CONFIG_FILEPATH = config_dir() / CONFIG_FILE_NAME
 
 TOP_SECTION = "JNCEP"
 
+# also used in the declarations for env var names to use for options
 ENVVAR_PREFIX = "JNCEP_"
 
 

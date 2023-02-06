@@ -445,13 +445,16 @@ If you have a lot of followed series and update often, the flag `--use-events` c
 
 ### Configuration & environment variables
 
-Compared to the `epub` command, the `update` command understands the additional configuration option:
+Compared to the `epub` command, the `update` command understands the additional configuration options:
 - USE_EVENTS
+- WHOLE
 
-As a flag, it should have a value like `1`, `true`, `t`, `yes`, `y` or `on` (case insensitive) if set.
+Since they are flags, they should have a value like `1`, `true`, `t`, `yes`, `y` or `on` (case insensitive) if set.
 
-It is also available as an environment variable:
+They are also available as environment variables:
 - JNCEP_USE_EVENTS
+- JNCEP_WHOLE
+
 
 ### Automation
 
