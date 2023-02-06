@@ -519,7 +519,7 @@ jncep config show
 This will display something like:
 
 ```console
-Config directory: C:\Users\gvellut\AppData\Roaming\jncep
+Configuration folder: C:\Users\gvellut\AppData\Roaming\jncep
 Found config file: config.ini
 Option: OUTPUT => output_test2
 Option: BYVOLUME => Y

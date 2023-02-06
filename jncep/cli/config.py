@@ -26,7 +26,7 @@ def config_list():
     if not config_dir.is_dir:
         console.warning(f"Not a folder: [highlight]{config_dir}[/]")
 
-    console.info(f"Config folder: [highlight]{config_dir}[/]")
+    console.info(f"Configuration folder: [highlight]{config_dir}[/]")
     files = list(config_dir.iterdir())
     for f_ in files:
         if f_.is_file():
