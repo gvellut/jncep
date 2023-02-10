@@ -26,7 +26,7 @@ Report issues at https://github.com/gvellut/jncep/issues
 
 # Usage
 
-The `jncep` tool must be launched on the command-line. It has 3 commands:
+The `jncep` tool must be launched on the command-line. It has 4 commands:
 
 - [`epub`](#epub): To simply generate an EPUB file
 - [`track`](#track): To tell the tool that a series is of interest
@@ -239,7 +239,7 @@ jncep config set OUTPUT "/user/gvellut/documents/jncepubs"
 
 This will add a value for the OUTPUT configuration option. When the `jncep epub` command is run, the value of the `--output` option will be taken from the configuration file, unless the `--output` option is actually present on the command-line, in which case it will take priority.
 
-**Note**: For `OUTPUT` or `CSS`, the values of which should be a file paths, the `jncep config set` command doesn't process the `~` (user HOME directory, usually expanded by the shell) nor resolve a relative path to an absolute one. The output of the command will show what exact value will be used later by the `epub` and `update` commands: No additional transformation will be performed.
+**Note**: For `OUTPUT` or `CSS`, the values of which should be file paths, the `jncep config set` command doesn't process the `~` (user HOME directory, usually expanded by the shell) nor resolves a relative path to an absolute one. The output of the command will show what exact value will be used later by the `epub` and `update` commands: No additional transformation will be performed.
 
 [See the paragraph about managing the configuration](#config) further in this page.
 
@@ -575,7 +575,7 @@ The `config.ini` file will be created if needed and will contain the following l
 EMAIL = jnclogin@aol.com
 ```
 
-**Warning**: When using that command from the command-line, the shell may need some characters to be escaped. The rules vary depending on what shell is used. Also, the command doesn't process the `~` (user HOME directory, usually expanded by the shell) nor resolve a relative path to an absolute one. Please review the output to check if the option was set as intended. 
+**Warning**: When using that command from the command-line, the shell may need some characters to be escaped. The rules vary depending on what shell is used. Also, for `OUTPUT` or `CSS`, the command doesn't process the `~` (user HOME directory, usually expanded by the shell) nor resolves a relative path to an absolute one. Please review the output to check if the option was set as intended. 
 
 An alternative to using this command (as well as `unset`) is to edit the `config.ini` file with a text editor. The file must be saved in the **UTF-8 encoding**.
 
