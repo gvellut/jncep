@@ -229,8 +229,6 @@ Just like the login and password, other options can be set in a configuration fi
 - CONTENT
 - NOREPLACE
 
-The options that set flags (BYVOLUME and below in the list above) should have one of the following values: `1`, `true`, `t`, `yes`, `y` or `on`. The value can be in upper case. For unsetting, the simplest is to remove the environment variable (the default value for all those flags is `False`). If a value is passed, it should be one of the following: `0`, `false`, `f`, `no`, `n` or `off`.
-
 To set an option, use the `jncep config set` command. For example:
 
 ```console
@@ -242,6 +240,12 @@ This will add a value for the OUTPUT configuration option. When the `jncep epub`
 **Note**: For `OUTPUT` or `CSS`, the values of which should be file paths, the `jncep config set` command doesn't process the `~` (user HOME directory, usually expanded by the shell) nor resolves a relative path to an absolute one. The output of the command will show what exact value will be used later by the `epub` and `update` commands: No additional transformation will be performed.
 
 [See the paragraph about managing the configuration](#config) further in this page.
+
+#### Flags
+
+The options that set flags (BYVOLUME and below in the list above) should have one of the following values: `1`, `true`, `t`, `yes`, `y` or `on`. The value can be in upper case. 
+
+For unsetting, the simplest is to use `config unset` to remove the configuration option (the default value for all those flags is `False`). If a value is set, it should be one of the following: `0`, `false`, `f`, `no`, `n` or `off`.
 
 ### Environment variables
 
@@ -265,7 +269,7 @@ The priority order for option values is as follows:
 1. If a value is passed on the command-line, it has the highest priority
 2. If no value is passed, the value is taken from an environment variable if present
 3. After that, the value is taken from the configuration file
-4. Some options have a default value defined in the code: If no value has been explicitly passed using one of the 3 methods above, that default value will be used. Some options have no default values and are instead required: If no value is passed using one of the 3 methods just described, it will raise an error.
+4. Some options have a default value defined in the code: If no value has been explicitly passed using one of the 3 methods above, that default value will be used. Some options have no default values and are instead required: If no value is passed using one of the 3 methods just described, this will raise an error.
 
 ## track
 
@@ -553,7 +557,7 @@ EMAIL          Login email for J-Novel Club account
 ...
 ```
 
-They are the same options than can be set using environment variables (except there is no `JNCEP_` prefix).
+The same options can be set using environment variables (except there is a `JNCEP_` prefix).
 
 ### set
 
