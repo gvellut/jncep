@@ -38,7 +38,7 @@ byvolume_option = click.option(
     is_flag=True,
     envvar=f"{ENVVAR_PREFIX}BYVOLUME",
     help=(
-        "Flag to indicate that the parts of different volumes shoud be output in "
+        "Flag to indicate that the parts of different volumes should be output in "
         "separate EPUBs"
     ),
 )

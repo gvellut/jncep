@@ -124,7 +124,7 @@ Options:
                           either a single part, a whole volume or the whole
                           series]
   -v, --byvolume          Flag to indicate that the parts of different volumes
-                          shoud be output in separate EPUBs
+                          should be output in separate EPUBs
   -i, --images            Flag to indicate that the images of the novel should
                           be extracted into the output folder
   -c, --content           Flag to indicate that the raw content of the parts
@@ -149,7 +149,7 @@ jncep epub -o /Users/guilhem/Documents/jncbooks https://j-novel.club/read/tearmo
 
 Account credentials must be passed (in this case, by using the env vars, as explained above), as well as a URL link to a part or volume or series on the J-Novel Club website. Whatever the URL links to is downloaded (single part or whole volume or whole series).
 
-The tool will then communicate with the J-Novel Club API using the specified credentials and download the necessary parts (texts and images), as well as a book cover. The EPUB file will be created inside the specified (optional) output directory, `/Users/guilhem/Documents/jncbooks`, which must exist (not created by the tool).
+The tool will then communicate with the J-Novel Club API using the specified credentials and download the necessary parts (texts and images), as well as a book cover. The EPUB file will be created inside the specified (optional) output directory, `/Users/guilhem/Documents/jncbooks`. The directory will be created if it doesn't exist.
 
 If the `--output` or `-o` switch is not present, the EPUB is output in the current directory. The `JNCEP_OUTPUT` env var can also be used instead of the switch to indicate a download directory.
 
@@ -165,6 +165,8 @@ It is also possible to pass the index of the series shown using the [`track list
 ```console
 jncep epub 5
 ```
+
+It is equivalent to passing the URL of the corresponding series.
 
 #### Range of parts
 
@@ -249,7 +251,7 @@ For unsetting, the simplest is to use `config unset` to remove the configuration
 
 ### Environment variables
 
-The options can also be set using an environment variable. They are the same as the configuration options, but with a `JNCEP_` prefix:
+The options can also be set using environment variables. They are the same as the configuration options, but with a `JNCEP_` prefix:
 
 For example:
 - JNCEP_PASSWORD
@@ -269,7 +271,7 @@ The priority order for option values is as follows:
 1. If a value is passed on the command-line, it has the highest priority
 2. If no value is passed, the value is taken from an environment variable if present
 3. After that, the value is taken from the configuration file
-4. Some options have a default value defined in the code: If no value has been explicitly passed using one of the 3 methods above, that default value will be used. Some options have no default values and are instead required: If no value is passed using one of the 3 methods just described, this will raise an error.
+4. Some options have a default value defined in the code: If no value has been explicitly passed using one of the 3 methods above, that default value will be used. Some options have no default values and are instead required: If no value is passed using one of the 3 methods just described, an error will be raised.
 
 ## track
 
@@ -287,7 +289,7 @@ The tracking is performed by updating a local config file called `tracked.json` 
 
 The configuration folder, as well the `tracked.json` file will be created by the tool if they don't exist.
 
-The `tracked.json` file can be updated manually with a text editor if really needed but should generally be left alone (or the `jncep` could malfunction).
+The `tracked.json` file can be updated manually with a text editor if really needed but should generally be left alone (or `jncep` could malfunction).
 
 ### Options
 
@@ -397,7 +399,7 @@ Options:
   -o, --output DIRECTORY  Existing folder to write the output [default: The
                           current directory]
   -v, --byvolume          Flag to indicate that the parts of different volumes
-                          shoud be output in separate EPUBs
+                          should be output in separate EPUBs
   -i, --images            Flag to indicate that the images of the novel should
                           be extracted into the output folder
   -c, --content           Flag to indicate that the raw content of the parts
@@ -547,7 +549,7 @@ This will display something like:
 
 ```console
 BYVOLUME       Flag to indicate that the parts of      
-               different volumes shoud be output in    
+               different volumes should be output in
                separate EPUBs
 CONTENT        Flag to indicate that the raw content of
                the parts should be extracted into the  
