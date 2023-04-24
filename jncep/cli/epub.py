@@ -80,6 +80,7 @@ async def generate_epub(
         jnc_resource = jncweb.resource_from_url(jnc_url)
         series_id = await core.resolve_series(session, jnc_resource)
         series = await core.fetch_meta(session, series_id)
+        core.check_series_is_novel(series)
 
         if part_spec:
             console.info(f"Use part specification '[highlight]{part_spec}[/]'")

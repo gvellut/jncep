@@ -268,6 +268,7 @@ class JNCLabsAPI:
 
     async def fetch_follows(self):
         path = "/users/me"
+        # filter for only novels, exclude manga
         qfilter = {"include": [{"serieFollows": "serie"}]}
         payload = {"filter": json.dumps(qfilter)}
 

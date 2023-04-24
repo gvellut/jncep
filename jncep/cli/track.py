@@ -37,6 +37,7 @@ async def add_track_series(jnc_url, email, password):
         jnc_resource = jncweb.resource_from_url(jnc_url)
         series_id = await core.resolve_series(session, jnc_resource)
         series = await core.fetch_meta(session, series_id)
+        core.check_series_is_novel(series)
 
         series_url = jncweb.url_from_series_slug(series.raw_data.slug)
         if series_url in tracked_series:

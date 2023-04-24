@@ -135,6 +135,7 @@ async def sync_series_forward(session, follows, tracked_series, is_delete):
         series_id = await core.resolve_series(session, jnc_resource)
         series = await core.fetch_meta(session, series_id)
         await track_series(session, tracked_series, series)
+        # manga already excluded from follows so no need to check
 
         series_url = jncweb.url_from_series_slug(series.raw_data.slug)
         new_synced.append(series_url)

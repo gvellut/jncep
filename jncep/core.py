@@ -48,6 +48,10 @@ class FilePathTooLongError(Exception):
     pass
 
 
+class SeriesNotANovelError(Exception):
+    pass
+
+
 class JNCEPSession:
     def __init__(self, email, password):
         self.api = jnclabs.JNCLabsAPI()
@@ -884,3 +888,11 @@ async def fetch_events(session: JNCEPSession, start_date_s):
     pagination = events_with_pagination.pagination
     has_reached_limit = not pagination.lastPage
     return EventFeed(events, has_reached_limit)
+
+
+def check_series_is_novel(series: Series):
+    if series.raw_data.type.upper() != "NOVEL":
+        raise SeriesNotANovelError(
+            f"Series '[highlight]{series.raw_data.title}[/]' is not a novel "
+            f"(type is '{series.raw_data.type}')"
+        )
