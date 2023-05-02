@@ -29,6 +29,12 @@ console = getConsole()
 )
 def main(is_debug):
     setup_logging(is_debug)
+    try:
+        apply_options_from_config()
+    except Exception:
+        console.warning(
+            "There was an error reading the configuration at: "
+            f"{DEFAULT_CONFIG_FILEPATH}. Continuing..." )
 
 
 main.add_command(generate_epub)
@@ -37,11 +43,4 @@ main.add_command(update_tracked)
 main.add_command(config_manage)
 
 if __name__ == "__main__":
-    try:
-        apply_options_from_config()
-    except Exception:
-        console.warning(
-            "There was an error reading the configuration at: "
-            f"{DEFAULT_CONFIG_FILEPATH}. Continuing..."
-        )
     main()
