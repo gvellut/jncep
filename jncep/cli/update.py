@@ -49,6 +49,18 @@ console = utils.getConsole()
     ),
 )
 @click.option(
+    "-l",
+    "--last",
+    "is_whole_volume_on_last_part",
+    is_flag=True,
+    default=False,
+    envvar=f"{ENVVAR_PREFIX}WHOLE",
+    help=(
+        "Flag to indicate whether the whole volume should also be generated when "
+        "the last part of a volume is detected during the update"
+    ),
+)
+@click.option(
     "-e",
     "--use-events",
     "is_use_events",
@@ -70,6 +82,7 @@ async def update_tracked(
     style_css_path,
     is_sync,
     is_whole_volume,
+    is_whole_volume_on_last_part,
     is_use_events,
 ):
     epub_generation_options = core.EpubGenerationOptions(
@@ -120,6 +133,7 @@ async def update_tracked(
                 is_sync,
                 new_synced,
                 is_whole_volume,
+                is_whole_volume_on_last_part,
                 is_use_events,
             )
 
@@ -133,6 +147,7 @@ async def update_tracked(
                 is_sync,
                 new_synced,
                 is_whole_volume,
+                is_whole_volume_on_last_part,
                 is_use_events,
             )
 
