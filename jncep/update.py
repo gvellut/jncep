@@ -34,6 +34,7 @@ async def update_url_series(
     is_sync,
     new_synced,
     is_whole_volume,
+    is_whole_volume_on_last_part,
     is_use_events,
 ):
     # for single url => if error no catch : let it crash and report to the user
@@ -85,6 +86,7 @@ async def update_url_series(
             epub_generation_options,
             is_whole_volume,
             is_force_from_beginning,
+            is_whole_volume_on_last_part,
         )
 
     if update_result.is_updated:
@@ -120,6 +122,7 @@ async def update_all_series(
     is_sync,
     new_synced,
     is_whole_volume,
+    is_whole_volume_on_last_part,
     is_use_events,
 ):
     # is_sync: all parts from beginning so no need for the events
@@ -144,6 +147,7 @@ async def update_all_series(
                 is_sync,
                 new_synced,
                 is_whole_volume,
+                is_whole_volume_on_last_part,
                 events,
             )
         )
@@ -234,6 +238,7 @@ async def _handle_series(
     is_sync,
     new_synced,
     is_whole_volume,
+    is_whole_volume_on_last_part,
     events,
 ):
     series = None
@@ -262,6 +267,7 @@ async def _handle_series(
             epub_generation_options,
             is_whole_volume,
             is_force_from_beginning,
+            is_whole_volume_on_last_part,
         )
 
         if update_result.is_updated:
@@ -377,6 +383,7 @@ async def _create_epub_for_new_parts(
     epub_generation_options,
     is_whole_volume=False,
     is_force_from_beginning=False,
+    is_whole_volume_on_last_part=False,
 ):
     parts = core.all_parts_meta(series)
 
@@ -516,6 +523,28 @@ async def _create_epub_for_new_parts(
             parts_to_download,
             epub_generation_options,
         )
+
+        # check if any part that's being downloaded is the final part in volume.
+        # If it is, check if not all parts are already being downloaded.
+        # If some are missing, download the whole volume.
+        if is_whole_volume == False and is_whole_volume_on_last_part:
+            for part in parts_to_download:
+                if core._is_part_final(part):
+                    download_whole = False
+                    for volpart in part.volume.parts:
+                        if volpart not in parts_to_download:
+                            download_whole = True
+                            break
+                    if download_whole:
+                        await core.fill_covers_and_content(
+                            session, [part.volume], part.volume.parts
+                        )
+                        await core.create_epub(
+                            series,
+                            [part.volume],
+                            part.volume.parts,
+                            epub_generation_options,
+                        )
 
         return UpdateResult(series, is_updated=True)
 
