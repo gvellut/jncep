@@ -24,7 +24,7 @@ console = getConsole()
     "--debug",
     "is_debug",
     is_flag=True,
-    help=("Flag to activate debug mode"),
+    help="Flag to activate debug mode",
     required=False,
 )
 def main(is_debug):
