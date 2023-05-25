@@ -415,6 +415,9 @@ Options:
   -w, --whole             Flag to indicate whether the whole volume should be
                           regenerated when a new part is detected during the
                           update
+  -f, --whole-final       Flag to indicate whether an EPUB with a complete
+                          volume should also be generated when the final part
+                          of the volume is included in the update
   -e, --use-events        Flag to use the events feed to check for updates
   --help                  Show this message and exit.
 ```
@@ -456,12 +459,14 @@ If you have a lot of followed series and update often, the flag `--use-events` c
 Compared to the `epub` command, the `update` command understands the additional configuration options:
 - USE_EVENTS
 - WHOLE
+- WHOLE_FINAL
 
 Since they are flags, they should have a value like `1`, `true`, `t`, `yes`, `y` or `on` (case insensitive) if set.
 
 They are also available as environment variables:
 - JNCEP_USE_EVENTS
 - JNCEP_WHOLE
+- JNCEP_WHOLE_FINAL
 
 ### Automation
 

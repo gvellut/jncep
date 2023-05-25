@@ -34,7 +34,8 @@ def main(is_debug):
     except Exception:
         console.warning(
             "There was an error reading the configuration at: "
-            f"{DEFAULT_CONFIG_FILEPATH}. Continuing..." )
+            f"{DEFAULT_CONFIG_FILEPATH}. Continuing..."
+        )
 
 
 main.add_command(generate_epub)

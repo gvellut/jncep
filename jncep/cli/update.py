@@ -49,15 +49,15 @@ console = utils.getConsole()
     ),
 )
 @click.option(
-    "-l",
-    "--last",
-    "is_whole_volume_on_last_part",
+    "-f",
+    "--whole-final",
+    "is_whole_volume_on_final_part",
     is_flag=True,
     default=False,
-    envvar=f"{ENVVAR_PREFIX}WHOLE",
+    envvar=f"{ENVVAR_PREFIX}WHOLE_FINAL",
     help=(
-        "Flag to indicate whether the whole volume should also be generated when "
-        "the last part of a volume is detected during the update"
+        "Flag to indicate whether an EPUB with a complete volume should also be "
+        "generated when the final part of the volume is included in the update"
     ),
 )
 @click.option(
@@ -82,7 +82,7 @@ async def update_tracked(
     style_css_path,
     is_sync,
     is_whole_volume,
-    is_whole_volume_on_last_part,
+    is_whole_volume_on_final_part,
     is_use_events,
 ):
     epub_generation_options = core.EpubGenerationOptions(
@@ -92,6 +92,13 @@ async def update_tracked(
         is_extract_content,
         is_not_replace_chars,
         style_css_path,
+    )
+
+    update_options = update.UpdateOptions(
+        is_sync,
+        is_whole_volume,
+        is_whole_volume_on_final_part,
+        is_use_events,
     )
 
     async with core.JNCEPSession(email, password) as session:
@@ -130,11 +137,8 @@ async def update_tracked(
                 jnc_url,
                 epub_generation_options,
                 tracked_series,
-                is_sync,
                 new_synced,
-                is_whole_volume,
-                is_whole_volume_on_last_part,
-                is_use_events,
+                update_options,
             )
 
         else:
@@ -144,11 +148,8 @@ async def update_tracked(
                 session,
                 epub_generation_options,
                 tracked_series,
-                is_sync,
                 new_synced,
-                is_whole_volume,
-                is_whole_volume_on_last_part,
-                is_use_events,
+                update_options,
             )
 
         # always update and do not notifiy user
