@@ -99,6 +99,18 @@ Here is what needs to be done:
 
 Then the login email of the Facebook or Google account, together with that new password, can be used as credentials for the `jncep` tool, either directly or using one of the indirect methods.
 
+## Debugging mode
+
+A `--debug` (or `-d`) option can be passed to the `jncep` tool, before the specific command. It will print out more information about what is happening, using the standard Python `logging` package.
+
+For example:
+
+```console
+jncep --debug update
+```
+
+In case of an issue with `jncep`, it is recommended to launch with the `--debug` option and to include the output in the issue report (either inline or as a file attachment, if too long).
+
 ## epub
 
 The `epub` command is used for simple EPUB generation, based on a URL link to a part or volume or series on the J-Novel Club website.
