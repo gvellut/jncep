@@ -38,6 +38,20 @@ console = utils.getConsole()
     ),
 )
 @click.option(
+    "-d",
+    "--delete",
+    "is_delete",
+    is_flag=True,
+    help="Flag to delete series not found on the sync source",
+)
+@click.option(
+    "-b",
+    "--beginning",
+    "is_beginning",
+    is_flag=True,
+    help="Flag to add new series from the beginning",
+)
+@click.option(
     "-w",
     "--whole",
     "is_whole_volume",
@@ -81,6 +95,8 @@ async def update_tracked(
     is_not_replace_chars,
     style_css_path,
     is_sync,
+    is_delete,
+    is_beginning,
     is_whole_volume,
     is_whole_volume_on_final_part,
     is_use_events,
@@ -111,8 +127,9 @@ async def update_tracked(
             console.status("Fetch followed series from J-Novel Club...")
             follows = await session.api.fetch_follows()
             # new series will also be added to tracked_series
+            # is_beginning is redundant, since update --sync will force it
             new_synced, _ = await track.sync_series_forward(
-                session, follows, tracked_series, False
+                session, follows, tracked_series, is_delete, is_beginning
             )
 
             if len(new_synced) == 0:
@@ -120,7 +137,6 @@ async def update_tracked(
                     "There are no new series to sync. Use the [highlight]Follow[/] "
                     "button on a series page on the J-Novel Club website."
                 )
-                return
 
         if len(tracked_series) == 0:
             console.warning(
