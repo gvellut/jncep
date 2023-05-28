@@ -74,11 +74,11 @@ class TrackConfigManager:
         return converted_b
 
 
-async def track_series(session, tracked_series, series):
+async def track_series(session, tracked_series, series, is_beginning=False):
     parts = core.all_parts_meta(series)
 
     # record current last part + name
-    if not parts:
+    if not parts or is_beginning:
         # no parts yet, special value 0: processed in update with special case
         pn = 0
         # 0000-... not a valid date so 1111-...
@@ -126,7 +126,9 @@ async def track_series(session, tracked_series, series):
     )
 
 
-async def sync_series_forward(session, follows, tracked_series, is_delete):
+async def sync_series_forward(
+    session, follows, tracked_series, is_delete, is_beginning
+):
     # sync local tracked series based on remote follows
     new_synced = []
     del_synced = []
@@ -134,7 +136,7 @@ async def sync_series_forward(session, follows, tracked_series, is_delete):
     async def do_track(jnc_resource):
         series_id = await core.resolve_series(session, jnc_resource)
         series = await core.fetch_meta(session, series_id)
-        await track_series(session, tracked_series, series)
+        await track_series(session, tracked_series, series, is_beginning)
         # manga already excluded from follows so no need to check
 
         series_url = jncweb.url_from_series_slug(series.raw_data.slug)

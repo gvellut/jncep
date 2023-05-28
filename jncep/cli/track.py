@@ -78,8 +78,15 @@ async def add_track_series(jnc_url, email, password):
     is_flag=True,
     help="Flag to delete series not found on the sync source",
 )
+@click.option(
+    "-b",
+    "--beginning",
+    "is_beginning",
+    is_flag=True,
+    help="Flag to add new series from the beginning",
+)
 @coro
-async def sync_series(email, password, is_reverse, is_delete):
+async def sync_series(email, password, is_reverse, is_delete, is_beginning):
     track_manager = track.TrackConfigManager()
     tracked_series = track_manager.read_tracked_series()
 
@@ -109,7 +116,7 @@ async def sync_series(email, password, is_reverse, is_delete):
             console.status("Sync tracked series from J-Novel Club...")
 
             new_synced, del_synced = await track.sync_series_forward(
-                session, follows, tracked_series, is_delete
+                session, follows, tracked_series, is_delete, is_beginning
             )
 
             track_manager.write_tracked_series(tracked_series)
