@@ -1,12 +1,15 @@
+from functools import partial
 import logging
 
 import click
+import trio
 
 from . import options
 from .. import core, track, update, utils
 from ..config import ENVVAR_PREFIX
 from ..trio_utils import coro
 from .base import CatchAllExceptionsCommand
+from .track import sync_series
 
 logger = logging.getLogger(__name__)
 console = utils.getConsole()
@@ -35,6 +38,17 @@ console = utils.getConsole()
     help=(
         "Flag to sync tracked series based on series followed on J-Novel Club and "
         "update the new ones from the beginning of the series"
+    ),
+)
+@click.option(
+    "-j",
+    "--jnc-managed",
+    "is_jnc_managed",
+    is_flag=True,
+    help=(
+        "Flag to indicate whether to use the series followed on the J-Novel Club "
+        "website as the tracking reference for updating (equivalent to "
+        "running 'update --sync', 'track sync --delete' and finally 'update')"
     ),
 )
 @click.option(
@@ -69,8 +83,10 @@ console = utils.getConsole()
     envvar=f"{ENVVAR_PREFIX}USE_EVENTS",
     help="Flag to use the events feed to check for updates",
 )
+@click.pass_context
 @coro
 async def update_tracked(
+    ctx,
     jnc_url,
     email,
     password,
@@ -84,24 +100,63 @@ async def update_tracked(
     is_whole_volume,
     is_whole_volume_on_final_part,
     is_use_events,
+    is_jnc_managed,
 ):
-    epub_generation_options = core.EpubGenerationOptions(
-        output_dirpath,
-        is_by_volume,
-        is_extract_images,
-        is_extract_content,
-        is_not_replace_chars,
-        style_css_path,
-    )
-
-    update_options = update.UpdateOptions(
-        is_sync,
-        is_whole_volume,
-        is_whole_volume_on_final_part,
-        is_use_events,
-    )
 
     async with core.JNCEPSession(email, password) as session:
+        if is_jnc_managed:
+            # run the equivalent of:
+            # update --sync
+            # track sync --delete
+            # update
+
+            console.info("[important]update --sync[/]")
+            # keep the params to the update command
+            params_forward = {}
+            for param in ctx.params:
+                if param == "is_jnc_managed":
+                    continue
+                params_forward[param] = ctx.params[param]
+            params_forward["is_sync"] = True
+            # run_sync because we are already in a trio context so we wouldn't be able
+            # to nest another trio.run (inside the click command) othwerwise
+            await trio.to_thread.run_sync(
+                partial(ctx.invoke, update_tracked, **params_forward)
+            )
+
+            console.info("[important]track sync --delete[/]")
+            await trio.to_thread.run_sync(
+                partial(
+                    ctx.invoke,
+                    sync_series,
+                    email=email,
+                    password=password,
+                    is_delete=True,
+                )
+            )
+
+            # after that, let update run normally
+            console.info("[important]update[/]")
+            # set sync to False because doesn't make sense to sync again
+            # TODO log to the user ?
+            is_sync = False
+
+        epub_generation_options = core.EpubGenerationOptions(
+            output_dirpath,
+            is_by_volume,
+            is_extract_images,
+            is_extract_content,
+            is_not_replace_chars,
+            style_css_path,
+        )
+
+        update_options = update.UpdateOptions(
+            is_sync,
+            is_whole_volume,
+            is_whole_volume_on_final_part,
+            is_use_events,
+        )
+
         track_manager = track.TrackConfigManager()
         tracked_series = track_manager.read_tracked_series()
 

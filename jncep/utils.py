@@ -110,6 +110,7 @@ rich_theme = rich.theme.Theme(
         "warning": "yellow",
         "error": "red",
         "highlight": "magenta",
+        "important": "bold",
     }
 )
 

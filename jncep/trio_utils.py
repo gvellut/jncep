@@ -40,6 +40,14 @@ def coro(f):
     return wrapper
 
 
+def is_in_trio_context():
+    try:
+        trio.lowlevel.current_task()
+        return True
+    except RuntimeError:
+        return False
+
+
 # taken from trio-future (but needs py > 3.7.0) so done here
 @attr.s
 class Future:

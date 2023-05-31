@@ -53,6 +53,8 @@ class SeriesNotANovelError(Exception):
 
 
 class JNCEPSession:
+    _GLOBAL_SESSION_INSTANCE = None
+
     def __init__(self, email, password):
         self.api = jnclabs.JNCLabsAPI()
         self.email = email
@@ -60,12 +62,27 @@ class JNCEPSession:
         self.now = datetime.now(tz=timezone.utc)
 
     async def __aenter__(self) -> "JNCEPSession":
+        if JNCEPSession._GLOBAL_SESSION_INSTANCE:
+            # nested
+            return JNCEPSession._GLOBAL_SESSION_INSTANCE
+
         await self.login(self.email, self.password)
+        # current session is the top level session
+        JNCEPSession._GLOBAL_SESSION_INSTANCE = self
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
-        console.stop_status()
+        try:
+            console.stop_status()
+        except Exception:
+            pass
 
+        if JNCEPSession._GLOBAL_SESSION_INSTANCE != self:
+            # nested ; do not logout => leave it to the top level session
+            return False
+
+        # current session is the top level session
+        JNCEPSession._GLOBAL_SESSION_INSTANCE = None
         await self.logout()
         return False
 
