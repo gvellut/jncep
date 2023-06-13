@@ -40,6 +40,14 @@ console = utils.getConsole()
         "update the new ones from the beginning of the series"
     ),
 )
+# from the beginning: so that when update is run after => update from the beginning
+@click.option(
+    "-b",
+    "--beginning",
+    "is_beginning",
+    is_flag=True,
+    help="Flag to add new series from the beginning",
+)
 @click.option(
     "-j",
     "--jnc-managed",
@@ -97,6 +105,7 @@ async def update_tracked(
     is_not_replace_chars,
     style_css_path,
     is_sync,
+    is_beginning,
     is_whole_volume,
     is_whole_volume_on_final_part,
     is_use_events,
@@ -106,7 +115,7 @@ async def update_tracked(
     async with core.JNCEPSession(email, password) as session:
         if is_jnc_managed:
             # run the equivalent of:
-            # update --sync
+            # update --sync --beginning
             # track sync --delete
             # update
 
@@ -119,6 +128,7 @@ async def update_tracked(
                     continue
                 params_forward[param] = ctx.params[param]
             params_forward["is_sync"] = True
+            params_forward["is_beginning"] = True
             # run_sync because we are already in a trio context so we wouldn't be able
             # to nest another trio.run (inside the click command) othwerwise
             await trio.to_thread.run_sync(
@@ -169,7 +179,7 @@ async def update_tracked(
             follows = await session.api.fetch_follows()
             # new series will also be added to tracked_series
             new_synced, _ = await track.sync_series_forward(
-                session, follows, tracked_series, False
+                session, follows, tracked_series, False, is_beginning
             )
 
             if len(new_synced) == 0:
