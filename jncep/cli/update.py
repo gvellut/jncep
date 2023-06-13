@@ -110,6 +110,7 @@ async def update_tracked(
             # track sync --delete
             # update
 
+            # new series will be updated from the beginning
             console.info("[important]update --sync[/]")
             # keep the params to the update command
             params_forward = {}
@@ -124,6 +125,7 @@ async def update_tracked(
                 partial(ctx.invoke, update_tracked, **params_forward)
             )
 
+            # prune series that are not followed anymore
             console.info("[important]track sync --delete[/]")
             await trio.to_thread.run_sync(
                 partial(

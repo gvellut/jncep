@@ -78,6 +78,7 @@ async def add_track_series(jnc_url, email, password):
     is_flag=True,
     help="Flag to delete series not found on the sync source",
 )
+# from the beginning: so that when update is run after => update from the beginning
 @click.option(
     "-b",
     "--beginning",
