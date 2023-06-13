@@ -48,7 +48,7 @@ console = utils.getConsole()
     help=(
         "Flag to indicate whether to use the series followed on the J-Novel Club "
         "website as the tracking reference for updating (equivalent to "
-        "running 'update --sync', 'track sync --delete' and finally 'update')"
+        "running 'track sync --delete --beginning' followed by 'update')"
     ),
 )
 @click.option(
@@ -106,27 +106,13 @@ async def update_tracked(
     async with core.JNCEPSession(email, password) as session:
         if is_jnc_managed:
             # run the equivalent of:
-            # update --sync
-            # track sync --delete
+            # track sync --delete --beginning
             # update
 
-            # new series will be updated from the beginning
-            console.info("[important]update --sync[/]")
-            # keep the params to the update command
-            params_forward = {}
-            for param in ctx.params:
-                if param == "is_jnc_managed":
-                    continue
-                params_forward[param] = ctx.params[param]
-            params_forward["is_sync"] = True
+            # prune series that are not followed anymore + track from beginning
+            console.info("[important]track sync --delete --beginning[/]")
             # run_sync because we are already in a trio context so we wouldn't be able
             # to nest another trio.run (inside the click command) othwerwise
-            await trio.to_thread.run_sync(
-                partial(ctx.invoke, update_tracked, **params_forward)
-            )
-
-            # prune series that are not followed anymore
-            console.info("[important]track sync --delete[/]")
             await trio.to_thread.run_sync(
                 partial(
                     ctx.invoke,
@@ -134,6 +120,7 @@ async def update_tracked(
                     email=email,
                     password=password,
                     is_delete=True,
+                    is_beginning=True,
                 )
             )
 

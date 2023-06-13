@@ -127,7 +127,7 @@ async def track_series(session, tracked_series, series, is_beginning=False):
 
 
 async def sync_series_forward(
-    session, follows, tracked_series, is_delete, is_beginning
+    session, follows, tracked_series, is_delete, is_beginning=False
 ):
     # sync local tracked series based on remote follows
     new_synced = []
