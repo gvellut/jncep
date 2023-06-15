@@ -320,7 +320,7 @@ async def _handle_series(
 def _verify_series_needs_update_check(event_feed, series_details):
     last_check_date = dateutil.parser.parse(series_details.last_check_date)
 
-    events, has_reached_limit = event_feed
+    events, has_reached_limit, first_event_date = event_feed
 
     # shortcuts for some special cases
 
@@ -329,7 +329,10 @@ def _verify_series_needs_update_check(event_feed, series_details):
         # no events => no update
         return False
 
-    if has_reached_limit:
+    # last_check_date is specific to the series; but event feed is checked taking into
+    # account all series so event if has_reached_limit is True, series may not need to
+    # be checked
+    if has_reached_limit and last_check_date <= first_event_date:
         # events doesn't go far enough in the past: Not possible to know for sure
         # if there are no updates
         # assumes need check

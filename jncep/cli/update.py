@@ -45,6 +45,7 @@ console = utils.getConsole()
     "--jnc-managed",
     "is_jnc_managed",
     is_flag=True,
+    envvar=f"{ENVVAR_PREFIX}JNC_MANAGED",
     help=(
         "Flag to indicate whether to use the series followed on the J-Novel Club "
         "website as the tracking reference for updating (equivalent to "

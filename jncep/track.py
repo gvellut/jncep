@@ -113,6 +113,13 @@ async def track_series(session, tracked_series, series, is_beginning=False):
             style="success",
         )
 
+    if is_beginning:
+        # date far in the past: used in case of --use-events => will always end up
+        # checking the full metadata of the series (as if --use-events was not used)
+        last_check_date = "1000-10-10T10:10:10Z"
+    else:
+        last_check_date = utils.isoformat_with_z(session.now)
+
     series_url = jncweb.url_from_series_slug(series.raw_data.slug)
     # TODO class for trackData
     tracked_series[series_url] = Addict(
@@ -121,7 +128,7 @@ async def track_series(session, tracked_series, series, is_beginning=False):
             "part": pn,  # now just for showing to the user in track list
             "name": series.raw_data.title,
             "series_id": series.series_id,
-            "last_check_date": utils.isoformat_with_z(session.now),
+            "last_check_date": last_check_date,
         }
     )
 

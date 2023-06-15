@@ -75,7 +75,7 @@ def isoformat_with_z(d):
     # like the date format used by the JNC API
     if d.tzinfo != timezone.utc:
         # just in case but shouldn't happen : only date in UTC is used in the code
-        raise ValueError("Date not in UTC !")
+        raise ValueError("Date not in UTC!")
     return d.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 

@@ -40,6 +40,7 @@ EventFeed = namedtuple(
     [
         "event_feed",
         "has_reached_limit",
+        "first_event_date",
     ],
 )
 
@@ -904,7 +905,8 @@ async def fetch_events(session: JNCEPSession, start_date_s):
     events = events_with_pagination.events
     pagination = events_with_pagination.pagination
     has_reached_limit = not pagination.lastPage
-    return EventFeed(events, has_reached_limit)
+    first_event_date = dateutil.parser.parse(events[-1].launch)
+    return EventFeed(events, has_reached_limit, first_event_date)
 
 
 def check_series_is_novel(series: Series):
