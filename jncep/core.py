@@ -905,7 +905,12 @@ async def fetch_events(session: JNCEPSession, start_date_s):
     events = events_with_pagination.events
     pagination = events_with_pagination.pagination
     has_reached_limit = not pagination.lastPage
-    first_event_date = dateutil.parser.parse(events[-1].launch)
+    if events:
+        first_event_date = dateutil.parser.parse(events[-1].launch)
+    else:
+        # too short delay between checks => no events
+        # actual value should not matter
+        first_event_date = session.now
     return EventFeed(events, has_reached_limit, first_event_date)
 
 

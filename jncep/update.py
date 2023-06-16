@@ -350,9 +350,7 @@ def _verify_series_needs_update_check(event_feed, series_details):
             launch_date = dateutil.parser.parse(event.launch)
             # <= : last_check_date is the session.now of the previous check so if
             # equal to last_check_date, already included in previous check
-            # see core.fetch_events prune
-            # TODO or do the check for dates in the future here instead of
-            # core.fetch_events
+            # see core.fetch_events request parameters
             if launch_date <= last_check_date:
                 # the events are ordered by launch desc so can never be false after
                 break
