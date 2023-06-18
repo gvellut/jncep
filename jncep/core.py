@@ -521,7 +521,7 @@ async def to_part_spec(series, jnc_resource):
         return spec.IdentifierSpec(spec.PART, volume.volume_id, part.part_id)
 
 
-async def resolve_series(session, jnc_resource):
+async def resolve_series(session: JNCEPSession, jnc_resource):
     # id or slug to identify the series
     if jnc_resource.resource_type == jncweb.RESOURCE_TYPE_SERIES:
         series_slug = jnc_resource.slug

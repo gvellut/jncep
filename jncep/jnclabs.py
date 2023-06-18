@@ -17,10 +17,7 @@ CDN_IMG_URL_BASE = "https://d2dq7ifhe7bu0f.cloudfront.net"
 LABS_API_URL_BASE = "https://labs.j-novel.club"
 LABS_API_PATH_BASE = "/app/v1"
 LABS_API_COMMON_PARAMS = {"format": "json"}
-
-LEGACY_API_URL_BASE = "https://api.j-novel.club"
-LEGACY_API_PATH_BASE = "/api"
-LEGACY_API_COMMON_HEADERS = {
+LABS_API_COMMON_HEADERS = {
     "accept": "application/json",
     "content-type": "application/json",
 }
@@ -89,7 +86,6 @@ class JNCLabsAPI:
     def __init__(
         self,
         labs_api_connections=10,
-        legacy_api_connections=10,
         cdn_connections=20,
         jncweb_connections=10,
         labs_api_default_timeout=20,
@@ -103,13 +99,7 @@ class JNCLabsAPI:
         self.labs_api_session = asks.Session(
             LABS_API_URL_BASE,
             connections=labs_api_connections,
-            headers=LEGACY_API_COMMON_HEADERS,
-        )
-
-        self.legacy_api_session = asks.Session(
-            LEGACY_API_URL_BASE,
-            connections=legacy_api_connections,
-            headers=LEGACY_API_COMMON_HEADERS,
+            headers=LABS_API_COMMON_HEADERS,
         )
 
         # CDN_IMG_URL_BASE not really necessary
@@ -226,31 +216,6 @@ class JNCLabsAPI:
 
         return r
 
-    async def _call_legacy_api_authenticated(
-        self, method, path, headers=None, params=None, **kwargs
-    ):
-        auth = {"authorization": self.token}
-        if not headers:
-            headers = LEGACY_API_COMMON_HEADERS
-        else:
-            headers = {**LEGACY_API_COMMON_HEADERS, **headers}
-
-        path = f"{LEGACY_API_PATH_BASE}{path}"
-
-        r = await self._call_authenticated(
-            self.legacy_api_session,
-            method,
-            path,
-            auth,
-            headers,
-            params,
-            connection_timeout=self.connection_timeout,
-            timeout=self.legacy_api_default_timeout,
-            **kwargs,
-        )
-
-        return r
-
     async def _call_authenticated(
         self, session, method, path, auth, headers=None, params=None, **kwargs
     ):
@@ -267,19 +232,20 @@ class JNCLabsAPI:
         return r
 
     async def fetch_follows(self):
-        path = "/users/me"
-        # filter for only novels, exclude manga
-        qfilter = {"include": [{"serieFollows": "serie"}]}
-        payload = {"filter": json.dumps(qfilter)}
+        async def _do_fetch_follows(skip):
+            logger.debug(f"LABS /series only_follows skip={skip}")
 
-        r = await self._call_legacy_api_authenticated("GET", path, params=payload)
-        r.raise_for_status()
+            path = f"{LABS_API_PATH_BASE}/series"
+            params = {**LABS_API_COMMON_PARAMS, "skip": skip}
+            body = json.dumps({"only_follows": True})
+            r = await self._call_labs_api_authenticated(
+                "POST", path, params=params, data=body
+            )
+            return Addict(r.json())
 
-        me_data = Addict(r.json())
         followed_series = []
-        for s in me_data.serieFollows:
-            series = s.serie
-            slug = series.titleslug
+        async for series in self.paginate(_do_fetch_follows, "series"):
+            slug = series.slug
             # the metadata is not as complete as the usual (with fetch_metadata)
             # but it can still be useful to avoid a call later to the API
             jnc_resource = jncweb.JNCResource(

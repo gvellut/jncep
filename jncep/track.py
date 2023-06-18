@@ -187,7 +187,7 @@ async def sync_series_backward(session, follows, tracked_series, is_delete):
         title = series.raw_data.title
 
         console.info(f"Follow '{title}'...")
-        await session.api.follow_series(series_id)
+        await session.api.follow_series(series.series_id)
 
         new_synced.append(series_url)
 
@@ -204,7 +204,7 @@ async def sync_series_backward(session, follows, tracked_series, is_delete):
 
         async def do_undollow(jnc_resource):
             # use the follow_raw_data: to avoid another call to the API
-            series_id = jnc_resource.follow_raw_data.id
+            series_id = jnc_resource.follow_raw_data.legacyId
             title = jnc_resource.follow_raw_data.title
             console.warning(f"Unfollow '{title}'...")
             await session.api.unfollow_series(series_id)
