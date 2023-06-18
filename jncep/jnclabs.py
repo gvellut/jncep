@@ -245,8 +245,12 @@ class JNCLabsAPI:
 
         followed_series = []
         async for series in self.paginate(_do_fetch_follows, "series"):
+            # ignore manga series
+            if series.type.upper() != "NOVEL":
+                continue
+
             slug = series.slug
-            # the metadata is not as complete as the usual (with fetch_metadata)
+            # the metadata is not as complete as the usual (with fetch_meta)
             # but it can still be useful to avoid a call later to the API
             jnc_resource = jncweb.JNCResource(
                 jncweb.url_from_series_slug(slug),
