@@ -199,12 +199,16 @@ def list_track_series(is_detail):
         console.info(f"{len(tracked_series)} series are tracked:")
         for index, (ser_url, ser_details) in enumerate(tracked_series.items()):
             details = None
-            if ser_details.part_date:
+            if ser_details.part == 0:
+                if ser_details.last_check_date == track.FROM_BEGINNING_CHECK_DATE:
+                    # added with --beginning
+                    details = "Not yet updated"
+                else:
+                    details = "No part released"
+            elif ser_details.part_date:
                 part_date = dateutil.parser.parse(ser_details.part_date)
                 part_date_formatted = part_date.strftime("%b %d, %Y")
                 details = f"{ser_details.part} [{part_date_formatted}]"
-            elif ser_details.part == 0:
-                details = "No part released"
             else:
                 details = f"{ser_details.part}"
 

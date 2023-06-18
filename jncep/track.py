@@ -18,6 +18,8 @@ TRACK_FILE_NAME = "tracked.json"
 
 DEFAULT_CONFIG_FILEPATH = config.config_dir() / TRACK_FILE_NAME
 
+FROM_BEGINNING_CHECK_DATE = "1000-10-10T10:10:10Z"
+
 
 class TrackConfigManager:
     def __init__(self, config_file_path=None):
@@ -114,9 +116,12 @@ async def track_series(session, tracked_series, series, is_beginning=False):
         )
 
     if is_beginning:
+        # TODO add a flag to indicate --beginning ; keep track of the last part
+        # anyway instead of the special part=0 and last_check_date in that case
+        # see also cli.track list_track_series
         # date far in the past: used in case of --use-events => will always end up
         # checking the full metadata of the series (as if --use-events was not used)
-        last_check_date = "1000-10-10T10:10:10Z"
+        last_check_date = FROM_BEGINNING_CHECK_DATE
     else:
         last_check_date = utils.isoformat_with_z(session.now)
 
