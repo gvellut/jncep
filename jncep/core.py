@@ -915,8 +915,34 @@ async def fetch_events(session: JNCEPSession, start_date_s):
 
 
 def check_series_is_novel(series: Series):
-    if series.raw_data.type.upper() != "NOVEL":
+    if not is_novel(series.raw_data):
         raise SeriesNotANovelError(
             f"Series '[highlight]{series.raw_data.title}[/]' is not a novel "
             f"(type is '{series.raw_data.type}')"
         )
+
+
+def is_novel(raw_series):
+    return raw_series.type.upper() == "NOVEL"
+
+
+async def fetch_follows(session: JNCEPSession):
+    followed_series = []
+    async for raw_series in jnclabs.paginate(session.api.fetch_follows, "series"):
+        # ignore manga series
+        if not is_novel(raw_series):
+            continue
+
+        slug = raw_series.slug
+        # the metadata is not as complete as the usual (with fetch_meta)
+        # but it can still be useful to avoid a call later to the API
+        jnc_resource = jncweb.JNCResource(
+            jncweb.url_from_series_slug(slug),
+            slug,
+            True,
+            jncweb.RESOURCE_TYPE_SERIES,
+            raw_series,
+        )
+        followed_series.append(jnc_resource)
+
+    return followed_series

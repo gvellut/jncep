@@ -93,7 +93,7 @@ async def sync_series(email, password, is_reverse, is_delete, is_beginning):
 
     async with core.JNCEPSession(email, password) as session:
         console.status("Fetch followed series from J-Novel Club...")
-        follows: List[jncweb.JNCResource] = await session.api.fetch_follows()
+        follows: List[jncweb.JNCResource] = await core.fetch_follows(session)
 
         if is_reverse:
             console.status("Sync to J-Novel Club...")

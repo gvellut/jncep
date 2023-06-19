@@ -82,6 +82,20 @@ def _copy_or_raw(data):
     return data
 
 
+async def paginate(func, key):
+    skip = 0
+    while True:
+        page = await func(skip=skip)
+        # flatten the pages
+        for item in page[key]:
+            yield item
+
+        pagination = page.pagination
+        if pagination.lastPage:
+            break
+        skip += pagination.limit
+
+
 class JNCLabsAPI:
     def __init__(
         self,
@@ -152,19 +166,6 @@ class JNCLabsAPI:
         path = f"{LABS_API_PATH_BASE}/{resource_type}/{slug_id}{sub_resource}"
         return await self._fetch_resource(path, skip=skip)
 
-    async def paginate(self, func, key):
-        skip = 0
-        while True:
-            page = await func(skip=skip)
-            # flatten the pages
-            for item in page[key]:
-                yield item
-
-            pagination = page.pagination
-            if pagination.lastPage:
-                break
-            skip += pagination.limit
-
     @with_cache
     async def fetch_content(self, slug_id, content_type):
         # not LABS_API base for embed queries
@@ -180,7 +181,14 @@ class JNCLabsAPI:
         path = f"{LABS_API_PATH_BASE}/events"
         return await self._fetch_resource(path, params=params, skip=skip)
 
-    async def _fetch_resource(self, path, *, params=None, skip=None):
+    @with_cache
+    async def fetch_follows(self, skip=None):
+        logger.debug(f"LABS /series only_follows skip={skip}")
+        path = f"{LABS_API_PATH_BASE}/series"
+        body = json.dumps({"only_follows": True})
+        return await self._fetch_resource(path, body=body, skip=skip)
+
+    async def _fetch_resource(self, path, *, params=None, body=None, skip=None):
         logger.debug(f"LABS {path} params={params} skip={skip}")
 
         if not params:
@@ -190,14 +198,19 @@ class JNCLabsAPI:
         if skip is not None:
             params.update(skip=skip)
 
-        r = await self._call_labs_api_authenticated("GET", path, params=params)
+        # POST used for follows filtering
+        verb = "POST" if body else "GET"
+
+        r = await self._call_labs_api_authenticated(
+            verb, path, params=params, body=body
+        )
 
         d = Addict(r.json())
         deep_freeze(d)
         return d
 
     async def _call_labs_api_authenticated(
-        self, method, path, headers=None, params=None, **kwargs
+        self, method, path, *, headers=None, params=None, body=None, **kwargs
     ):
         # ~common base path + params set in caller: some calls (embed) to the Labs API
         # do not have them
@@ -207,8 +220,9 @@ class JNCLabsAPI:
             method,
             path,
             auth,
-            headers,
-            params,
+            headers=headers,
+            params=params,
+            body=body,
             connection_timeout=self.connection_timeout,
             timeout=self.labs_api_default_timeout,
             **kwargs,
@@ -217,7 +231,16 @@ class JNCLabsAPI:
         return r
 
     async def _call_authenticated(
-        self, session, method, path, auth, headers=None, params=None, **kwargs
+        self,
+        session,
+        method,
+        path,
+        auth,
+        *,
+        headers=None,
+        params=None,
+        body=None,
+        **kwargs,
     ):
         if not headers:
             headers = auth
@@ -225,47 +248,11 @@ class JNCLabsAPI:
             headers = {**auth, **headers}
 
         r = await session.request(
-            method, path=path, headers=headers, params=params, **kwargs
+            method, path=path, headers=headers, params=params, data=body, **kwargs
         )
         r.raise_for_status()
 
         return r
-
-    async def fetch_follows(self):
-        async def _do_fetch_follows(skip):
-            logger.debug(f"LABS /series only_follows skip={skip}")
-
-            path = f"{LABS_API_PATH_BASE}/series"
-            params = {**LABS_API_COMMON_PARAMS, "skip": skip}
-            body = json.dumps({"only_follows": True})
-
-            r = await self._call_labs_api_authenticated(
-                "POST", path, params=params, data=body
-            )
-
-            d = Addict(r.json())
-            deep_freeze(d)
-            return d
-
-        followed_series = []
-        async for series in self.paginate(_do_fetch_follows, "series"):
-            # ignore manga series
-            if series.type.upper() != "NOVEL":
-                continue
-
-            slug = series.slug
-            # the metadata is not as complete as the usual (with fetch_meta)
-            # but it can still be useful to avoid a call later to the API
-            jnc_resource = jncweb.JNCResource(
-                jncweb.url_from_series_slug(slug),
-                slug,
-                True,
-                jncweb.RESOURCE_TYPE_SERIES,
-                series,
-            )
-            followed_series.append(jnc_resource)
-
-        return followed_series
 
     async def follow_series(self, series_id):
         await self._set_follow(series_id, True)

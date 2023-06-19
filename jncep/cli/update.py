@@ -154,7 +154,7 @@ async def update_tracked(
         new_synced = None
         if is_sync:
             console.status("Fetch followed series from J-Novel Club...")
-            follows = await session.api.fetch_follows()
+            follows = await core.fetch_follows(session)
             # new series will also be added to tracked_series
             new_synced, _ = await track.sync_series_forward(
                 session, follows, tracked_series, False
