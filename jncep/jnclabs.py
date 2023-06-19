@@ -238,10 +238,14 @@ class JNCLabsAPI:
             path = f"{LABS_API_PATH_BASE}/series"
             params = {**LABS_API_COMMON_PARAMS, "skip": skip}
             body = json.dumps({"only_follows": True})
+
             r = await self._call_labs_api_authenticated(
                 "POST", path, params=params, data=body
             )
-            return Addict(r.json())
+
+            d = Addict(r.json())
+            deep_freeze(d)
+            return d
 
         followed_series = []
         async for series in self.paginate(_do_fetch_follows, "series"):
