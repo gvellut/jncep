@@ -183,13 +183,14 @@ class JNCLabsAPI:
 
     @with_cache
     async def fetch_follows(self, skip=None):
-        logger.debug(f"LABS /series only_follows skip={skip}")
         path = f"{LABS_API_PATH_BASE}/series"
         body = json.dumps({"only_follows": True})
-        return await self._fetch_resource(path, body=body, skip=skip)
+        return await self._fetch_resource(path, "POST", body=body, skip=skip)
 
-    async def _fetch_resource(self, path, *, params=None, body=None, skip=None):
-        logger.debug(f"LABS {path} params={params} skip={skip}")
+    async def _fetch_resource(
+        self, path, verb="GET", *, params=None, body=None, skip=None
+    ):
+        logger.debug(f"LABS {verb} {path} params={params} body={body} skip={skip}")
 
         if not params:
             params = {}
@@ -197,9 +198,6 @@ class JNCLabsAPI:
         params.update(LABS_API_COMMON_PARAMS)
         if skip is not None:
             params.update(skip=skip)
-
-        # POST used for follows filtering
-        verb = "POST" if body else "GET"
 
         r = await self._call_labs_api_authenticated(
             verb, path, params=params, body=body
@@ -210,14 +208,14 @@ class JNCLabsAPI:
         return d
 
     async def _call_labs_api_authenticated(
-        self, method, path, *, headers=None, params=None, body=None, **kwargs
+        self, verb, path, *, headers=None, params=None, body=None, **kwargs
     ):
         # ~common base path + params set in caller: some calls (embed) to the Labs API
         # do not have them
         auth = {"Authorization": f"Bearer {self.token}"}
         r = await self._call_authenticated(
             self.labs_api_session,
-            method,
+            verb,
             path,
             auth,
             headers=headers,
@@ -233,7 +231,7 @@ class JNCLabsAPI:
     async def _call_authenticated(
         self,
         session,
-        method,
+        verb,
         path,
         auth,
         *,
@@ -248,7 +246,7 @@ class JNCLabsAPI:
             headers = {**auth, **headers}
 
         r = await session.request(
-            method, path=path, headers=headers, params=params, data=body, **kwargs
+            verb, path=path, headers=headers, params=params, data=body, **kwargs
         )
         r.raise_for_status()
 
