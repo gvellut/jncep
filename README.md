@@ -277,6 +277,8 @@ The specifig way of setting them will depend on your shell. For example, with Ba
 export JNCEP_BYVOLUME=1
 ```
 
+The names of the environment variables are __case-sensitive__.
+
 ### Priority order for option values
 
 The priority order for option values is as follows:
@@ -384,7 +386,7 @@ Using the `sync`subcommand, `track` will update the list of series tracked by `j
 jncep track sync
 ```
 
-The `--reverse` flag can be used for the opposite: The list of series followed on the J-Novel Club website will be updated to add series that are tracked locally by the `jncep` tool. This can be useful since the Follow functionality of the website has been added just recently and the calendar of the website can be filtered with just the followed series.
+The `--reverse` flag can be used for the opposite: The list of series followed on the J-Novel Club website will be updated to add series that are tracked locally by the `jncep` tool.
 
 By default, the `sync` subcommand doesn't do any deletion, it just adds missing entries. To make the list of tracked series and followed series identical, the `--delete` flag can be passed.
 
@@ -424,6 +426,10 @@ Options:
   -s, --sync              Flag to sync tracked series based on series followed
                           on J-Novel Club and update the new ones from the
                           beginning of the series
+  -j, --jnc-managed       Flag to indicate whether to use the series followed
+                          on the J-Novel Club website as the tracking
+                          reference for updating (equivalent to running 'track
+                          sync --delete --beginning' followed by 'update')
   -w, --whole             Flag to indicate whether the whole volume should be
                           regenerated when a new part is detected during the
                           update
@@ -472,6 +478,7 @@ Compared to the `epub` command, the `update` command understands the additional 
 - USE_EVENTS
 - WHOLE
 - WHOLE_FINAL
+- JNC_MANAGED
 
 Since they are flags, they should have a value like `1`, `true`, `t`, `yes`, `y` or `on` (case insensitive) if set.
 
@@ -479,6 +486,7 @@ They are also available as environment variables:
 - JNCEP_USE_EVENTS
 - JNCEP_WHOLE
 - JNCEP_WHOLE_FINAL
+- JNCEP_JNC_MANAGED
 
 ### Automation
 
@@ -584,6 +592,12 @@ The `set` subcommand can be used to set the value for a configuration option:
 
 ```console
 jncep config set EMAIL "jnclogin@aol.com"
+```
+
+The option names are case-insensitive so it could also be written as:
+
+```console
+jncep config set email "jnclogin@aol.com"
 ```
 
 This will display something like:

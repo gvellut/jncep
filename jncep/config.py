@@ -86,9 +86,10 @@ def unset_config_option(config, option):
 
 
 def _validate_option(option):
+    # keys in upper case when writing
     option = option.upper()
     allowed_options = list_available_config_options().keys()
-    if option.upper() not in allowed_options:
+    if option not in allowed_options:
         raise InvalidOptionError(
             f"Option '{option}' is not valid. Valid options are: "
             f"{', '.join(allowed_options)}"
@@ -157,5 +158,5 @@ class JNCEPConfigParser(ConfigParser):
     def __init__(self):
         # TOP_SECTION will be automatically created if new file
         super().__init__(default_section=TOP_SECTION, interpolation=None)
-        # will return the keys in upper case (instead of default lower)
+        # keys in upper case when reading (instead of default lower)
         self.optionxform = lambda x: x.upper()
