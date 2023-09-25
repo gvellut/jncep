@@ -7,6 +7,8 @@ on:
 jobs:
     publish:
         runs-on: ubuntu-20.04
+        permissions:
+            id-token: write
         steps:
             - name: Checkout sources
               uses: actions/checkout@v3
@@ -28,10 +30,9 @@ jobs:
               run: |
                   pip install -r requirements-dev.txt
 
-            - name: Publish to PyPi
-              env:
-                  TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
-                  TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
+            - name: Build pip package
               run: |
                   python setup.py sdist bdist_wheel
-                  twine upload dist/*
+
+            - name: Publish package to PyPI
+              uses: pypa/gh-action-pypi-publish@release/v1
