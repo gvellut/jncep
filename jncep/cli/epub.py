@@ -33,6 +33,7 @@ console = utils.getConsole()
     ),
 )
 @options.byvolume_option
+@options.subfolder_option
 @options.images_option
 @options.raw_content_option
 @options.no_replace_chars_option
@@ -45,6 +46,7 @@ async def generate_epub(
     part_spec,
     output_dirpath,
     is_by_volume,
+    is_by_subfolder,
     is_extract_images,
     is_extract_content,
     is_not_replace_chars,
@@ -54,6 +56,7 @@ async def generate_epub(
     epub_generation_options = core.EpubGenerationOptions(
         output_dirpath,
         is_by_volume,
+        is_by_subfolder,
         is_extract_images,
         is_extract_content,
         is_not_replace_chars,
