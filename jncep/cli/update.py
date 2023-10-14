@@ -26,6 +26,7 @@ console = utils.getConsole()
 @options.password_option
 @options.output_option
 @options.byvolume_option
+@options.subfolder_option
 @options.images_option
 @options.raw_content_option
 @options.no_replace_chars_option
@@ -93,6 +94,7 @@ async def update_tracked(
     password,
     output_dirpath,
     is_by_volume,
+    is_by_subfolder,
     is_extract_images,
     is_extract_content,
     is_not_replace_chars,
@@ -134,6 +136,7 @@ async def update_tracked(
         epub_generation_options = core.EpubGenerationOptions(
             output_dirpath,
             is_by_volume,
+            is_by_subfolder,
             is_extract_images,
             is_extract_content,
             is_not_replace_chars,

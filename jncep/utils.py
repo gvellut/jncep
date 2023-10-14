@@ -63,6 +63,15 @@ def to_safe_filename(name):
     return safe
 
 
+def to_safe_foldername(name):
+    name = "".join(
+        c for c in unicodedata.normalize("NFD", name) if unicodedata.category(c) != "Mn"
+    )
+    safe = re.sub(r'[<>:"\/\\\|\?\*]+', "_", name)
+    safe = safe.strip("_")
+    return safe
+
+
 def module_info():
     # for main module : its __name__ is __main__
     # so find out its real name

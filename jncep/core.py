@@ -17,7 +17,7 @@ import trio
 from . import epub, jnclabs, jncweb, spec, utils
 from .model import Image, Part, Series, Volume
 from .trio_utils import bag
-from .utils import is_debug, to_safe_filename
+from .utils import is_debug, to_safe_filename, to_safe_foldername
 
 logger = logging.getLogger(__name__)
 console = utils.getConsole()
@@ -128,11 +128,18 @@ async def create_epub(series, volumes, parts, epub_generation_options):
     if epub_generation_options.is_extract_images:
         await extract_images(parts, epub_generation_options)
 
+
     extension = ".epub"
     for book_details_i in book_details:
         output_filename = to_safe_filename(book_details_i.title) + extension
+        if epub_generation_options.is_by_subfolder:
+            output_series = to_safe_foldername(series.raw_data.title)
+            output_folderpath = os.path.join(epub_generation_options.output_dirpath, output_series)
+            utils.ensure_directory_exists(output_folderpath)
+        else:
+            output_folderpath = epub_generation_options.output_dirpath
         output_filepath = os.path.join(
-            epub_generation_options.output_dirpath, output_filename
+            output_folderpath, output_filename
         )
 
         seg_volume = book_details_i.title_segments.volume

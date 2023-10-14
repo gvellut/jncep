@@ -81,7 +81,6 @@ no_replace_chars_option = click.option(
     ),
 )
 
-
 css_option = click.option(
     "-t",
     "--css",
@@ -89,4 +88,13 @@ css_option = click.option(
     type=click.Path(exists=True, resolve_path=True, file_okay=True, dir_okay=False),
     envvar=f"{ENVVAR_PREFIX}CSS",
     help="Path to custom CSS file for the EPUBs [default: The CSS provided by JNCEP]",
+)
+
+subfolder_option = click.option(
+    "-f",
+    "--subfolder",
+    "is_by_subfolder",
+    is_flag=True,
+    envvar=f"{ENVVAR_PREFIX}SUBFOLDER",
+    help="Create subfolders with the series name inside the output_dirpath ",
 )
