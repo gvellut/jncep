@@ -207,6 +207,7 @@ def _process_single_epub_content(series, volumes, parts):
     repr_volume = volumes[0]
     author = _extract_author(repr_volume.raw_data.creators)
     volume_num = repr_volume.num
+    description = repr_volume.description
 
     # in case of multiple volumes, this will set the number of the first volume
     # in the epub
@@ -313,6 +314,7 @@ def _process_single_epub_content(series, volumes, parts):
         identifier,
         title,
         title_segments,
+        description,
         author,
         collection,
         cover_image,
@@ -564,7 +566,7 @@ async def fetch_meta(session, series_id_or_slug):
             volume_id = volume_raw_data.legacyId
             volume_num = i + 1
 
-            volume = Volume(volume_raw_data, volume_id, volume_num, series=series)
+            volume = Volume(volume_raw_data, volume_id, volume_num, volume_raw_data.description, series=series)
             volumes.append(volume)
 
             parts = []
