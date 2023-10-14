@@ -14,6 +14,7 @@ class BookDetails:
     identifier = attr.ib()
     title = attr.ib()
     title_segments = attr.ib()
+    description = attr.ib()
     author = attr.ib()
     collection = attr.ib()
     cover_image = attr.ib()
@@ -58,6 +59,7 @@ def output_epub(output_filepath, book_details: BookDetails, style_css_path=None)
     book.set_title(book_details.title)
     book.set_language(lang)
     book.add_author(book_details.author)
+    book.add_metadata('DC', 'description', book_details.description)
 
     # metadata for series GH issue #9
     collection_meta = book_details.collection

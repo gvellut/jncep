@@ -13,6 +13,7 @@ class Volume:
     raw_data = attr.ib()
     volume_id = attr.ib()
     num = attr.ib()
+    description = attr.ib(None)
     parts = attr.ib(None)
     cover = attr.ib(None)
     series = attr.ib(None)
