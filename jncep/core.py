@@ -27,6 +27,7 @@ EpubGenerationOptions = namedtuple(
     "EpubGenerationOptions",
     [
         "output_dirpath",
+        "is_by_subfolder",
         "is_by_volume",
         "is_extract_images",
         "is_extract_content",
