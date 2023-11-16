@@ -5,7 +5,7 @@ import sys
 
 import attr
 import dateutil
-import trio
+from exceptiongroup import BaseExceptionGroup
 
 from . import core, jncweb, spec, utils
 from .trio_utils import bag
@@ -298,7 +298,7 @@ async def _handle_series(
 
         return update_result
 
-    except (trio.MultiError, Exception) as ex:
+    except (BaseExceptionGroup, Exception) as ex:
         if series and series.raw_data:
             title = series.raw_data.title
         else:

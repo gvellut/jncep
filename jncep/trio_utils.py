@@ -1,24 +1,30 @@
 from functools import partial, wraps
 import logging
+import sys
 from typing import List
+import warnings
 
 import attr
+from exceptiongroup import BaseExceptionGroup
 import outcome
 import trio
+from trio import TrioDeprecationWarning
 
 logger = logging.getLogger(__name__)
 
+warnings.filterwarnings(action="ignore", category=TrioDeprecationWarning)
 
-def handle_BaseExceptions(exc):
+
+def handle_PriorityExceptions(exc):
     if (
         isinstance(exc, SystemExit)
         or isinstance(exc, KeyboardInterrupt)
         or isinstance(exc, GeneratorExit)
     ):
         return exc
-    if isinstance(exc, trio.MultiError):
+    if isinstance(exc, BaseExceptionGroup):
         for ex in exc.exceptions:
-            base_ex = handle_BaseExceptions(ex)
+            base_ex = handle_PriorityExceptions(ex)
             if base_ex:
                 return base_ex
     return None
@@ -29,9 +35,13 @@ def coro(f):
     def wrapper(*args, **kwargs):
         try:
             return trio.run(partial(f, *args, **kwargs))
-        except trio.MultiError as ex:
+        except BaseExceptionGroup as ex:
+            # in not debug mode => will only show a single exc ; show complete list
+            # of exceptions in debug
+            logger.debug(f"Error in wrapper: {ex}", exc_info=sys.exc_info())
+
             # TODO does this make sense ???
-            base_ex = handle_BaseExceptions(ex)
+            base_ex = handle_PriorityExceptions(ex)
             if base_ex:
                 raise base_ex
             # just the first
@@ -119,7 +129,7 @@ def gather(nursery: trio.Nursery, futures: List[Future]) -> Future:
         # And then wrap up the result and push it to the parent channel
         errors = [e.error for e in result_list if isinstance(e, outcome.Error)]
         if len(errors) > 0:
-            result = outcome.Error(trio.MultiError(errors))
+            result = outcome.Error(BaseExceptionGroup("receiver", errors))
         else:
             result = outcome.Value([o.unwrap() for o in result_list])
         async with parent_send_chan:
