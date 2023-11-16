@@ -28,7 +28,7 @@ EpubGenerationOptions = namedtuple(
     "EpubGenerationOptions",
     [
         "output_dirpath",
-        "is_by_subfolder",
+        "is_subfolder",
         "is_by_volume",
         "is_extract_images",
         "is_extract_content",
@@ -130,19 +130,19 @@ async def create_epub(series, volumes, parts, epub_generation_options):
     if epub_generation_options.is_extract_images:
         await extract_images(parts, epub_generation_options)
 
-
     extension = ".epub"
     for book_details_i in book_details:
         output_filename = to_safe_filename(book_details_i.title) + extension
-        if epub_generation_options.is_by_subfolder:
+        if epub_generation_options.is_subfolder:
             output_series = to_safe_foldername(series.raw_data.title)
-            output_folderpath = os.path.join(epub_generation_options.output_dirpath, output_series)
+            output_folderpath = os.path.join(
+                epub_generation_options.output_dirpath, output_series
+            )
             utils.ensure_directory_exists(output_folderpath)
         else:
             output_folderpath = epub_generation_options.output_dirpath
-        output_filepath = os.path.join(
-            output_folderpath, output_filename
-        )
+
+        output_filepath = os.path.join(output_folderpath, output_filename)
 
         seg_volume = book_details_i.title_segments.volume
         seg_part = book_details_i.title_segments.part
@@ -174,7 +174,6 @@ async def create_epub(series, volumes, parts, epub_generation_options):
 def process_series(
     series, volumes, parts, options: EpubGenerationOptions
 ) -> epub.BookDetails:
-
     # prepare content
     for part in parts:
         content_for_part = part.content
@@ -568,7 +567,13 @@ async def fetch_meta(session, series_id_or_slug):
             volume_id = volume_raw_data.legacyId
             volume_num = i + 1
 
-            volume = Volume(volume_raw_data, volume_id, volume_num, volume_raw_data.description, series=series)
+            volume = Volume(
+                volume_raw_data,
+                volume_id,
+                volume_num,
+                volume_raw_data.description,
+                series=series,
+            )
             volumes.append(volume)
 
             parts = []
@@ -762,7 +767,6 @@ async def fetch_cover_image_from_parts(session, parts):
 async def _fetch_one_candidate_image(session, candidate_urls):
     for candidate_url in candidate_urls:
         if candidate_url:
-
             if "cover" not in candidate_url and "cvr" not in candidate_url:
                 # TODO check the cover format on old series
                 logger.debug(

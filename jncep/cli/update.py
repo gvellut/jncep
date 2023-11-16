@@ -94,7 +94,7 @@ async def update_tracked(
     password,
     output_dirpath,
     is_by_volume,
-    is_by_subfolder,
+    is_subfolder,
     is_extract_images,
     is_extract_content,
     is_not_replace_chars,
@@ -135,8 +135,8 @@ async def update_tracked(
 
         epub_generation_options = core.EpubGenerationOptions(
             output_dirpath,
+            is_subfolder,
             is_by_volume,
-            is_by_subfolder,
             is_extract_images,
             is_extract_content,
             is_not_replace_chars,

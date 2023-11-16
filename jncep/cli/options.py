@@ -91,10 +91,10 @@ css_option = click.option(
 )
 
 subfolder_option = click.option(
-    "-f",
+    "-u",
     "--subfolder",
-    "is_by_subfolder",
+    "is_subfolder",
     is_flag=True,
     envvar=f"{ENVVAR_PREFIX}SUBFOLDER",
-    help="Create subfolders with the series name inside the output_dirpath ",
+    help="Create subfolders with the series name inside the output folder",
 )

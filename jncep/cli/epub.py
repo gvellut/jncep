@@ -46,7 +46,7 @@ async def generate_epub(
     part_spec,
     output_dirpath,
     is_by_volume,
-    is_by_subfolder,
+    is_subfolder,
     is_extract_images,
     is_extract_content,
     is_not_replace_chars,
@@ -55,8 +55,8 @@ async def generate_epub(
     # created by group
     epub_generation_options = core.EpubGenerationOptions(
         output_dirpath,
+        is_subfolder,
         is_by_volume,
-        is_by_subfolder,
         is_extract_images,
         is_extract_content,
         is_not_replace_chars,
