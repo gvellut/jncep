@@ -6,7 +6,7 @@ import attr
 
 logger = logging.getLogger(__name__)
 
-JNC_URL_BASE = "https://j-novel.club"
+JNC_URL_BASE = "https://jnc-nina.eu/"
 
 RESOURCE_TYPE_SERIES = "SERIES"
 RESOURCE_TYPE_VOLUME = "VOLUME"
@@ -48,8 +48,8 @@ def resource_from_url(url):
         # new site
         # new site changed titles to series in URL
         # so process both
-        s_re = r"^/(?:series|titles)/(.+?)(?:(?=/)|$)"
-        c_re = r"^/read/(.+?)(?:(?=/)|$)"
+        s_re = r"^.*?/(?:series|titles)/(.+?)(?:(?=/)|$)"
+        c_re = r"^.*?/read/(.+?)(?:(?=/)|$)"
         v_re = r"^volume-(\d+)$"
 
         m = re.match(s_re, pu.path)

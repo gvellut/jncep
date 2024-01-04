@@ -12,10 +12,10 @@ from .utils import deep_freeze
 logger = logging.getLogger(__name__)
 console = utils.getConsole()
 
-CDN_IMG_URL_BASE = "https://d2dq7ifhe7bu0f.cloudfront.net"
+CDN_IMG_URL_BASE = "https://cdn.jnc-nina.eu"
 
-LABS_API_URL_BASE = "https://labs.j-novel.club"
-LABS_API_PATH_BASE = "/app/v1"
+LABS_API_URL_BASE = "https://api.jnc-nina.eu"
+LABS_API_PATH_BASE = "/app/v2alpha"
 LABS_API_COMMON_PARAMS = {"format": "json"}
 LABS_API_COMMON_HEADERS = {
     "accept": "application/json",
