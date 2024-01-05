@@ -344,7 +344,7 @@ def _verify_series_needs_update_check(event_feed, series_details):
         if "details" in event and event.details.startswith("Release of Part"):
             # no s in JNC attr
             series = event.serie
-            if series.legacyId != series_id:
+            if series.id != series_id:
                 continue
 
             launch_date = dateutil.parser.parse(event.launch)
