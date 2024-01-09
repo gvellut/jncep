@@ -38,6 +38,7 @@ console = utils.getConsole()
 @options.raw_content_option
 @options.no_replace_chars_option
 @options.css_option
+@options.namegen_option
 @coro
 async def generate_epub(
     jnc_url_or_index,
@@ -51,6 +52,7 @@ async def generate_epub(
     is_extract_content,
     is_not_replace_chars,
     style_css_path,
+    namegen_rules,
 ):
     # created by group
     epub_generation_options = core.EpubGenerationOptions(
@@ -61,6 +63,7 @@ async def generate_epub(
         is_extract_content,
         is_not_replace_chars,
         style_css_path,
+        namegen_rules,
     )
 
     index = tryint(jnc_url_or_index)

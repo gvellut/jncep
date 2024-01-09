@@ -4,7 +4,7 @@ Command-line tool to generate EPUB files for [J-Novel Club](https://j-novel.club
 
 # Install
 
-The tool requires Python 3.6+.
+The tool requires Python 3.8+ (versions v46 and prior worked with Python 3.6+).
 
 To install, launch :
 
@@ -671,3 +671,4 @@ It creates the new folder and performs a simple copy of the files present in the
 
 - self-contained executable for macOS and Windows with PyInstaller
 - simple GUI
+- automated testing (tox) with all supported Python versions

@@ -98,3 +98,12 @@ subfolder_option = click.option(
     envvar=f"{ENVVAR_PREFIX}SUBFOLDER",
     help="Create subfolders with the series name inside the output folder",
 )
+
+
+namegen_option = click.option(
+    "-g",
+    "--namegen",
+    "namegen_rules",
+    envvar=f"{ENVVAR_PREFIX}NAMEGEN",
+    help="Name generation rules (see GH for documentation)",
+)

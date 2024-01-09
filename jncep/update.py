@@ -592,7 +592,7 @@ async def _generate_whole_volume_on_final_part(
     # check if any part included in the update is the final part of its volume
     for part in parts_downloaded:
         # only max one part can be final in a volume
-        if not core._is_part_final(part):
+        if not core.is_part_final(part):
             continue
 
         # check if possibly all parts have already been downloaded as part of the

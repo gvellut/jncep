@@ -1,19 +1,17 @@
-import logging
-
 import attr
 from ebooklib import epub
 import importlib_resources as imres
 
 from .model import Image
 
-logger = logging.getLogger(__name__)
-
 
 @attr.s
 class BookDetails:
     identifier = attr.ib()
+    series = attr.ib()
     title = attr.ib()
-    title_segments = attr.ib()
+    filename = attr.ib()
+    subfolder = attr.ib()
     description = attr.ib()
     author = attr.ib()
     collection = attr.ib()
@@ -31,25 +29,27 @@ class CollectionMetadata:
 
 
 DEFAULT_STYLE_CSS_PATH = "res/style.css"
-DEFAULT_STYLE_CSS = None
+CACHED_STYLE_CSS = None
 
 
 def read_default_style_css():
-    global DEFAULT_STYLE_CSS
-    DEFAULT_STYLE_CSS = (
-        imres.files(__package__).joinpath(DEFAULT_STYLE_CSS_PATH).read_text()
-    )
+    return imres.files(__package__).joinpath(DEFAULT_STYLE_CSS_PATH).read_text()
 
 
 def get_css(style_css_path):
+    global CACHED_STYLE_CSS
+
+    if CACHED_STYLE_CSS:
+        return CACHED_STYLE_CSS
+
+    # always the same during the execution, so read once and cache
     if style_css_path:
         with open(style_css_path, "r", encoding="utf-8", errors="ignore") as f:
-            return f.read()
+            CACHED_STYLE_CSS = f.read()
+    else:
+        CACHED_STYLE_CSS = read_default_style_css()
 
-    if not DEFAULT_STYLE_CSS:
-        read_default_style_css()
-
-    return DEFAULT_STYLE_CSS
+    return CACHED_STYLE_CSS
 
 
 def output_epub(output_filepath, book_details: BookDetails, style_css_path=None):
@@ -59,7 +59,7 @@ def output_epub(output_filepath, book_details: BookDetails, style_css_path=None)
     book.set_title(book_details.title)
     book.set_language(lang)
     book.add_author(book_details.author)
-    book.add_metadata('DC', 'description', book_details.description)
+    book.add_metadata("DC", "description", book_details.description)
 
     # metadata for series GH issue #9
     collection_meta = book_details.collection

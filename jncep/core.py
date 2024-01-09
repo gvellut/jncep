@@ -10,19 +10,17 @@ import sys
 import time
 from typing import List
 
-from addict import Dict as Addict
 import dateutil.parser
 from exceptiongroup import BaseExceptionGroup
 import trio
 
-from . import epub, jnclabs, jncweb, spec, utils
+from . import epub, jnclabs, jncweb, namegen, spec, utils
 from .model import Image, Part, Series, Volume
 from .trio_utils import bag
-from .utils import is_debug, to_safe_filename, to_safe_foldername
+from .utils import is_debug, to_safe_filename
 
 logger = logging.getLogger(__name__)
 console = utils.getConsole()
-
 
 EpubGenerationOptions = namedtuple(
     "EpubGenerationOptions",
@@ -34,6 +32,7 @@ EpubGenerationOptions = namedtuple(
         "is_extract_content",
         "is_not_replace_chars",
         "style_css_path",
+        "namegen_rules",
     ],
 )
 
@@ -132,27 +131,20 @@ async def create_epub(series, volumes, parts, epub_generation_options):
 
     extension = ".epub"
     for book_details_i in book_details:
-        output_filename = to_safe_filename(book_details_i.title) + extension
-        if epub_generation_options.is_subfolder:
-            output_series = to_safe_foldername(series.raw_data.title)
+        if book_details_i.subfolder:
             output_folderpath = os.path.join(
-                epub_generation_options.output_dirpath, output_series
+                epub_generation_options.output_dirpath, book_details_i.subfolder
             )
             utils.ensure_directory_exists(output_folderpath)
         else:
             output_folderpath = epub_generation_options.output_dirpath
 
+        output_filename = book_details_i.filename + extension
+
         output_filepath = os.path.join(output_folderpath, output_filename)
 
-        seg_volume = book_details_i.title_segments.volume
-        seg_part = book_details_i.title_segments.part
-        output_filepath = _to_max_len_filepath(
-            output_filepath,
-            book_details_i.title_segments.series_title,
-            book_details_i.title_segments.series_slug,
-            f" {seg_volume} {seg_part}",
-            extension,
-        )
+        # TODO process subfolder in to_max_len
+        output_filepath = _to_max_len_filepath(output_filepath, extension)
 
         # TODO write to memory then async fs write here ? (uses epublib
         # which is sync anyway)
@@ -192,16 +184,18 @@ def process_series(
         for volume in volumes:
             volume_parts = [part for part in parts if part.volume is volume]
             volume_details = _process_single_epub_content(
-                series, [volume], volume_parts
+                series, [volume], volume_parts, options
             )
             book_details.append(volume_details)
     else:
-        book_details = [_process_single_epub_content(series, volumes, parts)]
+        book_details = [_process_single_epub_content(series, volumes, parts, options)]
 
     return book_details
 
 
-def _process_single_epub_content(series, volumes, parts):
+def _process_single_epub_content(
+    series, volumes, parts, options: EpubGenerationOptions
+):
     # order of volumes and parts must match
 
     # representative volume: First
@@ -209,6 +203,7 @@ def _process_single_epub_content(series, volumes, parts):
     author = _extract_author(repr_volume.raw_data.creators)
     volume_num = repr_volume.num
     description = repr_volume.description
+    # TODO add tags as requested in issue in GH
 
     # in case of multiple volumes, this will set the number of the first volume
     # in the epub
@@ -225,87 +220,28 @@ def _process_single_epub_content(series, volumes, parts):
     if len(parts) == 1:
         # single part
         part = parts[0]
-        volume_num = part.volume.num
         part_num = part.num_in_volume
-
-        suffix = ""
-        if _is_part_final(part):
-            suffix = " [Final]"
-
-        title = f"{part.raw_data.title}{suffix}"
         # single part => single volume: part numbers relative to
         # that volume
         toc = [f"Part {part_num}"]
-        title_segments = Addict(
-            {
-                "series_title": series.raw_data.title,
-                "series_slug": series.raw_data.slug,
-                "volume": f"Volume {volume_num}",
-                "part": f"Part {part_num}",
-            }
-        )
     else:
         volume_index = set([v.num for v in volumes])
         if len(volume_index) > 1:
-            volume_nums = sorted(list(volume_index))
-            volume_nums = [str(vn) for vn in volume_nums]
-            volume_nums = ", ".join(volume_nums[:-1]) + " & " + volume_nums[-1]
-            volume_segment = f"Volumes {volume_nums}"
-            title_base = f"{series.raw_data.title}: {volume_segment}"
-
-            volume_num0 = parts[0].volume.num
-            part_num0 = parts[0].num_in_volume
-            volume_num1 = parts[-1].volume.num
-            part_num1 = parts[-1].num_in_volume
-
-            # check only last part in the epub
-            suffix = ""
-            if _is_part_final(parts[-1]):
-                suffix = " - Final"
-
-            part_segment = (
-                f"Parts {volume_num0}.{part_num0} to "
-                f"{volume_num1}.{part_num1}{suffix}"
-            )
-
             toc = [part.raw_data.title for part in parts]
-            title = f"{title_base} [{part_segment}]"
-            title_segments = Addict(
-                {
-                    "series_title": series.raw_data.title,
-                    "series_slug": series.raw_data.slug,
-                    "volume": volume_segment,
-                    "part": part_segment,
-                }
-            )
         else:
-            volume = volumes[0]
-            title_base = volume.raw_data.title
-
             toc = [f"Part {part.num_in_volume}" for part in parts]
 
-            part_num0 = parts[0].num_in_volume
-            part_num1 = parts[-1].num_in_volume
+    gen_rules = namegen.parse_namegen_rules(options.namegen_rules)
+    complete = len(volumes) == 1 and is_volume_complete(volumes[0], parts)
+    fc = namegen.FC(is_part_final(parts[-1]), complete)
+    title, filename, folder = namegen.generate_names(
+        series, volumes, parts, fc, gen_rules
+    )
 
-            is_complete = _is_volume_complete(volume, parts)
-            if is_complete:
-                part_segment = "Complete"
-            else:
-                # check the last part in the epub
-                suffix = ""
-                if _is_part_final(parts[-1]):
-                    suffix = " - Final"
-                part_segment = f"Parts {part_num0} to {part_num1}{suffix}"
-
-            title = f"{title_base} [{part_segment}]"
-            title_segments = Addict(
-                {
-                    "series_title": series.raw_data.title,
-                    "series_slug": series.raw_data.slug,
-                    "volume": f"Volume {volume.num}",
-                    "part": part_segment,
-                }
-            )
+    if options.is_subfolder:
+        subfolder = folder
+    else:
+        subfolder = None
 
     identifier = series.raw_data.slug + str(int(time.time()))
 
@@ -313,8 +249,10 @@ def _process_single_epub_content(series, volumes, parts):
 
     book_details = epub.BookDetails(
         identifier,
+        series,
         title,
-        title_segments,
+        filename,
+        subfolder,
         description,
         author,
         collection,
@@ -327,7 +265,7 @@ def _process_single_epub_content(series, volumes, parts):
     return book_details
 
 
-def _is_part_final(part):
+def is_part_final(part):
     volume = part.volume
     if volume.raw_data.get("totalParts") is None:
         # assume not final
@@ -335,7 +273,7 @@ def _is_part_final(part):
     return part.num_in_volume == volume.raw_data.totalParts
 
 
-def _is_volume_complete(volume, parts):
+def is_volume_complete(volume, parts):
     # need parts as args : the requested parts that will be included in the final
     # epub
     if volume.raw_data.get("totalParts") is None:
@@ -358,14 +296,9 @@ async def extract_images(parts, epub_generation_options):
                 img_filepath = os.path.join(
                     epub_generation_options.output_dirpath, img_filename
                 )
+                # TODO process subfolder like epub
 
-                img_filepath = _to_max_len_filepath(
-                    img_filepath,
-                    part.series.raw_data.title,
-                    part.series.raw_data.slug,
-                    f" Volume {part.volume.num} Part {part.num_in_volume}{suffix}",
-                    ext,
-                )
+                img_filepath = _to_max_len_filepath(img_filepath, ext)
 
                 n.start_soon(_write_bytes, img_filepath, image.content)
 
@@ -379,23 +312,15 @@ async def extract_content(parts, epub_generation_options):
             content_filepath = os.path.join(
                 epub_generation_options.output_dirpath, content_filename
             )
+            # TODO process subfolder like epub
 
-            content_filepath = _to_max_len_filepath(
-                content_filepath,
-                part.series.raw_data.title,
-                part.series.raw_data.slug,
-                f" Volume {part.volume.num} Part {part.num_in_volume}",
-                extension,
-            )
+            content_filepath = _to_max_len_filepath(content_filepath, extension)
 
             n.start_soon(_write_str, content_filepath, content)
 
 
 def _to_max_len_filepath(
     original_filepath,
-    _series_title,
-    series_slug,
-    suffix,
     extension,
 ):
     # do some processing or error when writing (for example, see Backstabbed ....)
@@ -419,19 +344,10 @@ def _to_max_len_filepath(
     if len(original_filepath) < max_path_len and len(original_filename) < max_name_len:
         return original_filepath
 
-    # basic substitution : replace title by slug (usually shorter)
-    # TODO do not do this ? can be inconsistent depending on suffix length (but should
-    # be rare) + use series_title for shorten instead of slug
-    subs_filename = to_safe_filename(series_slug + suffix) + extension
-    subs_filepath = os.path.join(dirpath, subs_filename)
-    if len(subs_filepath) < max_path_len and len(subs_filename) < max_name_len:
-        return subs_filepath
-
-    # will need to shorten slug part
-
     # minimum size for keeping recognizable (arbitrary)
-    min_title_short_len = 10
-    mandatory_len = len(suffix) + len(extension)
+    min_title_short_len = 15
+    mandatory_len = len(extension)
+    # TODO review comment : to_safe_filename is done during namegen
     # to_safe_filename below will not lenghten the title+suffix part
     # (will reduce actually: so final name will possibly be shorter than max_name)
     # -1 for the / between dirpath and filename (not already in dirpath)
@@ -445,9 +361,13 @@ def _to_max_len_filepath(
             f"PATH_MAX={max_path_len}, NAME_MAX={max_name_len}"
         )
 
-    # TODO use series instead ?
-    title_short = series_slug[:max_part_title_short_len]
-    subs_filename = to_safe_filename(title_short + suffix) + extension
+    chars_to_remove = len(original_filename) - max_part_title_short_len
+    start = (len(original_filename) - chars_to_remove) // 2
+    end = start + chars_to_remove
+    title_short = original_filename[:start] + original_filename[end:]
+
+    # to_safe_filename must have been done previously
+    subs_filename = title_short + extension
     subs_filepath = os.path.join(dirpath, subs_filename)
     return subs_filepath
 

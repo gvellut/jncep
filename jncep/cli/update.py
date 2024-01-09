@@ -31,6 +31,7 @@ console = utils.getConsole()
 @options.raw_content_option
 @options.no_replace_chars_option
 @options.css_option
+@options.namegen_option
 @click.option(
     "-s",
     "--sync",
@@ -99,13 +100,13 @@ async def update_tracked(
     is_extract_content,
     is_not_replace_chars,
     style_css_path,
+    namegen_rules,
     is_sync,
     is_whole_volume,
     is_whole_volume_on_final_part,
     is_use_events,
     is_jnc_managed,
 ):
-
     async with core.JNCEPSession(email, password) as session:
         if is_jnc_managed:
             # run the equivalent of:
@@ -141,6 +142,7 @@ async def update_tracked(
             is_extract_content,
             is_not_replace_chars,
             style_css_path,
+            namegen_rules,
         )
 
         update_options = update.UpdateOptions(

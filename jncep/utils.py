@@ -54,21 +54,32 @@ def to_yn(b):
     return "yes" if b else "no"
 
 
-def to_safe_filename(name):
+def to_safe_filename(name, char_replace="_"):
     name = "".join(
         c for c in unicodedata.normalize("NFD", name) if unicodedata.category(c) != "Mn"
     )
-    safe = re.sub(r"[^0-9a-zA-Z_]+", "_", name)
-    safe = safe.strip("_")
+    safe = re.sub(r"[^0-9a-zA-Z]+", char_replace, name)
+    safe = safe.strip(char_replace)
     return safe
 
 
-def to_safe_foldername(name):
+def to_safe_filename_limited(name, char_replace="_"):
     name = "".join(
         c for c in unicodedata.normalize("NFD", name) if unicodedata.category(c) != "Mn"
     )
-    safe = re.sub(r'[<>:"\/\\\|\?\*]+', "_", name)
-    safe = safe.strip("_")
+    safe = re.sub(r"[/\\?%*&:,=;|'\"!<>$#\x7F\x00-\x1F]", char_replace, name)
+    safe = re.sub(rf"{char_replace}+", char_replace, safe)
+    safe = safe.strip(char_replace)
+    return safe
+
+
+# TODO remove ? need to check if better than the to_safe_filename for folders
+def to_safe_foldername(name, char_replace="_"):
+    name = "".join(
+        c for c in unicodedata.normalize("NFD", name) if unicodedata.category(c) != "Mn"
+    )
+    safe = re.sub(r'[<>:"/\\|?*]+', char_replace, name)
+    safe = safe.strip(char_replace)
     return safe
 
 
