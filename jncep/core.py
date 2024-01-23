@@ -202,8 +202,8 @@ def _process_single_epub_content(
     repr_volume = volumes[0]
     author = _extract_author(repr_volume.raw_data.creators)
     volume_num = repr_volume.num
-    description = repr_volume.description
-    # TODO add tags as requested in issue in GH
+    description = repr_volume.raw_data.description
+    tags = repr_volume.series.raw_data.tags
 
     # in case of multiple volumes, this will set the number of the first volume
     # in the epub
@@ -253,9 +253,10 @@ def _process_single_epub_content(
         title,
         filename,
         subfolder,
-        description,
         author,
         collection,
+        description,
+        tags,
         cover_image,
         toc,
         contents,
@@ -491,7 +492,6 @@ async def fetch_meta(session, series_id_or_slug):
                 volume_raw_data,
                 volume_id,
                 volume_num,
-                volume_raw_data.description,
                 series=series,
             )
             volumes.append(volume)
