@@ -78,6 +78,18 @@ console = utils.getConsole()
     ),
 )
 @click.option(
+    "-f",
+    "--whole-only",
+    "is_whole_volume_only",
+    is_flag=True,
+    default=False,
+    envvar=f"{ENVVAR_PREFIX}WHOLE_ONLY",
+    help=(
+        "Flag to indicate whether an EPUB should be generated ONLY when the final "
+        "part of the volume is included in the update"
+    ),
+)
+@click.option(
     "-e",
     "--use-events",
     "is_use_events",
@@ -104,6 +116,7 @@ async def update_tracked(
     is_sync,
     is_whole_volume,
     is_whole_volume_on_final_part,
+    is_whole_volume_only,
     is_use_events,
     is_jnc_managed,
 ):
@@ -149,6 +162,7 @@ async def update_tracked(
             is_sync,
             is_whole_volume,
             is_whole_volume_on_final_part,
+            is_whole_volume_only,
             is_use_events,
         )
 

@@ -34,6 +34,7 @@ UpdateOptions = namedtuple(
         "is_sync",
         "is_whole_volume",
         "is_whole_volume_on_final_part",
+        "is_whole_volume_only",
         "is_use_events",
     ],
 )
@@ -415,16 +416,28 @@ async def _create_epub_for_new_parts(
             update_options,
         )
 
+        # additional EPUB with whole volume
         if (
             update_result.is_updated
-            and update_options.is_whole_volume_on_final_part
+            and (
+                update_options.is_whole_volume_on_final_part
+                or update_options.is_whole_volume_only
+            )
+            # if final part included, full volume already generated with this option
+            # so no need to do it again
             and not update_options.is_whole_volume
         ):
             # TODO do that as soon as we know which parts to download before
             # fill_covers_and_content
             parts_downloaded = update_result.parts_downloaded
             await _generate_whole_volume_on_final_part(
-                session, series, parts_downloaded, epub_generation_options
+                session,
+                series,
+                parts_downloaded,
+                epub_generation_options,
+                # nothing was downloaded for that option (shortcut in _update_new_parts)
+                # so will just check if final is included then download everything
+                force=update_options.is_whole_volume_only,
             )
 
         return update_result
@@ -513,15 +526,20 @@ async def _update_new_parts(
         # so even rarer
         return UpdateResult(series=series, is_updated=False, is_force_set_updated=True)
 
-    console.info(
-        f"The series '[highlight]{series.raw_data.title}[/]' will be updated..."
-    )
-
-    # after the to update notification
-    if len(available_parts_to_download) != len(parts_release_after_date):
-        console.warning(
-            f"Some parts for '[highlight]{series.raw_data.title}[/]' have " "expired!"
+    # if is_whole_volume_only, the messages will not make sense
+    # TODO message if the final part is in the unavailable parts? No message later
+    # if the case
+    if not update_options.is_whole_volume_only:
+        console.info(
+            f"The series '[highlight]{series.raw_data.title}[/]' will be updated..."
         )
+
+        # after the to update notification
+        if len(available_parts_to_download) != len(parts_release_after_date):
+            console.warning(
+                f"Some parts for '[highlight]{series.raw_data.title}[/]' have "
+                "expired!"
+            )
 
     parts_id_to_download = set((part.part_id for part in available_parts_to_download))
 
@@ -533,6 +551,12 @@ async def _update_new_parts(
         volumes_to_download,
         parts_to_download,
     ) = core.relevant_volumes_and_parts_for_content(series, simple_part_filter)
+
+    if update_options.is_whole_volume_only:
+        # shortcut : do not generate the EPUB but return the list of relevant
+        # available parts
+        # + pretend it was updated: Will update the track.json file
+        return UpdateResult(series, is_updated=True, parts_downloaded=parts_to_download)
 
     if update_options.is_whole_volume:
         # second pass : filter on the volumes_to_download
@@ -587,23 +611,29 @@ def _filter_parts_released_after_date(date, parts):
 
 
 async def _generate_whole_volume_on_final_part(
-    session, series, parts_downloaded, epub_generation_options
+    session, series, parts_downloaded, epub_generation_options, force=False
 ):
+    # TODO split function in 2 : find whole volumes + generate
+
     # check if any part included in the update is the final part of its volume
     for part in parts_downloaded:
         # only max one part can be final in a volume
         if not core.is_part_final(part):
             continue
 
-        # check if possibly all parts have already been downloaded as part of the
-        # update
-        for volpart in part.volume.parts:
-            if volpart not in parts_downloaded:
-                break
-        else:
-            # all the parts have been downloaded in the normal course
-            # of things, so we skip regenerating the whole volume
-            continue
+        # here : part is final part of its volume
+
+        if not force:
+            # check if possibly all parts have already been downloaded as part of the
+            # update
+            # should be rare (if update regularly)
+            for volpart in part.volume.parts:
+                if volpart not in parts_downloaded:
+                    break
+            else:
+                # all the parts have been downloaded in the normal course
+                # of things, so we skip regenerating the whole volume
+                continue
 
         console.info(
             "The complete volume "
@@ -612,7 +642,8 @@ async def _generate_whole_volume_on_final_part(
         )
 
         # With JNC if the final part can be downloaded, the rest of the
-        # volume is also available for download so no need to check
+        # volume is also available for download so no need to check them for
+        # availability
 
         await core.fill_covers_and_content(session, [part.volume], part.volume.parts)
         await core.create_epub(
