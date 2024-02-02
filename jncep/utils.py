@@ -54,11 +54,13 @@ def to_yn(b):
     return "yes" if b else "no"
 
 
-def to_safe_filename(name, char_replace="_"):
+def to_safe_filename(name, char_replace="_", preserve_chars=""):
     name = "".join(
         c for c in unicodedata.normalize("NFD", name) if unicodedata.category(c) != "Mn"
     )
-    safe = re.sub(r"[^0-9a-zA-Z]+", char_replace, name)
+    safe = re.sub(
+        r"[^0-9a-zA-Z" + re.escape(preserve_chars) + r"]+", char_replace, name
+    )
     safe = safe.strip(char_replace)
     return safe
 

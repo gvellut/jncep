@@ -10,3 +10,4 @@ rich==13.7.0
 outcome==1.3.0.post0
 importlib_resources==6.1.1
 exceptiongroup==1.1.3
+lark==1.1.9
