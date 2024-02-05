@@ -86,7 +86,8 @@ console = utils.getConsole()
     envvar=f"{ENVVAR_PREFIX}WHOLE_ONLY",
     help=(
         "Flag to indicate whether an EPUB should be generated ONLY when the final "
-        "part of the volume is included in the update"
+        "part of the volume is included in the update. This EPUB will contain the "
+        "whole volume."
     ),
 )
 @click.option(

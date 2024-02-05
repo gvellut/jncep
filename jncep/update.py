@@ -20,6 +20,7 @@ class UpdateResult:
     is_error = attr.ib(False)
     is_updated = attr.ib(None)
     is_considered = attr.ib(True)
+    is_whole_epub_generated = attr.ib(False)
     # to indicate a series with expired parts only
     # will set to latest part or will always have error
     # if stalled
@@ -281,14 +282,19 @@ async def _handle_series(
         )
 
         if update_result.is_updated:
-            emoji = ""
-            if console.is_advanced():
-                emoji = "\u2714 "
-            console.info(
-                f"{emoji}The series '[highlight]{series.raw_data.title}[/]' has "
-                "been updated!",
-                style="success",
-            )
+            # TODO clean up : set is_updated only if an EPUB generated (whole or not)
+            if (
+                not update_options.is_whole_volume_only
+                or update_result.is_whole_epub_generated
+            ):
+                emoji = ""
+                if console.is_advanced():
+                    emoji = "\u2714 "
+                console.info(
+                    f"{emoji}The series '[highlight]{series.raw_data.title}[/]' has "
+                    "been updated!",
+                    style="success",
+                )
         else:
             if is_check_events and is_need_check:
                 # incoherence between feed and series data
@@ -430,7 +436,7 @@ async def _create_epub_for_new_parts(
             # TODO do that as soon as we know which parts to download before
             # fill_covers_and_content
             parts_downloaded = update_result.parts_downloaded
-            await _generate_whole_volume_on_final_part(
+            is_epub_generated = await _generate_whole_volume_on_final_part(
                 session,
                 series,
                 parts_downloaded,
@@ -439,6 +445,7 @@ async def _create_epub_for_new_parts(
                 # so will just check if final is included then download everything
                 force=update_options.is_whole_volume_only,
             )
+            update_result.is_whole_epub_generated = is_epub_generated
 
         return update_result
 
@@ -526,6 +533,7 @@ async def _update_new_parts(
         # so even rarer
         return UpdateResult(series=series, is_updated=False, is_force_set_updated=True)
 
+    # TODO clean up the whole gen whole + messages
     # if is_whole_volume_only, the messages will not make sense
     # TODO message if the final part is in the unavailable parts? No message later
     # if the case
@@ -615,6 +623,7 @@ async def _generate_whole_volume_on_final_part(
 ):
     # TODO split function in 2 : find whole volumes + generate
 
+    is_epub_generated = False
     # check if any part included in the update is the final part of its volume
     for part in parts_downloaded:
         # only max one part can be final in a volume
@@ -652,3 +661,6 @@ async def _generate_whole_volume_on_final_part(
             part.volume.parts,
             epub_generation_options,
         )
+        is_epub_generated = True
+
+    return is_epub_generated
