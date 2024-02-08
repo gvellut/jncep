@@ -20,13 +20,11 @@ class UpdateResult:
     is_error = attr.ib(False)
     is_updated = attr.ib(None)
     is_considered = attr.ib(True)
-    is_whole_epub_generated = attr.ib(False)
     # to indicate a series with expired parts only
     # will set to latest part or will always have error
     # if stalled
     is_force_set_updated = attr.ib(False)
     is_update_last_checked = attr.ib(True)
-    parts_downloaded = attr.ib(None)
 
 
 UpdateOptions = namedtuple(
@@ -91,15 +89,12 @@ async def update_url_series(
         console.pop_status()
 
     if is_need_check:
-        # the series has just been synced so force EPUB gen from start in this case
-        is_force_from_beginning = update_options.is_sync
         update_result = await _create_epub_for_new_parts(
             session,
             series_details,
             series,
             epub_generation_options,
             update_options,
-            is_force_from_beginning,
         )
 
     if update_result.is_updated:
@@ -158,7 +153,6 @@ async def update_all_series(
                 series_url,
                 series_details,
                 epub_generation_options,
-                update_options.is_sync,
                 new_synced,
                 update_options,
                 events,
@@ -248,14 +242,13 @@ async def _handle_series(
     series_url,
     series_details,
     epub_generation_options,
-    is_sync,
     new_synced,
     update_options,
     events,
 ):
     series = None
     try:
-        if is_sync and series_url not in new_synced:
+        if update_options.is_sync and series_url not in new_synced:
             return UpdateResult(is_considered=False)
 
         is_need_check = False
@@ -270,31 +263,23 @@ async def _handle_series(
         series_id = await core.resolve_series(session, jnc_resource)
         series = await core.fetch_meta(session, series_id)
 
-        # generate from the start if the series is newly sync
-        is_force_from_beginning = is_sync
         update_result = await _create_epub_for_new_parts(
             session,
             series_details,
             series,
             epub_generation_options,
             update_options,
-            is_force_from_beginning,
         )
 
         if update_result.is_updated:
-            # TODO clean up : set is_updated only if an EPUB generated (whole or not)
-            if (
-                not update_options.is_whole_volume_only
-                or update_result.is_whole_epub_generated
-            ):
-                emoji = ""
-                if console.is_advanced():
-                    emoji = "\u2714 "
-                console.info(
-                    f"{emoji}The series '[highlight]{series.raw_data.title}[/]' has "
-                    "been updated!",
-                    style="success",
-                )
+            emoji = ""
+            if console.is_advanced():
+                emoji = "\u2714 "
+            console.info(
+                f"{emoji}The series '[highlight]{series.raw_data.title}[/]' has "
+                "been updated!",
+                style="success",
+            )
         else:
             if is_check_events and is_need_check:
                 # incoherence between feed and series data
@@ -398,160 +383,77 @@ async def _create_epub_for_new_parts(
     series,
     epub_generation_options,
     update_options,
-    is_force_from_beginning=False,
 ):
     parts = core.all_parts_meta(series)
 
-    if series_details.part == 0 or is_force_from_beginning:
-        # Firt clause: special processing : means there was no part available when the
-        # series was started tracking
-
-        update_result = await _update_from_beginning(
-            session, series, parts, epub_generation_options
-        )
-        # no need for _generate_whole_volume_on_final_part: if from the beginning +
-        # final included => the whole volume is already generated
+    # Either
+    update_result, availability = _find_available_parts(
+        session, series_details, series, parts, update_options
+    )
+    if update_result:
         return update_result
-    else:
+
+    if not update_options.is_whole_volume_only:
         update_result = await _update_new_parts(
             session,
-            series_details,
             series,
-            parts,
+            availability,
+            epub_generation_options,
+            update_options,
+        )
+    else:
+        # force update to advance the date in the tracking config even if no EPUB
+        # generated for single parts
+        # TODO always is_force_set_updated? => so the last part / date of release is
+        # recorded no matter what
+        update_result = UpdateResult(series, is_force_set_updated=True)
+
+    if (
+        # if final part included, full volume already generated with this option
+        # so no need to do it again
+        not update_options.is_whole_volume
+        and (
+            update_options.is_whole_volume_on_final_part
+            or update_options.is_whole_volume_only
+        )
+    ):
+        update_result_whole = await _generate_whole_volume_on_final_part(
+            session,
+            series,
+            availability,
             epub_generation_options,
             update_options,
         )
 
-        # additional EPUB with whole volume
-        if (
-            update_result.is_updated
-            and (
-                update_options.is_whole_volume_on_final_part
-                or update_options.is_whole_volume_only
-            )
-            # if final part included, full volume already generated with this option
-            # so no need to do it again
-            and not update_options.is_whole_volume
-        ):
-            # TODO do that as soon as we know which parts to download before
-            # fill_covers_and_content
-            parts_downloaded = update_result.parts_downloaded
-            is_epub_generated = await _generate_whole_volume_on_final_part(
-                session,
-                series,
-                parts_downloaded,
-                epub_generation_options,
-                # nothing was downloaded for that option (shortcut in _update_new_parts)
-                # so will just check if final is included then download everything
-                force=update_options.is_whole_volume_only,
-            )
-            update_result.is_whole_epub_generated = is_epub_generated
-
-        return update_result
-
-
-async def _update_from_beginning(session, series, parts, epub_generation_options):
-    # still no part ?
-    if not parts:
-        return UpdateResult(is_updated=False)
-    else:
-        console.info(
-            f"The series '[highlight]{series.raw_data.title}[/]' " "will be updated..."
+        # merge
+        update_result.is_updated = (
+            update_result.is_updated or update_result_whole.is_updated
         )
 
-        part_filter = partial(core.is_part_available, session.now)
-
-        (
-            volumes_to_download,
-            parts_to_download,
-        ) = core.relevant_volumes_and_parts_for_content(series, part_filter)
-        volumes_for_cover = core.relevant_volumes_for_cover(
-            volumes_to_download, epub_generation_options.is_by_volume
-        )
-
-        await core.fill_covers_and_content(
-            session, volumes_for_cover, parts_to_download
-        )
-        await core.create_epub(
-            series,
-            volumes_to_download,
-            parts_to_download,
-            epub_generation_options,
-        )
-
-        return UpdateResult(series, is_updated=True, parts_downloaded=parts_to_download)
+    return update_result
 
 
 async def _update_new_parts(
     session,
-    series_details,
     series,
-    parts,
+    availability,
     epub_generation_options,
     update_options,
 ):
-    if not series_details.part_date:
-        # if here => old format, first lookup date of last part and use that
-        # still useful for stalled series so keep it
-        part_spec = spec.analyze_part_specs(series_details.part)
-        for part in parts:
-            if part_spec.has_part(part):
-                # will be filled if the part still exists (it should)
-                # TODO case it doesn't ? eg tracked.json filled by hand
-                last_update_part = part
-                break
-        # in UTC
-        last_update_date = last_update_part.raw_data.launch
-    else:
-        # new format : date is recorded
-        last_update_date = series_details.part_date
+    available_parts_to_download, is_all_available = availability
 
-    last_update_date = dateutil.parser.parse(last_update_date)
-
-    parts_release_after_date = _filter_parts_released_after_date(
-        last_update_date, parts
+    console.info(
+        f"The series '[highlight]{series.raw_data.title}[/]' will be updated..."
     )
 
-    if not parts_release_after_date:
-        # not updated
-        return UpdateResult(series, is_updated=False)
-
-    available_parts_to_download = [
-        part
-        for part in parts_release_after_date
-        if core.is_part_available(session.now, part)
-    ]
-
-    if not available_parts_to_download:
+    if not is_all_available:
         console.warning(
-            f"All updated parts for '[highlight]{series.raw_data.title}[/]' "
-            "have expired!"
-        )
-        # not updated but the series will still have its tracking data changed
-        # in tracking config ; if not, the message above will always be displayed
-        # should be rare (if updating often) ; also first part is preview
-        # so even rarer
-        return UpdateResult(series=series, is_updated=False, is_force_set_updated=True)
-
-    # TODO clean up the whole gen whole + messages
-    # if is_whole_volume_only, the messages will not make sense
-    # TODO message if the final part is in the unavailable parts? No message later
-    # if the case
-    if not update_options.is_whole_volume_only:
-        console.info(
-            f"The series '[highlight]{series.raw_data.title}[/]' will be updated..."
+            f"Some parts for '[highlight]{series.raw_data.title}[/]' have expired!"
         )
 
-        # after the to update notification
-        if len(available_parts_to_download) != len(parts_release_after_date):
-            console.warning(
-                f"Some parts for '[highlight]{series.raw_data.title}[/]' have "
-                "expired!"
-            )
+    parts_id_to_download = {part.part_id for part in available_parts_to_download}
 
-    parts_id_to_download = set((part.part_id for part in available_parts_to_download))
-
-    # availability alread tested
+    # availability already tested
     def simple_part_filter(part):
         return part.part_id in parts_id_to_download
 
@@ -560,16 +462,10 @@ async def _update_new_parts(
         parts_to_download,
     ) = core.relevant_volumes_and_parts_for_content(series, simple_part_filter)
 
-    if update_options.is_whole_volume_only:
-        # shortcut : do not generate the EPUB but return the list of relevant
-        # available parts
-        # + pretend it was updated: Will update the track.json file
-        return UpdateResult(series, is_updated=True, parts_downloaded=parts_to_download)
-
     if update_options.is_whole_volume:
         # second pass : filter on the volumes_to_download
         # all the parts of those volumes must be downloaded
-        volumes_id_to_download = set((v.volume_id for v in volumes_to_download))
+        volumes_id_to_download = {v.volume_id for v in volumes_to_download}
 
         def whole_volume_part_filter(part):
             return (
@@ -597,7 +493,63 @@ async def _update_new_parts(
         epub_generation_options,
     )
 
-    return UpdateResult(series, is_updated=True, parts_downloaded=parts_to_download)
+    return UpdateResult(series, is_updated=True)
+
+
+def _find_available_parts(session, series_details, series, parts, update_options):
+    if series_details.part == 0 or update_options.is_sync:
+        # from the beginning : if no part has expired, should download all the parts
+        # Firt clause: special processing : means there was no part available when the
+        # series was started tracking
+        # Second clause : --sync option to update:
+        # this series is newly synced => update from beginning
+        relevant_parts = parts
+    else:
+        if not series_details.part_date:
+            # if here => old format, first lookup date of last part and use that
+            # still useful for stalled series so keep it
+            part_spec = spec.analyze_part_specs(series_details.part)
+            for part in parts:
+                if part_spec.has_part(part):
+                    # will be filled if the part still exists (it should)
+                    # TODO case it doesn't ? eg tracked.json filled by hand
+                    last_update_part = part
+                    break
+            # in UTC
+            last_update_date = last_update_part.raw_data.launch
+        else:
+            # new format : date is recorded
+            last_update_date = series_details.part_date
+
+        last_update_date = dateutil.parser.parse(last_update_date)
+
+        relevant_parts = _filter_parts_released_after_date(last_update_date, parts)
+
+    if not relevant_parts:
+        # not updated, or if from beginning, no part yet released
+        return UpdateResult(series, is_updated=False), None
+
+    available_parts_to_download = [
+        part for part in relevant_parts if core.is_part_available(session.now, part)
+    ]
+
+    is_all_available = len(available_parts_to_download) != len(relevant_parts)
+
+    if not available_parts_to_download:
+        console.warning(
+            f"All updated parts for '[highlight]{series.raw_data.title}[/]' "
+            "have expired!"
+        )
+        # not updated but the series will still have its tracking data changed
+        # in tracking config ; if not, the message above will always be displayed
+        # should be rare (if updating often) ; also first part is preview
+        # so even rarer
+        return (
+            UpdateResult(series=series, is_updated=False, is_force_set_updated=True),
+            None,
+        )
+
+    return None, (available_parts_to_download, is_all_available)
 
 
 def _is_released_after_date(date, part_date_s):
@@ -619,25 +571,33 @@ def _filter_parts_released_after_date(date, parts):
 
 
 async def _generate_whole_volume_on_final_part(
-    session, series, parts_downloaded, epub_generation_options, force=False
+    session,
+    series,
+    availability,
+    epub_generation_options,
+    update_options,
 ):
-    # TODO split function in 2 : find whole volumes + generate
+    # ignore is_all_available: Either the full volume is available or the final part
+    # is not and the volume will not be generated
+    # TODO message when a whole volume should have been generated but expiration?
+    available_parts_to_download, _ = availability
 
     is_epub_generated = False
     # check if any part included in the update is the final part of its volume
-    for part in parts_downloaded:
+    for part in available_parts_to_download:
         # only max one part can be final in a volume
         if not core.is_part_final(part):
             continue
 
         # here : part is final part of its volume
 
-        if not force:
-            # check if possibly all parts have already been downloaded as part of the
-            # update
-            # should be rare (if update regularly)
+        # check if possibly all parts have already been downloaded as part of the
+        # normal update with _update_new_parts
+        # should be rare (if update regularly)
+        # _update_new_parts is not run if is_whole_volume_only so ignore in that case
+        if not update_options.is_whole_volume_only:
             for volpart in part.volume.parts:
-                if volpart not in parts_downloaded:
+                if volpart not in available_parts_to_download:
                     break
             else:
                 # all the parts have been downloaded in the normal course
@@ -663,4 +623,4 @@ async def _generate_whole_volume_on_final_part(
         )
         is_epub_generated = True
 
-    return is_epub_generated
+    return UpdateResult(series, is_updated=is_epub_generated)
