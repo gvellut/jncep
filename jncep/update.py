@@ -533,7 +533,7 @@ def _find_available_parts(session, series_details, series, parts, update_options
         part for part in relevant_parts if core.is_part_available(session.now, part)
     ]
 
-    is_all_available = len(available_parts_to_download) != len(relevant_parts)
+    is_all_available = len(available_parts_to_download) == len(relevant_parts)
 
     if not available_parts_to_download:
         console.warning(
