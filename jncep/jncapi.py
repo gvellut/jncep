@@ -6,18 +6,14 @@ from addict import Dict as Addict
 import asks
 import trio
 
-from . import jncweb, utils
+from . import utils
 from .utils import deep_freeze
 
 logger = logging.getLogger(__name__)
 console = utils.getConsole()
 
-CDN_IMG_URL_BASE = "https://d2dq7ifhe7bu0f.cloudfront.net"
-
-LABS_API_URL_BASE = "https://labs.j-novel.club"
-LABS_API_PATH_BASE = "/app/v1"
-LABS_API_COMMON_PARAMS = {"format": "json"}
-LABS_API_COMMON_HEADERS = {
+API_COMMON_PARAMS = {"format": "json"}
+API_COMMON_HEADERS = {
     "accept": "application/json",
     "content-type": "application/json",
 }
@@ -99,34 +95,31 @@ async def paginate(func, key):
 class JNCLabsAPI:
     def __init__(
         self,
-        labs_api_connections=10,
+        config,
+        *,
+        api_connections=10,
         cdn_connections=20,
-        jncweb_connections=10,
-        labs_api_default_timeout=20,
-        legacy_api_default_timeout=20,
+        api_default_timeout=20,
         cdn_default_timeout=30,
-        jncweb_default_timeout=20,
         connection_timeout=None,
     ):
+        self.config = config
+
         # connection timeout is disabled by default => no timeout waiting for a
         # connection to be available from the rate limiter
-        self.labs_api_session = asks.Session(
-            LABS_API_URL_BASE,
-            connections=labs_api_connections,
-            headers=LABS_API_COMMON_HEADERS,
+        self.api_session = asks.Session(
+            config.API_URL_BASE,
+            connections=api_connections,
+            headers=API_COMMON_HEADERS,
         )
 
         # CDN_IMG_URL_BASE not really necessary
-        self.cdn_session = asks.Session(CDN_IMG_URL_BASE, connections=cdn_connections)
-
-        self.jncweb_session = asks.Session(
-            jncweb.JNC_URL_BASE, connections=jncweb_connections
+        self.cdn_session = asks.Session(
+            config.CDN_IMG_URL_BASE, connections=cdn_connections
         )
 
-        self.labs_api_default_timeout = labs_api_default_timeout
-        self.legacy_api_default_timeout = legacy_api_default_timeout
+        self.api_default_timeout = api_default_timeout
         self.cdn_default_timeout = cdn_default_timeout
-        self.jncweb_default_timeout = jncweb_default_timeout
 
         self.connection_timeout = connection_timeout
 
@@ -137,16 +130,17 @@ class JNCLabsAPI:
         return self.token is not None
 
     async def login(self, email, password):
-        path = f"{LABS_API_PATH_BASE}/auth/login"
+        path = f"{self.config.API_PATH_BASE}/auth/login"
+        # slim: just the token, no cookie
         payload = {"login": email, "password": password, "slim": True}
-        params = {**LABS_API_COMMON_PARAMS}
+        params = {**API_COMMON_PARAMS}
 
-        r = await self.labs_api_session.post(
+        r = await self.api_session.post(
             path=path,
             data=json.dumps(payload),
             params=params,
             connection_timeout=self.connection_timeout,
-            timeout=self.labs_api_default_timeout,
+            timeout=self.api_default_timeout,
         )
         r.raise_for_status()
 
@@ -154,48 +148,58 @@ class JNCLabsAPI:
         self.token = data["id"]
 
     async def logout(self):
-        path = f"{LABS_API_PATH_BASE}/auth/logout"
+        path = f"{self.config.API_PATH_BASE}/auth/logout"
         await self._call_labs_api_authenticated("POST", path)
         self.token = None
+
+    def get_resource_id(self, resource_data):
+        return resource_data[self.config.ID_PROPERTY]
+
+    async def me(self):
+        path = f"{self.config.API_PATH_BASE}/me"
+        return await self._fetch_resource(path)
 
     @with_cache
     async def fetch_data(self, resource_type, slug_id, sub_resource="", skip=None):
         if sub_resource:
             sub_resource = f"/{sub_resource}"
 
-        path = f"{LABS_API_PATH_BASE}/{resource_type}/{slug_id}{sub_resource}"
+        path = f"{self.config.API_PATH_BASE}/{resource_type}/{slug_id}{sub_resource}"
         return await self._fetch_resource(path, skip=skip)
 
     @with_cache
     async def fetch_content(self, slug_id, content_type):
-        # not LABS_API base for embed queries
+        # not API base for embed queries
         path = f"/embed/{slug_id}/{content_type}"
 
-        logger.debug(f"LABS EMBED {path}")
+        logger.debug(f"API {self.config.ORIGIN} EMBED {path}")
 
         r = await self._call_labs_api_authenticated("GET", path)
         return r.text
 
     @with_cache
     async def fetch_events(self, skip=None, **params):
-        path = f"{LABS_API_PATH_BASE}/events"
+        path = f"{self.config.API_PATH_BASE}/events"
         return await self._fetch_resource(path, params=params, skip=skip)
 
     @with_cache
     async def fetch_follows(self, skip=None):
-        path = f"{LABS_API_PATH_BASE}/series"
+        path = f"{self.config.API_PATH_BASE}/series"
         body = json.dumps({"only_follows": True})
         return await self._fetch_resource(path, "POST", body=body, skip=skip)
 
     async def _fetch_resource(
         self, path, verb="GET", *, params=None, body=None, skip=None
     ):
-        logger.debug(f"LABS {verb} {path} params={params} body={body} skip={skip}")
+        logger.debug(
+            f"API {self.config.ORIGIN} {verb} {path} params={params} body={body} "
+            + f"skip={skip}"
+        )
 
         if not params:
             params = {}
 
-        params.update(LABS_API_COMMON_PARAMS)
+        params.update(API_COMMON_PARAMS)
         if skip is not None:
             params.update(skip=skip)
 
@@ -214,7 +218,7 @@ class JNCLabsAPI:
         # do not have them
         auth = {"Authorization": f"Bearer {self.token}"}
         r = await self._call_authenticated(
-            self.labs_api_session,
+            self.api_session,
             verb,
             path,
             auth,
@@ -222,7 +226,7 @@ class JNCLabsAPI:
             params=params,
             body=body,
             connection_timeout=self.connection_timeout,
-            timeout=self.labs_api_default_timeout,
+            timeout=self.api_default_timeout,
             **kwargs,
         )
 
@@ -260,7 +264,7 @@ class JNCLabsAPI:
 
     async def _set_follow(self, series_id, is_follow):
         verb = "PUT" if is_follow else "DELETE"
-        path = f"{LABS_API_PATH_BASE}/me/follow/{series_id}"
+        path = f"{self.config.API_PATH_BASE}/me/follow/{series_id}"
 
         logger.debug(f"FOLLOW {verb} {path}")
 
@@ -269,9 +273,9 @@ class JNCLabsAPI:
 
     @with_cache
     async def fetch_url(self, url: str):
-        if not url.startswith(CDN_IMG_URL_BASE):
+        if not url.startswith(self.config.CDN_IMG_URL_BASE):
             raise InvalidCDNRequestException(
-                f"{url} doesn't start with {CDN_IMG_URL_BASE}"
+                f"{url} doesn't start with {self.config.CDN_IMG_URL_BASE}"
             )
 
         # for CDN images
@@ -285,15 +289,3 @@ class JNCLabsAPI:
         # should be JPEG
         # TODO check ?
         return r.content
-
-    @with_cache
-    async def fetch_jnc_webpage(self, series_slug):
-        url = jncweb.url_from_series_slug(series_slug)
-        logger.debug(f"JNCWEB {url}")
-        r = await self.jncweb_session.get(
-            url=url,
-            connection_timeout=self.connection_timeout,
-            timeout=self.jncweb_default_timeout,
-        )
-        r.raise_for_status()
-        return r.text

@@ -3,7 +3,7 @@ import logging
 import click
 
 from . import options
-from .. import core, jncweb, spec, track, utils
+from .. import core, jncalts, jncweb, spec, track, utils
 from ..trio_utils import coro
 from ..utils import tryint
 from .base import CatchAllExceptionsCommand
@@ -18,8 +18,7 @@ console = utils.getConsole()
     cls=CatchAllExceptionsCommand,
 )
 @click.argument("jnc_url_or_index", metavar="JNOVEL_CLUB_URL", required=True)
-@options.login_option
-@options.password_option
+@options.credentials_options
 @options.output_option
 @click.option(
     "-s",
@@ -42,8 +41,7 @@ console = utils.getConsole()
 @coro
 async def generate_epub(
     jnc_url_or_index,
-    email,
-    password,
+    credentials: jncalts.AltCredentials,
     part_spec,
     output_dirpath,
     is_by_volume,
@@ -82,7 +80,10 @@ async def generate_epub(
     else:
         jnc_url = jnc_url_or_index
 
-    async with core.JNCEPSession(email, password) as session:
+    origin = jncalts.find_origin(jnc_url)
+    config = jncalts.get_alt_config_for_origin(origin)
+
+    async with core.JNCEPSession(config, credentials) as session:
         jnc_resource = jncweb.resource_from_url(jnc_url)
         series_id = await core.resolve_series(session, jnc_resource)
         series = await core.fetch_meta(session, series_id)
@@ -101,7 +102,7 @@ async def generate_epub(
 
         def part_filter(part):
             if part_spec_analyzed.has_part(part):
-                if core.is_part_available(session.now, part):
+                if core.is_part_available(session.now, core.is_member(session), part):
                     return True
                 else:
                     nonlocal has_unavailable_parts
@@ -131,6 +132,21 @@ async def generate_epub(
         await core.fill_covers_and_content(
             session, volumes_for_cover, parts_to_download
         )
+
+        has_missing, has_available = core.has_missing_part_content(parts_to_download)
+        if has_missing:
+            if has_available:
+                console.warning(
+                    "Some parts were not downloading correctly! "
+                    "(Do you have a subscription?)",
+                )
+                # continue: can generated an Epub with the downloaded parts
+            else:
+                console.error(
+                    "None of the parts were downloading correctly! "
+                    "(Do you have a subscription?)",
+                )
+                return
 
         console.status("Create EPUB...")
 

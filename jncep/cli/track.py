@@ -5,13 +5,22 @@ import click
 import dateutil.parser
 
 from . import options
-from .. import core, jncweb, track, utils
+from .. import core, jncalts, jncweb, track, utils
 from ..trio_utils import coro
 from ..utils import tryint
 from .base import CatchAllExceptionsCommand
 
 logger = logging.getLogger(__name__)
 console = utils.getConsole()
+
+# from the beginning: so that when update is run after => update from the beginning
+beginning_option = click.option(
+    "-b",
+    "--beginning",
+    "is_beginning",
+    is_flag=True,
+    help="Flag to add new series from the beginning",
+)
 
 
 @click.group(name="track", help="Track updates to a series")
@@ -23,11 +32,14 @@ def track_series():
     name="add", help="Add a new series for tracking", cls=CatchAllExceptionsCommand
 )
 @click.argument("jnc_url", metavar="JNOVEL_CLUB_URL", required=True)
-@options.login_option
-@options.password_option
+@options.credentials_options
+@beginning_option
 @coro
-async def add_track_series(jnc_url, email, password):
-    async with core.JNCEPSession(email, password) as session:
+async def add_track_series(jnc_url, credentials: jncalts.AltCredentials, is_beginning):
+    origin = jncalts.find_origin(jnc_url)
+    config = jncalts.get_alt_config_for_origin(origin)
+
+    async with core.JNCEPSession(config, credentials) as session:
         # TODO async read
         track_manager = track.TrackConfigManager()
         tracked_series = track_manager.read_tracked_series()
@@ -39,7 +51,7 @@ async def add_track_series(jnc_url, email, password):
         series = await core.fetch_meta(session, series_id)
         core.check_series_is_novel(series)
 
-        series_url = jncweb.url_from_series_slug(series.raw_data.slug)
+        series_url = jncweb.url_from_series_slug(session.origin, series.raw_data.slug)
         if series_url in tracked_series:
             console.warning(
                 f"The series '[highlight]{series.raw_data.title}[/]' is "
@@ -47,7 +59,7 @@ async def add_track_series(jnc_url, email, password):
             )
             return
 
-        await track.track_series(session, tracked_series, series)
+        await track.track_series(session, tracked_series, series, is_beginning)
 
         # TOO async write
         track_manager.write_tracked_series(tracked_series)
@@ -59,8 +71,7 @@ async def add_track_series(jnc_url, email, password):
     "website",
     cls=CatchAllExceptionsCommand,
 )
-@options.login_option
-@options.password_option
+@options.credentials_options
 @click.option(
     "-r",
     "--reverse",
@@ -78,70 +89,76 @@ async def add_track_series(jnc_url, email, password):
     is_flag=True,
     help="Flag to delete series not found on the sync source",
 )
-# from the beginning: so that when update is run after => update from the beginning
-@click.option(
-    "-b",
-    "--beginning",
-    "is_beginning",
-    is_flag=True,
-    help="Flag to add new series from the beginning",
-)
+@beginning_option
 @coro
-async def sync_series(email, password, is_reverse, is_delete, is_beginning):
+async def sync_series(
+    credentials: jncalts.AltCredentials, is_reverse, is_delete, is_beginning
+):
     track_manager = track.TrackConfigManager()
     tracked_series = track_manager.read_tracked_series()
 
-    async with core.JNCEPSession(email, password) as session:
-        console.status("Fetch followed series from J-Novel Club...")
-        follows: List[jncweb.JNCResource] = await core.fetch_follows(session)
+    async def sync_series_for_origin(config, tracked_series_origin):
+        async with core.JNCEPSession(config, credentials) as session:
+            follows: List[jncweb.JNCResource] = await core.fetch_follows(session)
 
-        if is_reverse:
-            console.status("Sync to J-Novel Club...")
+            if is_reverse:
+                console.status(f"Sync to {session.origin}...")
 
-            new_synced, del_synced = await track.sync_series_backward(
-                session, follows, tracked_series, is_delete
-            )
-
-            if new_synced or del_synced:
-                console.info(
-                    "The list of followed series has been sucessfully updated!",
-                    style="success",
+                new_synced, del_synced = await track.sync_series_backward(
+                    session, follows, tracked_series_origin, is_delete
                 )
+
+                if new_synced or del_synced:
+                    console.info(
+                        "The list of followed series has been sucessfully updated!"
+                        + f"from {session.origin}!",
+                        style="success",
+                    )
+                    # no need to update the local tracking file
+                    return False
+                else:
+                    console.info(
+                        f"Everything is already synced with {session.origin}!",
+                        style="success",
+                    )
+                    return False
+
             else:
-                console.info(
-                    "Everything is already synced!",
-                    style="success",
+                console.status(f"Sync tracked series from {session.origin}...")
+
+                new_synced, del_synced = await track.sync_series_forward(
+                    session, follows, tracked_series_origin, is_delete, is_beginning
                 )
 
-        else:
-            console.status("Sync tracked series from J-Novel Club...")
+                if new_synced or del_synced:
+                    console.info(
+                        "The list of tracked series has been sucessfully updated "
+                        + f"from {session.origin}!",
+                        style="success",
+                    )
+                    return True
+                else:
+                    console.info(
+                        f"Everything is already synced with {session.origin}!",
+                        style="success",
+                    )
+                    return False
 
-            new_synced, del_synced = await track.sync_series_forward(
-                session, follows, tracked_series, is_delete, is_beginning
-            )
+    is_updated, tracked_series = await jncalts.call_for_each_origin(
+        credentials, sync_series_for_origin, tracked_series
+    )
 
-            track_manager.write_tracked_series(tracked_series)
-
-            if new_synced or del_synced:
-                console.info(
-                    "The list of tracked series has been sucessfully updated!",
-                    style="success",
-                )
-            else:
-                console.info(
-                    "Everything is already synced!",
-                    style="success",
-                )
+    if any(is_updated):
+        track_manager.write_tracked_series(tracked_series)
 
 
 @track_series.command(
     name="rm", help="Remove a series from tracking", cls=CatchAllExceptionsCommand
 )
 @click.argument("jnc_url_or_index", metavar="JNOVEL_CLUB_URL_OR_INDEX", required=True)
-@options.login_option
-@options.password_option
+@options.credentials_options
 @coro
-async def rm_track_series(jnc_url_or_index, email, password):
+async def rm_track_series(jnc_url_or_index, credentials: jncalts.AltCredentials):
     track_manager = track.TrackConfigManager()
     tracked_series = track_manager.read_tracked_series()
 
@@ -154,12 +171,17 @@ async def rm_track_series(jnc_url_or_index, email, password):
         series_url_list = list(tracked_series.keys())
         series_url = series_url_list[index0]
     else:
-        async with core.JNCEPSession(email, password) as session:
+        origin = jncalts.find_origin(jnc_url_or_index)
+        config = jncalts.get_alt_config_for_origin(origin)
+
+        async with core.JNCEPSession(config, credentials) as session:
             console.status("Check tracking status...")
             jnc_resource = jncweb.resource_from_url(jnc_url_or_index)
             series_id = await core.resolve_series(session, jnc_resource)
             series = await core.fetch_meta(session, series_id)
-            series_url = jncweb.url_from_series_slug(series.raw_data.slug)
+            series_url = jncweb.url_from_series_slug(
+                session.origin, series.raw_data.slug
+            )
 
             if series_url not in tracked_series:
                 console.warning(

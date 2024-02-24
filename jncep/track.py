@@ -8,7 +8,7 @@ from addict import Dict as Addict
 from atomicwrites import atomic_write
 import dateutil.parser
 
-from . import config, core, jncweb, spec, utils
+from . import config, core, jncalts, jncweb, utils
 from .trio_utils import bag
 
 logger = logging.getLogger(__package__)
@@ -59,13 +59,17 @@ class TrackConfigManager:
         # TODO rename "name" field into "title"
         for series_url_or_slug, value in data.items():
             if not isinstance(value, dict):
+                # old format : didn't include the domain but always JNC_MAIN
+                # TODO processing this case still relevant? most likely not
+                origin = jncalts.AltOrigin.JNC_MAIN
                 series_slug = series_url_or_slug
-                series_url = jncweb.url_from_series_slug(series_slug)
+                series_url = jncweb.url_from_series_slug(origin, series_slug)
                 # low effort way to get some title
                 name = series_slug.replace("-", " ").title()
                 value = Addict({"name": name, "part": value})
                 converted[series_url] = value
             else:
+                # nothing to do
                 converted[series_url_or_slug] = value
 
         converted_b = {}
@@ -77,11 +81,11 @@ class TrackConfigManager:
 
 
 async def track_series(session, tracked_series, series, is_beginning=False):
-    parts = core.all_parts_meta(series)
+    parts = core.all_parts_meta(series, session.now)
 
     # record current last part + name
     if not parts or is_beginning:
-        # no parts yet, special value 0: processed in update with special case
+        # no launched sparts yet, special value 0: processed in update with special case
         pn = 0
         # 0000-... not a valid date so 1111-...
         pdate = "1111-11-11T11:11:11.111Z"
@@ -92,17 +96,7 @@ async def track_series(session, tracked_series, series, is_beginning=False):
             style="success",
         )
     else:
-        # for the tracking, need the last date: almost always the date of the last part
-        # but for some series with volumes released in parallel, can be different
-        # see GH #28, also update._update_tracking_data
-        # so do additional work for this
-
-        parts = core.all_parts_meta(series)
-        last_part_date = max(parts, key=lambda x: x.raw_data.launch)
-
-        last_part_number = parts[-1]
-        pn = spec.to_relative_spec_from_part(last_part_number)
-        pdate = last_part_date.raw_data.launch
+        pn, pdate = core.last_part_number_and_date(parts)
 
         part_date = dateutil.parser.parse(pdate)
         part_date_formatted = part_date.strftime("%b %d, %Y")
@@ -125,7 +119,7 @@ async def track_series(session, tracked_series, series, is_beginning=False):
     else:
         last_check_date = utils.isoformat_with_z(session.now)
 
-    series_url = jncweb.url_from_series_slug(series.raw_data.slug)
+    series_url = jncweb.url_from_series_slug(session.origin, series.raw_data.slug)
     # TODO class for trackData
     tracked_series[series_url] = Addict(
         {
@@ -151,7 +145,7 @@ async def sync_series_forward(
         await track_series(session, tracked_series, series, is_beginning)
         # manga already excluded from follows so no need to check
 
-        series_url = jncweb.url_from_series_slug(series.raw_data.slug)
+        series_url = jncweb.url_from_series_slug(session.origin, series.raw_data.slug)
         new_synced.append(series_url)
 
     tasks = []

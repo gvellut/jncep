@@ -273,6 +273,7 @@ def generate_names(series, volumes, parts, fc, parsed_namegen_rules):
     for section in [TITLE_SECTION, FILENAME_SECTION, FOLDER_SECTION]:
         rules = parsed_namegen_rules[section]
 
+        # TODO add context like language ; struct components insteaf of list
         components, rules = _initialize_components(
             series, volumes, parts, fc, rules, values
         )
@@ -368,6 +369,7 @@ def fc_short(components: List[Component]):
     component = _find_component_type(ComType.FC, components)
     if not component:
         return
+    # TODO i18n
     if component.value.complete:
         output = "[C]"
     elif component.value.final:
@@ -384,6 +386,7 @@ def fc_full(components: List[Component]):
     if not component:
         return
     # priority on complete
+    # TODO i18n
     if component.value.complete:
         output = "[Complete]"
     elif component.value.final:
@@ -534,6 +537,7 @@ def pn_full(components: List[Component]):
     if not component:
         return
 
+    # TODO i18n
     part_numbers = component.value
     if len(part_numbers) > 1:
         part0 = part_numbers[0]
@@ -576,7 +580,7 @@ def v_split_volume(components: List[Component]):
 
 
 def _parse_volume_number(vn):
-    # TODO adapt for JNC Nina : diff lang
+    # TODO i18n
     volume_match = re.search(r"Volume (\d+)", vn)
     part_match = re.search(r"Part (\w+)", vn)
     result = []
@@ -633,7 +637,7 @@ def vn_number(components: List[Component]):
         # => add when implementing v_split_volume
         for j, p in enumerate(v):
             if isinstance(p[0], str):
-                # TODO for JNC Nina : something diff
+                # TODO i18n
                 p0l = p[0].lower()
                 if p0l in EN_NUMBERS:
                     n = EN_NUMBERS[p0l]
@@ -701,6 +705,7 @@ def vn_full(components: List[Component]):
         base_vns = component.value
         volume_nums = [str(vn[0][0]) for vn in base_vns]
         volume_nums = ", ".join(volume_nums[:-1]) + " & " + volume_nums[-1]
+        # TODO i18n
         output = f"Volumes {volume_nums}"
     else:
         # in this case : the 2 part Volume number may have been preserved
@@ -720,9 +725,12 @@ def vn_full(components: List[Component]):
             # [(2, "VN_INTERNAL")] or [(2, "Volume")] : 2nd case if v_parse_vn used
             vn0 = vn[0]
             if vn0[1] == VnType.VN_SPECIAL:
+                # TODO keep track of the special status: so no addition of : after
+                # series title when merging the strings
                 o = vn0[0]
             else:
                 # should be always Volume if only one of vn
+                # TODO i18n
                 o = f"Volume {vn0[0]}"
             output = o
 
@@ -760,8 +768,7 @@ def ss_rm_stopwords(components: List[Component]):
     if not component:
         return
 
-    # TODO take language as argument to generate_names + way to pass it to here
-    # for JNC Nina
+    # TODO i18n
     stopwords = _load_stopwords("en")
 
     title = component.value
@@ -777,7 +784,7 @@ def ss_rm_subtitle(components: List[Component]):
     if not component:
         return
     title = component.value
-    output = title.split(":", 1)[0]
+    output = title.split(":", 1)[0].strip()
 
     component.value = output
 
@@ -832,6 +839,7 @@ def legacy_t(components: List[Component]):
         suffix = ""
         is_final = fc_component.value.final
         if is_final:
+            # TODO i18n
             suffix = " [Final]"
 
         title = f"{title_base}{suffix}"
@@ -847,6 +855,7 @@ def legacy_t(components: List[Component]):
             # ordered already
             volume_nums = [str(v.num) for v in volumes]
             volume_nums = ", ".join(volume_nums[:-1]) + " & " + volume_nums[-1]
+            # TODO i18n
             volume_segment = f"Volumes {volume_nums}"
 
             pn_component = _find_component_type(ComType.PN, components)
@@ -860,8 +869,10 @@ def legacy_t(components: List[Component]):
             suffix = ""
             is_final = fc_component.value.final
             if is_final:
+                # TODO i18n
                 suffix = " - Final"
 
+            # TODO i18n
             part_segment = (
                 f"Parts {volume_num0}.{part_num0} to "
                 f"{volume_num1}.{part_num1}{suffix}"
@@ -888,11 +899,13 @@ def legacy_t(components: List[Component]):
             is_complete = fc_component.value.complete
             is_final = fc_component.value.final
             if is_complete:
+                # TODO i18n
                 part_segment = "Complete"
             else:
                 # check the last part in the epub
                 suffix = ""
                 if is_final:
+                    # TODO i18n
                     suffix = " - Final"
                 part_segment = f"Parts {part_num0} to {part_num1}{suffix}"
 

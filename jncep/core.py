@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from collections import namedtuple
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from functools import partial
 from html.parser import HTMLParser
@@ -14,8 +17,8 @@ import dateutil.parser
 from exceptiongroup import BaseExceptionGroup
 import trio
 
-from . import epub, jnclabs, jncweb, namegen, spec, utils
-from .model import Image, Part, Series, Volume
+from . import epub, jncalts, jncapi, jncweb, namegen, spec, utils
+from .model import Image, Language, Part, Series, Volume
 from .trio_utils import bag
 from .utils import is_debug, to_safe_filename
 
@@ -54,37 +57,41 @@ class SeriesNotANovelError(Exception):
     pass
 
 
+_GLOBAL_SESSION_INSTANCE = ContextVar("session", default={})
+
+
 class JNCEPSession:
-    _GLOBAL_SESSION_INSTANCE = None
 
-    def __init__(self, email, password):
-        self.api = jnclabs.JNCLabsAPI()
-        self.email = email
-        self.password = password
+    # TODO change name : config => alt_config so no confusion with the JNCEP user config
+    def __init__(self, config: jncalts.AltConfig, credentials):
+        self.config = config
+
+        self.api = jncapi.JNCLabsAPI(config)
+        self.email, self.password = credentials.get_credentials(config.ORIGIN)
+
         self.now = datetime.now(tz=timezone.utc)
+        self.me = None
 
-    async def __aenter__(self) -> "JNCEPSession":
-        if JNCEPSession._GLOBAL_SESSION_INSTANCE:
-            # nested
-            return JNCEPSession._GLOBAL_SESSION_INSTANCE
-
-        await self.login(self.email, self.password)
-        # current session is the top level session
-        JNCEPSession._GLOBAL_SESSION_INSTANCE = self
-        return self
+    async def __aenter__(self) -> JNCEPSession:
+        # to handle nested sessions ie call to a cli commmand from another cli command
+        # open only one session for an origin (nested)
+        session_dict = _GLOBAL_SESSION_INSTANCE.get()
+        if self.config.ORIGIN not in session_dict:
+            await self.login(self.email, self.password)
+            session_dict[self.config.ORIGIN] = self
+            _GLOBAL_SESSION_INSTANCE.set(session_dict)
+        return session_dict[self.config.ORIGIN]
 
     async def __aexit__(self, exc_type, exc, tb):
-        try:
-            console.stop_status()
-        except Exception:
-            pass
+        session_dict = _GLOBAL_SESSION_INSTANCE.get()
 
-        if JNCEPSession._GLOBAL_SESSION_INSTANCE != self:
+        if session_dict.get(self.config.ORIGIN) != self:
             # nested ; do not logout => leave it to the top level session
             return False
 
         # current session is the top level session
-        JNCEPSession._GLOBAL_SESSION_INSTANCE = None
+        del session_dict[self.config.ORIGIN]
+        _GLOBAL_SESSION_INSTANCE.set(session_dict)
         await self.logout()
         return False
 
@@ -98,14 +105,23 @@ class JNCEPSession:
             display_email = re.sub(
                 r"(?<=@.)(.*)(?=\.)", lambda x: "*" * len(x.group(1)), display_email
             )
-        msg = f"Login with email '[highlight]{display_email}[/]'..."
+        msg = (
+            f"Login to {self.config.ORIGIN} with email "
+            + f"'[highlight]{display_email}[/]'..."
+        )
         console.status(msg)
         token = await self.api.login(email, password)
+
+        # to be able to check subscription status
+        self.me = await self.api.me()
 
         emoji = ""
         if console.is_advanced():
             emoji = "\u26A1 "
-        console.info(f"{emoji}Logged in with email '[highlight]{display_email}[/]'")
+        console.info(
+            f"{emoji}Logged in to {self.config.ORIGIN} with email "
+            + f"'[highlight]{display_email}[/]'"
+        )
         console.status("...")
         return token
 
@@ -113,9 +129,14 @@ class JNCEPSession:
         if self.api.is_logged_in:
             try:
                 console.info("Logout...")
+                self.me = None
                 await self.api.logout()
             except (BaseExceptionGroup, Exception) as ex:
                 logger.debug(f"Error logout: {ex}", exc_info=sys.exc_info())
+
+    @property
+    def origin(self):
+        return self.config.ORIGIN
 
 
 async def create_epub(series, volumes, parts, epub_generation_options):
@@ -209,7 +230,7 @@ def _process_single_epub_content(
     # in the epub
     # in Calibre, display 1 (I) if not set so a bit better
     collection = epub.CollectionMetadata(
-        series.raw_data.legacyId, series.raw_data.title, volume_num
+        series.series_id, series.raw_data.title, volume_num
     )
 
     # cover can be None (handled in epub gen proper)
@@ -403,8 +424,37 @@ def _replace_image_urls(content, images: List[Image]):
     return content
 
 
-def all_parts_meta(series):
-    return [part for volume in series.volumes if volume.parts for part in volume.parts]
+def all_parts_meta(series, only_launched_before=None):
+    parts = [part for volume in series.volumes if volume.parts for part in volume.parts]
+
+    if only_launched_before:
+        # in Nina : the parts are returned from the API even if not launched
+        # so filter by launch if requested
+        date = only_launched_before
+        parts = [
+            part
+            for part in parts
+            if dateutil.parser.parse(part.raw_data.launch) <= date
+        ]
+
+    return parts
+
+
+def last_part_number_and_date(parts):
+    # for the tracking, need the last date: almost always the date of the last part
+    # but for some series with volumes released in parallel, can be different
+    # see GH #28
+    # so do additional work for this
+
+    last_part_number = parts[-1]
+    # pn will only be used for display to the user in track list
+    pn = spec.to_relative_spec_from_part(last_part_number)
+
+    # the date is what is used to know which series to udpate
+    last_part_date = max(parts, key=lambda x: x.raw_data.launch)
+    pdate = last_part_date.raw_data.launch
+
+    return pn, pdate
 
 
 async def to_part_spec(series, jnc_resource):
@@ -466,17 +516,18 @@ async def resolve_series(session: JNCEPSession, jnc_resource):
             series_raw_data = await session.api.fetch_data(
                 "volumes", volume_slug, "serie"
             )
-            return series_raw_data.legacyId
+            return session.api.get_resource_id(series_raw_data)
     elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_PART:
         part_slug = jnc_resource.slug
         series_raw_data = await session.api.fetch_data("parts", part_slug, "serie")
-        return series_raw_data.legacyId
+        return session.api.get_resource_id(series_raw_data)
 
 
 async def fetch_meta(session, series_id_or_slug):
     series_agg = await session.api.fetch_data("series", series_id_or_slug, "aggregate")
     series_raw_data = series_agg.series
-    series = Series(series_raw_data, series_raw_data.legacyId)
+    series_id = session.api.get_resource_id(series_raw_data)
+    series = Series(series_raw_data, series_id)
 
     volumes = []
     series.volumes = volumes
@@ -485,7 +536,7 @@ async def fetch_meta(session, series_id_or_slug):
     if "volumes" in series_agg:
         for i, volume_with_parts in enumerate(series_agg.volumes):
             volume_raw_data = volume_with_parts.volume
-            volume_id = volume_raw_data.legacyId
+            volume_id = session.api.get_resource_id(volume_raw_data)
             volume_num = i + 1
 
             volume = Volume(
@@ -501,7 +552,7 @@ async def fetch_meta(session, series_id_or_slug):
             if "parts" in volume_with_parts:
                 parts_raw_data = volume_with_parts.parts
                 for i, part_raw_data in enumerate(parts_raw_data):
-                    part_id = part_raw_data.legacyId
+                    part_id = session.api.get_resource_id(part_raw_data)
                     part_num = i + 1
                     part = Part(
                         part_raw_data, part_id, part_num, volume=volume, series=series
@@ -519,14 +570,26 @@ async def fetch_content(session, parts):
 
     parts_content = {}
     for i, content_image in enumerate(contents):
+        if not content_image:
+            continue
         part = parts[i]
         parts_content[part.part_id] = content_image
     return parts_content
 
 
-def is_part_available(now, part):
+def is_part_available(now, is_member, part):
+    # in Nina : the parts are returned from the API even if not launched
+    # not the case in JNC main
+    launch_date = dateutil.parser.parse(part.raw_data.launch)
+    if launch_date > now:
+        return False
+
     if part.raw_data.preview:
         return True
+
+    # nothing but previews are relevant for non members
+    if not is_member and not part.raw_data.preview:
+        return False
 
     if part.series.raw_data.catchup:
         return True
@@ -537,30 +600,35 @@ def is_part_available(now, part):
         # assume it has not expired
         return True
 
-    expiration_data = dateutil.parser.parse(part.raw_data.expiration)
-    return expiration_data > now
+    expiration_date = dateutil.parser.parse(part.raw_data.expiration)
+    return expiration_date > now
 
 
 async def fetch_content_and_images_for_part(session, part_id):
-    # FIXME catch error => in case expires between checking before and
-    # running this (case to check)
-    # FIXME or the assumption of is_part_available (if expiration is null)
-    # is incorrect
-    content = await session.api.fetch_content(part_id, "data.xhtml")
-    img_urls = extract_image_urls(content)
-    if len(img_urls) > 0:
-        tasks = [partial(fetch_image, session, img_url) for img_url in img_urls]
-        images = await bag(tasks)
+    try:
+        content = await session.api.fetch_content(part_id, "data.xhtml")
+        img_urls = extract_image_urls(content)
+        if len(img_urls) > 0:
+            tasks = [partial(fetch_image, session, img_url) for img_url in img_urls]
+            images = await bag(tasks)
 
-        # filter images with download error
-        images = list(filter(None, images))
-        for i, image in enumerate(images):
-            image.order_in_part = i + 1
+            # filter images with download error
+            images = list(filter(None, images))
+            for i, image in enumerate(images):
+                image.order_in_part = i + 1
 
-    else:
-        images = []
+        else:
+            images = []
 
-    return content, images
+        return content, images
+    except Exception as ex:
+        # just debug => we will display a more generic message after all the parts
+        # have been gathered
+        # can be because : user doesn't have the right (not a subscriber)
+        # or the part has expired between checking is_available and the actual fetching
+        # => we don't care about the difference (result is the same)
+        logger.debug(f"Error fetching content for part: {ex}", exc_info=sys.exc_info())
+        return None
 
 
 async def fetch_image(session, img_url):
@@ -650,7 +718,11 @@ async def fetch_lowres_cover_for_volume(session, volume):
 
 async def fetch_cover_image_from_parts(session, parts):
     # need content so only available parts
-    parts = [part for part in parts if is_part_available(session.now, part)]
+    parts = [
+        part
+        for part in parts
+        if is_part_available(session.now, is_member(session), part)
+    ]
     if not parts:
         return None
 
@@ -663,7 +735,17 @@ async def fetch_cover_image_from_parts(session, parts):
         rest_parts = parts[2:]
 
         async def fetch_highres_image_maybe(session, part_id):
-            content = await session.api.fetch_content(part_id, "data.xhtml")
+            try:
+                content = await session.api.fetch_content(part_id, "data.xhtml")
+            except Exception as ex:
+                # the is_part_available checks only the properties attached to the part
+                # data
+                # however user may not have the right eg if not a paying subscriber =>
+                # only Part 1 of each volume will be available to him
+                logger.debug(
+                    f"Error fetching hi res cover images: {ex}", exc_info=sys.exc_info()
+                )
+                return None
             return _candidate_cover_image(content)
 
         for batch_parts in [first_2_parts, rest_parts]:
@@ -796,6 +878,18 @@ async def fill_covers_and_content(session, cover_volumes, content_parts):
     _rename_cover_images(cover_volumes)
 
 
+def has_missing_part_content(content_parts):
+    # if none is available: no Epub will be generated
+    has_available = False
+    has_missing = False
+    for part in content_parts:
+        if not part.content:
+            has_missing = True
+        else:
+            has_available = True
+    return has_missing, has_available
+
+
 def _rename_cover_images(volumes):
     # replace cover local filename from the default to cover.jpg
     # both in part images + volume.cover
@@ -863,21 +957,61 @@ def is_novel(raw_series):
 
 async def fetch_follows(session: JNCEPSession):
     followed_series = []
-    async for raw_series in jnclabs.paginate(session.api.fetch_follows, "series"):
+    async for raw_series in jncapi.paginate(session.api.fetch_follows, "series"):
         # ignore manga series
         if not is_novel(raw_series):
             continue
 
         slug = raw_series.slug
+        url = jncweb.url_from_series_slug(session.origin, slug)
+        # parse again to fill most fields
+        jnc_resource = jncweb.resource_from_url(url)
         # the metadata is not as complete as the usual (with fetch_meta)
         # but it can still be useful to avoid a call later to the API
-        jnc_resource = jncweb.JNCResource(
-            jncweb.url_from_series_slug(slug),
-            slug,
-            True,
-            jncweb.RESOURCE_TYPE_SERIES,
-            raw_series,
-        )
+        # so keep it
+        jnc_resource.follow_raw_data = raw_series
+
         followed_series.append(jnc_resource)
 
     return followed_series
+
+
+FR_LANG_re = re.compile(r".* Partie \d+$")
+DE_LANG_re = re.compile(r".* Teil \d+$")
+
+
+# language not set in response from API
+# the URL includes the language only in the case of French ; could guess by elimination
+# but easier to check by origin + scheme of part names
+def guess_language(origin, series: Series):
+    if origin == jncalts.AltOrigin.JNC_MAIN:
+        return Language.EN
+
+    # Nina
+    # count occurences
+    lang_count = {}
+    for volume in series.volumes:
+        for part in volume.parts:
+            lang = None
+            if re.match(FR_LANG_re, part.raw_data.title):
+                lang = Language.FR
+            if re.match(DE_LANG_re, part.raw_data.title):
+                lang = Language.DE
+
+            if lang:
+                lang_count[lang] = lang_count.get(lang, 0) + 1
+
+    # get the most frequent
+    if lang_count:
+        lang = max(lang_count, key=lang_count.get)
+        return lang
+
+    # or English as default (for example, if new Nina language not yet handled here)
+    return Language.EN
+
+
+def is_member(session):
+    # TODO non paying is "USER" ; normal member is "MEMBER", what about premium?
+    # Nina doesn't have premium level membership
+    # TODO other parameters ?
+    return session.me.level != "USER" and session.me.subscriptionStatus == "ACTIVE"

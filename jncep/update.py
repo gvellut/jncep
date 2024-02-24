@@ -52,7 +52,7 @@ async def update_url_series(
     series_id = await core.resolve_series(session, jnc_resource)
     series = await core.fetch_meta(session, series_id)
 
-    series_url = jncweb.url_from_series_slug(series.raw_data.slug)
+    series_url = jncweb.url_from_series_slug(session.origin, series.raw_data.slug)
 
     if series_url not in tracked_series:
         console.warning(
@@ -206,10 +206,10 @@ async def update_all_series(
         )
 
 
-def _update_tracking_data(series_details, series_meta, update_result, check_date):
+def _update_tracking_data(series_details, series_meta, update_result, now):
     # alway update this : in case --use-events is used
     if update_result.is_update_last_checked:
-        series_details.last_check_date = utils.isoformat_with_z(check_date)
+        series_details.last_check_date = utils.isoformat_with_z(now)
 
     # not always available (if series not checked for example)
     if series_meta:
@@ -219,21 +219,12 @@ def _update_tracking_data(series_details, series_meta, update_result, check_date
     if not (update_result.is_updated or update_result.is_force_set_updated):
         return
 
-    parts = core.all_parts_meta(series_meta)
+    parts = core.all_parts_meta(series_meta, now)
     assert bool(parts)
 
-    # this is only used for display to the user in track list
-    last_part_number = parts[-1]
-    pn = spec.to_relative_spec_from_part(last_part_number)
+    pn, pdate = core.last_part_number_and_date(parts)
+
     series_details.part = pn
-
-    # if series has more than one volume in parallel, it can happen that the last
-    # part (in number) is released before (in date) a part that comes before (in number)
-    # we use the part_date for the update process => last part (in date) for this
-    # instead of using the date of the last part (in number)
-    last_part_date = max(parts, key=lambda x: x.raw_data.launch)
-    pdate = last_part_date.raw_data.launch
-
     series_details.part_date = pdate
 
 
@@ -384,7 +375,7 @@ async def _create_epub_for_new_parts(
     epub_generation_options,
     update_options,
 ):
-    parts = core.all_parts_meta(series)
+    parts = core.all_parts_meta(series, session.now)
 
     # Either
     update_result, availability = _find_available_parts(
@@ -402,10 +393,9 @@ async def _create_epub_for_new_parts(
             update_options,
         )
     else:
+        # some parts available but no EPUB generated (only on final part)
         # force update to advance the date in the tracking config even if no EPUB
         # generated for single parts
-        # TODO always is_force_set_updated? => so the last part / date of release is
-        # recorded no matter what
         update_result = UpdateResult(series, is_force_set_updated=True)
 
     if (
@@ -470,7 +460,7 @@ async def _update_new_parts(
         def whole_volume_part_filter(part):
             return (
                 part.volume.volume_id in volumes_id_to_download
-                and core.is_part_available(session.now, part)
+                and core.is_part_available(session.now, core.is_member(session), part)
             )
 
         (
@@ -530,12 +520,16 @@ def _find_available_parts(session, series_details, series, parts, update_options
         return UpdateResult(series, is_updated=False), None
 
     available_parts_to_download = [
-        part for part in relevant_parts if core.is_part_available(session.now, part)
+        part
+        for part in relevant_parts
+        if core.is_part_available(session.now, core.is_member(session), part)
     ]
 
     is_all_available = len(available_parts_to_download) == len(relevant_parts)
 
     if not available_parts_to_download:
+        logger.debug(series.raw_data.slug)
+
         console.warning(
             f"All updated parts for '[highlight]{series.raw_data.title}[/]' "
             "have expired!"
