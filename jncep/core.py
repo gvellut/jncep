@@ -428,7 +428,7 @@ def all_parts_meta(series, only_launched_before=None):
     parts = [part for volume in series.volumes if volume.parts for part in volume.parts]
 
     if only_launched_before:
-        # in Nina : the parts are returned from the API even if not launched
+        # in Nina (v2 API): the parts are returned from the API even if not launched
         # so filter by launch if requested
         date = only_launched_before
         parts = [
@@ -578,8 +578,9 @@ async def fetch_content(session, parts):
 
 
 def is_part_available(now, is_member, part):
-    # in Nina : the parts are returned from the API even if not launched
+    # in Nina (v2 API): the parts are returned from the API even if not launched
     # not the case in JNC main
+    # discard the parts that haven't launched yet
     launch_date = dateutil.parser.parse(part.raw_data.launch)
     if launch_date > now:
         return False
@@ -587,7 +588,11 @@ def is_part_available(now, is_member, part):
     if part.raw_data.preview:
         return True
 
-    # nothing but previews are relevant for non members
+    # the prepubs are available if the volume was bought or preordered
+    if part.volume.raw_data.owned:
+        return True
+
+    # only previews are relevant for non members, if not owned
     if not is_member and not part.raw_data.preview:
         return False
 
