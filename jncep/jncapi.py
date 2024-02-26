@@ -92,7 +92,7 @@ async def paginate(func, key):
         skip += pagination.limit
 
 
-class JNCLabsAPI:
+class JNC_API:
     def __init__(
         self,
         config,

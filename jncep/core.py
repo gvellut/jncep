@@ -66,7 +66,7 @@ class JNCEPSession:
     def __init__(self, config: jncalts.AltConfig, credentials):
         self.config = config
 
-        self.api = jncapi.JNCLabsAPI(config)
+        self.api = jncapi.JNC_API(config)
         self.email, self.password = credentials.get_credentials(config.ORIGIN)
 
         self.now = datetime.now(tz=timezone.utc)
@@ -83,6 +83,11 @@ class JNCEPSession:
         return session_dict[self.config.ORIGIN]
 
     async def __aexit__(self, exc_type, exc, tb):
+        try:
+            console.stop_status()
+        except Exception:
+            pass
+
         session_dict = _GLOBAL_SESSION_INSTANCE.get()
 
         if session_dict.get(self.config.ORIGIN) != self:

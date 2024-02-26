@@ -132,7 +132,7 @@ async def update_tracked(
                 # track sync --delete --beginning
                 # update
 
-                # do the sync_series inside an origin session so only one login
+                # do the sync_series inside an existing origin session so only one login
                 # for the origin
                 origin_credentials = credentials.extract_for_origin(config.ORIGIN)
 
