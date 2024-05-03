@@ -137,14 +137,14 @@ async def generate_epub(
         if has_missing:
             if has_available:
                 console.warning(
-                    "Some parts were not downloading correctly! "
-                    "(Do you have a subscription?)",
+                    "Some parts were not downloaded correctly! "
+                    "Do you have a subscription?",
                 )
                 # continue: can generated an Epub with the downloaded parts
             else:
                 console.error(
-                    "None of the parts were downloading correctly! "
-                    "(Do you have a subscription?)",
+                    "None of the parts were downloaded correctly! "
+                    "Do you have a subscription?",
                 )
                 return
 
