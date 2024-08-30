@@ -169,7 +169,7 @@ class JNCLabsAPI:
     @with_cache
     async def fetch_content(self, slug_id, content_type):
         # not LABS_API base for embed queries
-        path = f"/embed/{slug_id}/{content_type}"
+        path = f"/embed/v2/{slug_id}/{content_type}"
 
         logger.debug(f"LABS EMBED {path}")
 
