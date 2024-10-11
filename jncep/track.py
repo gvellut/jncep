@@ -209,7 +209,7 @@ async def sync_series_backward(session, follows, tracked_series, is_delete):
 
         async def do_undollow(jnc_resource):
             # use the follow_raw_data: to avoid another call to the API
-            series_id = jnc_resource.follow_raw_data.legacyId
+            series_id = jnc_resource.follow_raw_data.id
             title = jnc_resource.follow_raw_data.title
             console.warning(f"Unfollow '{title}'...")
             await session.api.unfollow_series(series_id)

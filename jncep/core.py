@@ -205,7 +205,7 @@ def _process_single_epub_content(series, volumes, parts):
     # in the epub
     # in Calibre, display 1 (I) if not set so a bit better
     collection = epub.CollectionMetadata(
-        series.raw_data.legacyId, series.raw_data.title, volume_num
+        series.raw_data.id, series.raw_data.title, volume_num
     )
 
     # cover can be None (handled in epub gen proper)
@@ -535,17 +535,17 @@ async def resolve_series(session: JNCEPSession, jnc_resource):
             series_raw_data = await session.api.fetch_data(
                 "volumes", volume_slug, "serie"
             )
-            return series_raw_data.legacyId
+            return series_raw_data.id
     elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_PART:
         part_slug = jnc_resource.slug
         series_raw_data = await session.api.fetch_data("parts", part_slug, "serie")
-        return series_raw_data.legacyId
+        return series_raw_data.id
 
 
 async def fetch_meta(session, series_id_or_slug):
     series_agg = await session.api.fetch_data("series", series_id_or_slug, "aggregate")
     series_raw_data = series_agg.series
-    series = Series(series_raw_data, series_raw_data.legacyId)
+    series = Series(series_raw_data, series_raw_data.id)
 
     volumes = []
     series.volumes = volumes
@@ -554,7 +554,7 @@ async def fetch_meta(session, series_id_or_slug):
     if "volumes" in series_agg:
         for i, volume_with_parts in enumerate(series_agg.volumes):
             volume_raw_data = volume_with_parts.volume
-            volume_id = volume_raw_data.legacyId
+            volume_id = volume_raw_data.id
             volume_num = i + 1
 
             volume = Volume(volume_raw_data, volume_id, volume_num, series=series)
@@ -565,7 +565,7 @@ async def fetch_meta(session, series_id_or_slug):
             if "parts" in volume_with_parts:
                 parts_raw_data = volume_with_parts.parts
                 for i, part_raw_data in enumerate(parts_raw_data):
-                    part_id = part_raw_data.legacyId
+                    part_id = part_raw_data.id
                     part_num = i + 1
                     part = Part(
                         part_raw_data, part_id, part_num, volume=volume, series=series
@@ -600,6 +600,9 @@ def is_part_available(now, part):
         # cf GH #22
         # assume it has not expired
         return True
+
+    if dateutil.parser.parse(part.raw_data.launch) > now:
+        return False
 
     expiration_data = dateutil.parser.parse(part.raw_data.expiration)
     return expiration_data > now

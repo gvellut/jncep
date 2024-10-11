@@ -12,10 +12,14 @@ from .utils import deep_freeze
 logger = logging.getLogger(__name__)
 console = utils.getConsole()
 
-CDN_IMG_URL_BASE = "https://d2dq7ifhe7bu0f.cloudfront.net"
+CDN_IMG_URL_BASE = [
+    "https://d2dq7ifhe7bu0f.cloudfront.net",
+    "https://cdn.j-novel.club",
+]
 
 LABS_API_URL_BASE = "https://labs.j-novel.club"
-LABS_API_PATH_BASE = "/app/v1"
+LABS_API_PATH_BASE = "/app/v2"
+EMBED_PATH_BASE = "/embed/v2"
 LABS_API_COMMON_PARAMS = {"format": "json"}
 LABS_API_COMMON_HEADERS = {
     "accept": "application/json",
@@ -116,8 +120,7 @@ class JNCLabsAPI:
             headers=LABS_API_COMMON_HEADERS,
         )
 
-        # CDN_IMG_URL_BASE not really necessary
-        self.cdn_session = asks.Session(CDN_IMG_URL_BASE, connections=cdn_connections)
+        self.cdn_session = asks.Session(connections=cdn_connections)
 
         self.jncweb_session = asks.Session(
             jncweb.JNC_URL_BASE, connections=jncweb_connections
@@ -169,7 +172,7 @@ class JNCLabsAPI:
     @with_cache
     async def fetch_content(self, slug_id, content_type):
         # not LABS_API base for embed queries
-        path = f"/embed/{slug_id}/{content_type}"
+        path = f"{EMBED_PATH_BASE}/{slug_id}/{content_type}"
 
         logger.debug(f"LABS EMBED {path}")
 
@@ -269,9 +272,9 @@ class JNCLabsAPI:
 
     @with_cache
     async def fetch_url(self, url: str):
-        if not url.startswith(CDN_IMG_URL_BASE):
+        if not any((url.startswith(url) for url in CDN_IMG_URL_BASE)):
             raise InvalidCDNRequestException(
-                f"{url} doesn't start with {CDN_IMG_URL_BASE}"
+                f"{url} doesn't start with one of {CDN_IMG_URL_BASE}"
             )
 
         # for CDN images
