@@ -170,7 +170,7 @@ class JNC_API:
     @with_cache
     async def fetch_content(self, slug_id, content_type):
         # not API base for embed queries
-        path = f"/embed/{slug_id}/{content_type}"
+        path = f"{self.config.EMBED_PATH_BASE}/{slug_id}/{content_type}"
 
         logger.debug(f"API {self.config.ORIGIN} EMBED {path}")
 
@@ -273,7 +273,8 @@ class JNC_API:
 
     @with_cache
     async def fetch_url(self, url: str):
-        if not url.startswith(self.config.CDN_IMG_URL_BASE):
+        if (not url.startswith(self.config.CDN_IMG_URL_BASE) and
+            not url.startswith(self.config.CDN2_IMG_URL_BASE)):
             raise InvalidCDNRequestException(
                 f"{url} doesn't start with {self.config.CDN_IMG_URL_BASE}"
             )
