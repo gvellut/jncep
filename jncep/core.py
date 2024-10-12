@@ -558,7 +558,6 @@ async def fetch_meta(session, series_id_or_slug):
             volume_num = i + 1
 
             volume = Volume(volume_raw_data, volume_id, volume_num, series=series)
-            volumes.append(volume)
 
             parts = []
             volume.parts = parts
@@ -570,7 +569,17 @@ async def fetch_meta(session, series_id_or_slug):
                     part = Part(
                         part_raw_data, part_id, part_num, volume=volume, series=series
                     )
+                    # remove the parts not yet launched => pretend they are not there
+                    # change to accommodate API v2 update in october 204
+                    if is_part_in_future(session.now, part):
+                        continue
                     parts.append(part)
+
+            # ignore volumes with no part launched
+            if len(parts) == 0:
+                continue
+
+            volumes.append(volume)
 
     return series
 
@@ -601,11 +610,15 @@ def is_part_available(now, part):
         # assume it has not expired
         return True
 
-    if dateutil.parser.parse(part.raw_data.launch) > now:
+    if is_part_in_future(now, part):
         return False
 
     expiration_data = dateutil.parser.parse(part.raw_data.expiration)
     return expiration_data > now
+
+
+def is_part_in_future(now, part):
+    return dateutil.parser.parse(part.raw_data.launch) > now
 
 
 async def fetch_content_and_images_for_part(session, part_id):
