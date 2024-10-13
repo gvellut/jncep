@@ -12,6 +12,7 @@ from typing import List
 
 from addict import Dict as Addict
 import dateutil.parser
+from dateutil.relativedelta import relativedelta
 import trio
 
 from . import epub, jnclabs, jncweb, spec, utils
@@ -555,6 +556,7 @@ async def fetch_meta(session, series_id_or_slug):
         for i, volume_with_parts in enumerate(series_agg.volumes):
             volume_raw_data = volume_with_parts.volume
             volume_id = volume_raw_data.id
+            # assume volume are ordered correctly in API response
             volume_num = i + 1
 
             volume = Volume(volume_raw_data, volume_id, volume_num, series=series)
@@ -565,12 +567,15 @@ async def fetch_meta(session, series_id_or_slug):
                 parts_raw_data = volume_with_parts.parts
                 for i, part_raw_data in enumerate(parts_raw_data):
                     part_id = part_raw_data.id
+                    # assume the parts are ordered correctly in API response
+                    # FIXME volume 1 (expired) of The Invincible Summoner not ordered.
+                    # Others?
                     part_num = i + 1
                     part = Part(
                         part_raw_data, part_id, part_num, volume=volume, series=series
                     )
                     # remove the parts not yet launched => pretend they are not there
-                    # change to accommodate API v2 update in october 204
+                    # change to accommodate API v2 update in october 2024
                     if is_part_in_future(session.now, part):
                         continue
                     parts.append(part)
@@ -598,27 +603,63 @@ async def fetch_content(session, parts):
 
 
 def is_part_available(now, part):
+    # priority: do not take it into account
+    if is_part_in_future(now, part):
+        return False
+
     if part.raw_data.preview:
         return True
 
     if part.series.raw_data.catchup:
         return True
 
-    if not part.raw_data.expiration:
-        # not filled yet on JNC's end (happened for the first parts of a new series)
-        # cf GH #22
-        # assume it has not expired
+    exp_date = expiration_date(part)
+    if not exp_date:
+        # if no publishing date (thus no expiration) : assume available
+        # TODO think about it
         return True
 
-    if is_part_in_future(now, part):
-        return False
-
-    expiration_data = dateutil.parser.parse(part.raw_data.expiration)
-    return expiration_data > now
+    return exp_date > now
 
 
 def is_part_in_future(now, part):
     return dateutil.parser.parse(part.raw_data.launch) > now
+
+
+def expiration_date(part: Part):
+    # in the v2 API : the expiration field is not always present:
+    # if expired: null
+    # if not expired: field present but identical to the publishing date of volume ie
+    # different from what is being shown on the website (so probably wrong)
+    # On the JNC website: shown expiration always computed from publishing date
+    # => here always recompute from the volume publishing date field
+    pub_date_s = part.volume.raw_data.publishing
+    if not pub_date_s:
+        return None
+
+    pub_date = dateutil.parser.parse(pub_date_s)
+    return _compute_expiration_date(pub_date)
+
+
+def _compute_expiration_date(pub_date):
+    day = pub_date.day
+    month = pub_date.month
+    year = pub_date.year
+    # TODO should be 10h according to the JS code
+    exp_date = datetime(year, month, 15, hour=0, tzinfo=timezone.utc)
+
+    if day >= 9:
+        exp_date += relativedelta(months=1)
+
+    weekday = exp_date.weekday()
+    if weekday == 6:
+        # sunday => set to next monday
+        exp_date = exp_date.replace(day=16)
+    elif weekday == 5:
+        # saturday => set to next monday
+        exp_date = exp_date.replace(day=17)
+
+    return exp_date
 
 
 async def fetch_content_and_images_for_part(session, part_id):

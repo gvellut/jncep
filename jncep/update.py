@@ -341,7 +341,7 @@ def _verify_series_needs_update_check(event_feed, series_details):
     series_id = series_details.series_id
 
     for event in events:
-        if "details" in event and event.details.startswith("Release of Part"):
+        if "details" in event and event.details.startswith("Prepub Publishing"):
             # no s in JNC attr
             series = event.serie
             if series.id != series_id:
