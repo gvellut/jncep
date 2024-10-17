@@ -382,7 +382,14 @@ def _min_last_check_date(tracking_data):
 
 def _can_use_events_feed(series_details):
     # the 2 attributes have been added later so may not always be there
-    return "series_id" in series_details and "last_check_date" in series_details
+    return (
+        "series_id" in series_details
+        and "last_check_date" in series_details
+        # check if new ID format : this check will force the fetching of the series meta
+        # and update the ID to new format in the tracking file (so old IDs will be
+        # removed and we can simply use the .id field always)
+        and series_details.series_id.startswith("SER-")
+    )
 
 
 async def _create_epub_for_new_parts(

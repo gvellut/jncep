@@ -48,6 +48,24 @@ def test_date5():
     assert exp_date.day == 15
 
 
+def test_date6():
+    date1 = date(2024, 10, 14)
+    exp_date = _compute_expiration_date(date1)
+
+    assert exp_date.year == 2024
+    assert exp_date.month == 11
+    assert exp_date.day == 15
+
+
+def test_date7():
+    date1 = date(2025, 1, 10)
+    exp_date = _compute_expiration_date(date1)
+
+    assert exp_date.year == 2025
+    assert exp_date.month == 2
+    assert exp_date.day == 17
+
+
 def test_compare():
     # session.now is returned in UTC; do the same
     date_local = datetime(2025, 2, 17, 1, tzinfo=timezone.utc)
