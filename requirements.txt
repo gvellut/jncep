@@ -4,7 +4,7 @@ attrs==19.3.0
 click~=8.0
 atomicwrites==1.4.1
 python-dateutil==2.8.1
-asks==2.4.12
+asks==3.0.0
 trio==0.21.0
 rich~=11.2.0
 outcome==1.1.0
