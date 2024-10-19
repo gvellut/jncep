@@ -673,6 +673,12 @@ async def fetch_content_and_images_for_part(session, part_id):
         tasks = [partial(fetch_image, session, img_url) for img_url in img_urls]
         images = await bag(tasks)
 
+        # in case the url was converted in fetch_image : change content so correct
+        # reference
+        # TODO replace with local filename (done later: URL changed to local filename)
+        for i, img_url in enumerate(img_urls):
+            content = content.replace(img_url, images[i].url)
+
         # filter images with download error
         images = list(filter(None, images))
         for i, image in enumerate(images):
@@ -684,8 +690,17 @@ async def fetch_content_and_images_for_part(session, part_id):
     return content, images
 
 
+def webp_to_jpeg(img_url: str):
+    # convert from webp to jpeg (webp not readable in some physical epub reader
+    # like kobo); scheme documented here : https://forums.j-novel.club/post/374895
+    return img_url.replace("/webp/", "/jpg/", 1)
+
+
 async def fetch_image(session, img_url):
     try:
+        # not always needed: only for relases after october 2024
+        # TODO add option to prevent that default behavior; need to pass options down
+        img_url = webp_to_jpeg(img_url)
         img_bytes = await session.api.fetch_url(img_url)
         image = Image(img_url, img_bytes)
         image.local_filename = _local_image_filename(image)
