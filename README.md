@@ -97,6 +97,8 @@ See the [general documentation on environment variables](#environment-variables-
 
 ### Credentials when signing in at J-Novel Club with Google or Facebook
 
+**To update (still valid?)**
+
 It is not possible to directly use Google credentials (if _Sign in with Google_ is used on the J-Novel Club website) or Facebook credentials (with _Sign in with Facebook_). Instead, a password specific to J-Novel Club must first be created: It is the same process as the one needed to be performed in order to log in to the official J-Novel Club mobile app, in case Google or Facebook was originally used to sign up.
 
 Here is what needs to be done:
@@ -113,12 +115,12 @@ Starting with version 50, some support for [JNC Nina](https://jnc-nina.eu/) (J-N
 
 2 additional options for JNC Nina credentials are now present:
 
-- JNC Nina login: `-ln` / `--email-nina`, confif option: `EMAIL_NINA`
+- JNC Nina login: `-ln` / `--email-nina`, config option: `EMAIL_NINA`
 - JNC Nina password:  `-pn` / `--password-nina`, config option: `PASSWORD_NINA`
 
 If the JNC Nina email is the same as the J-Novel Club email, it is possible to only use the main `--email` option (so no need to repeat). The JNC Nina password is not optional though.
 
-One of the 2 options (for the main J-Novel Club website or for the JNC Nina website) must be present. For the `epub` or `update` commands, choice of which credential to use is made depending on the URL. When using `track sync`, the presence of credentials is used to decide on querying either website.
+One of the 2 options (for the main J-Novel Club website or for the JNC Nina website) must be present. For the `epub` or `update` commands, the choice of which credential to use is made depending on the series URL. When using `track sync`, the presence of credentials is used to decide on querying either website.
 
 ## Debugging mode
 
@@ -132,7 +134,7 @@ jncep --debug update
 
 In case of an issue with `jncep`, it is recommended to launch with the `--debug` option and to include the output in the issue report (either inline or as a file attachment, if too long).
 
-## Help
+## Help option
 
 All the commands have a `--help` option that lists all the arguments. If the command has subcommands, those also have a `--help` option.
 
@@ -157,11 +159,11 @@ The following command will create a single EPUB file of part 1 of Volume 1 of th
 jncep epub -o /Users/guilhem/Documents/jncbooks https://j-novel.club/read/tearmoon-empire-volume-1-part-1
 ```
 
-Account credentials must be passed (in this case, by using the env vars, as explained above), as well as a URL link to a part or volume or series on the J-Novel Club website. Whatever the URL links to is downloaded (single part or whole volume or whole series).
+Account credentials must be passed (in this case, by using the config options or env vars, as explained above), as well as a URL link to a part or volume or series on the J-Novel Club website. Whatever the URL links to is downloaded (single part or whole volume or whole series).
 
 The tool will then communicate with the J-Novel Club API using the specified credentials and download the necessary parts (texts and images), as well as a book cover. The EPUB file will be created inside the specified (optional) output directory, `/Users/guilhem/Documents/jncbooks`. The directory will be created if it doesn't exist.
 
-If the `--output` or `-o` switch is not present, the EPUB is output in the current directory. The `JNCEP_OUTPUT` env var can also be used instead of the switch to indicate a download directory.
+If the `--output` or `-o` switch is not present, the EPUB is output in the current directory. The `OUTPUT` config option can also be used instead of the switch to indicate a download directory.
 
 ##### URL
 
@@ -487,7 +489,7 @@ The `set` subcommand can be used to set the value for a configuration option:
 jncep config set EMAIL "jnclogin@aol.com"
 ```
 
-The option names are case-insensitive so it could also be written as:
+The option names are **case-insensitive** so it could also be written as:
 
 ```console
 jncep config set email "jnclogin@aol.com"
