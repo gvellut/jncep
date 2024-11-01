@@ -230,11 +230,13 @@ The default CSS used by the tool and embedded in the generated EPUB files can be
 
 ### Naming of the output EPUB
 
-By default, the name is chosen to be something like: `Ascendance_of_a_Bookworm_Part_5_Volume_12_Part_1.epub`, which can be verbose for some J-Novel titles... 
+By default, the name is chosen to be something like:
 
-It is possible to override that using the namegen option: `-g` / `--namegen`, config option: `NAMEGEN`
+`Ascendance_of_a_Bookworm_Part_5_Volume_12_Part_1.epub`
 
-The full documentation for that feature is [on another page](namegen.md).
+It can be verbose for some J-Novel titles... It is possible to override that using the `namegen` option: `-g` / `--namegen`, config option: `NAMEGEN`
+
+The full documentation for that feature is [on another page](namegen.md) (work in progress).
 
 ### Configuration file / Environment variables
 

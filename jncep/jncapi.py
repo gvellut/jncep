@@ -3,7 +3,7 @@ import json
 import logging
 
 from addict import Dict as Addict
-import asks
+import httpx
 import trio
 
 from . import utils
@@ -101,26 +101,22 @@ class JNC_API:
         cdn_connections=20,
         api_default_timeout=20,
         cdn_default_timeout=30,
-        connection_timeout=None,
     ):
         self.config = config
 
-        # connection timeout is disabled by default => no timeout waiting for a
-        # connection to be available from the rate limiter
-        self.api_session = asks.Session(
-            config.API_URL_BASE,
-            connections=api_connections,
+        self.api_session = httpx.AsyncClient(
+            base_url=config.API_URL_BASE,
+            limits=httpx.Limits(max_connections=api_connections),
             headers=API_COMMON_HEADERS,
+            timeout=api_default_timeout,
         )
 
         # full URL always provided (CDN) so no need for base location parameter
         # also multiple URL possible
-        self.cdn_session = asks.Session(connections=cdn_connections)
-
-        self.api_default_timeout = api_default_timeout
-        self.cdn_default_timeout = cdn_default_timeout
-
-        self.connection_timeout = connection_timeout
+        self.cdn_session = httpx.AsyncClient(
+            limits=httpx.Limits(max_connections=cdn_connections),
+            timeout=cdn_default_timeout,
+        )
 
         self.token = None
 
@@ -134,13 +130,7 @@ class JNC_API:
         payload = {"login": email, "password": password, "slim": True}
         params = {**API_COMMON_PARAMS}
 
-        r = await self.api_session.post(
-            path=path,
-            data=json.dumps(payload),
-            params=params,
-            connection_timeout=self.connection_timeout,
-            timeout=self.api_default_timeout,
-        )
+        r = await self.api_session.post(path, data=json.dumps(payload), params=params)
         r.raise_for_status()
 
         data = r.json()
@@ -221,8 +211,6 @@ class JNC_API:
             headers=headers,
             params=params,
             body=body,
-            connection_timeout=self.connection_timeout,
-            timeout=self.api_default_timeout,
             **kwargs,
         )
 
@@ -245,9 +233,10 @@ class JNC_API:
         else:
             headers = {**auth, **headers}
 
-        r = await session.request(
-            verb, path=path, headers=headers, params=params, data=body, **kwargs
+        request = session.build_request(
+            verb, path, headers=headers, params=params, data=body, **kwargs
         )
+        r = await session.send(request)
         r.raise_for_status()
 
         return r
@@ -276,11 +265,7 @@ class JNC_API:
 
         # for CDN images
         logger.debug(f"IMAGE {url}")
-        r = await self.cdn_session.get(
-            url=url,
-            connection_timeout=self.connection_timeout,
-            timeout=self.cdn_default_timeout,
-        )
+        r = await self.cdn_session.get(url)
         r.raise_for_status()
         # should be JPEG
         # TODO check ?
