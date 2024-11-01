@@ -1,6 +1,6 @@
 # jncep
 
-Command-line tool to generate EPUB files for [J-Novel Club](https://j-novel.club/) pre-pub novels
+Command-line tool to generate EPUB files for [J-Novel Club](https://j-novel.club/) and [JNC Nina](https://jnc-nina.eu/) pre-pub novels
 
 # Install
 
@@ -23,6 +23,14 @@ This tool only works with J-Novel Club __novels__, not manga.
 # Issues
 
 Report issues at https://github.com/gvellut/jncep/issues
+
+# Documentation
+
+The documentation for the last release (version number) is at:
+
+https://pypi.org/project/jncep/
+
+*This current page on github.com has the documentation for the next version, currently in development.*
 
 # Usage
 
@@ -98,6 +106,19 @@ Here is what needs to be done:
 - Set a password on that screen.
 
 Then the login email of the Facebook or Google account, together with that new password, can be used as credentials for the `jncep` tool, either directly or using one of the indirect methods.
+
+### JNC Nina account credentials
+
+Starting with version 50, some support for [JNC Nina](https://jnc-nina.eu/) (J-Novel Club subsidiary for German and French translations) has been added.
+
+2 additional options for JNC Nina credentials are now present:
+
+- JNC Nina login: `-ln` / `--email-nina`, confif option: `EMAIL_NINA`
+- JNC Nina password:  `-pn` / `--password-nina`, config option: `PASSWORD_NINA`
+
+If the JNC Nina email is the same as the J-Novel Club email, it is possible to only use the main `--email` option (so no need to repeat). The JNC Nina password is not optional though.
+
+One of the 2 options (for the main J-Novel Club website or for the JNC Nina website) must be present. For the `epub` or `update` commands, choice of which credential to use is made depending on the URL. When using `track sync`, the presence of credentials is used to decide on querying either website.
 
 ## Debugging mode
 
@@ -229,6 +250,14 @@ To solve this issue (without having to mess with fonts), by default, this specif
 ### CSS
 
 The default CSS used by the tool and embedded in the generated EPUB files can be found [in the repository](https://raw.githubusercontent.com/gvellut/jncep/master/jncep/res/style.css). It is possible to download it and customize it. Then you can tell the `epub` command to use your own version by passing the `-t/--css` option with the path to your custom CSS as value.
+
+### Naming of the output EPUB
+
+By default, the name is chosen to be something like: `Ascendance_of_a_Bookworm_Part_5_Volume_12_Part_1.epub`, which can be verbose for some J-Novel titles... 
+
+It is possible to override that using the namegen option: `-g` / `--namegen`, config option: `NAMEGEN`
+
+The full documentation for that feature is [on another page](namegen.md).
 
 ### Configuration file
 

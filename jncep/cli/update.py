@@ -79,7 +79,7 @@ console = utils.getConsole()
     ),
 )
 @click.option(
-    "-g",
+    "-y",
     "--whole-only",
     "is_whole_volume_only",
     is_flag=True,
