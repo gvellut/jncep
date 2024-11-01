@@ -113,10 +113,9 @@ class JNC_API:
             headers=API_COMMON_HEADERS,
         )
 
-        # CDN_IMG_URL_BASE not really necessary
-        self.cdn_session = asks.Session(
-            config.CDN_IMG_URL_BASE, connections=cdn_connections
-        )
+        # full URL always provided (CDN) so no need for base location parameter
+        # also multiple URL possible
+        self.cdn_session = asks.Session(connections=cdn_connections)
 
         self.api_default_timeout = api_default_timeout
         self.cdn_default_timeout = cdn_default_timeout
@@ -151,9 +150,6 @@ class JNC_API:
         path = f"{self.config.API_PATH_BASE}/auth/logout"
         await self._call_labs_api_authenticated("POST", path)
         self.token = None
-
-    def get_resource_id(self, resource_data):
-        return resource_data[self.config.ID_PROPERTY]
 
     async def me(self):
         path = f"{self.config.API_PATH_BASE}/me"
@@ -273,8 +269,7 @@ class JNC_API:
 
     @with_cache
     async def fetch_url(self, url: str):
-        if (not url.startswith(self.config.CDN_IMG_URL_BASE) and
-            not url.startswith(self.config.CDN2_IMG_URL_BASE)):
+        if not _url_starts_with(url, self.config.CDN_IMG_URL_BASE):
             raise InvalidCDNRequestException(
                 f"{url} doesn't start with {self.config.CDN_IMG_URL_BASE}"
             )
@@ -290,3 +285,10 @@ class JNC_API:
         # should be JPEG
         # TODO check ?
         return r.content
+
+
+def _url_starts_with(url, choice_urls):
+    if isinstance(choice_urls, str):
+        choice_urls = [choice_urls]
+
+    return any((url.startswith(choice_url) for choice_url in choice_urls))

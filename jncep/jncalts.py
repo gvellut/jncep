@@ -25,11 +25,8 @@ class AltConfig:
     API_PATH_BASE = attr.ib()
     EMBED_PATH_BASE = attr.ib()
     CDN_IMG_URL_BASE = attr.ib()
-    CDN2_IMG_URL_BASE = attr.ib()
 
     WEB_URL_BASE = attr.ib()
-
-    ID_PROPERTY = attr.ib()
 
 
 JNC_MAIN_CONFIG = AltConfig(
@@ -38,23 +35,23 @@ JNC_MAIN_CONFIG = AltConfig(
     API_URL_BASE="https://labs.j-novel.club",
     API_PATH_BASE="/app/v2",
     EMBED_PATH_BASE="/embed/v2",
-    CDN_IMG_URL_BASE="https://cdn.j-novel.club",
-    CDN2_IMG_URL_BASE="https://d2dq7ifhe7bu0f.cloudfront.net",
+    # multiple URLs possible (after v2 update October 2024)
+    CDN_IMG_URL_BASE=[
+        "https://cdn.j-novel.club",
+        "https://d2dq7ifhe7bu0f.cloudfront.net",
+    ],
     WEB_URL_BASE="https://j-novel.club",
-    ID_PROPERTY="id",
 )
 
-
+# after main Labs API v2 update October 2024 => properties very similar to Nina API
 JNC_NINA_CONFIG = AltConfig(
     ORIGIN=AltOrigin.JNC_NINA,
     DISPLAY_NAME="JNC Nina",
     API_URL_BASE="https://api.jnc-nina.eu",
-    API_PATH_BASE="/app/v2alpha",
-    EMBED_PATH_BASE="/embed",
+    API_PATH_BASE="/app/v2",
+    EMBED_PATH_BASE="/embed/v2",
     CDN_IMG_URL_BASE="https://cdn.jnc-nina.eu",
-    CDN2_IMG_URL_BASE="https://cdn.jnc-nina.eu",
     WEB_URL_BASE="https://jnc-nina.eu",
-    ID_PROPERTY="id",
 )
 
 

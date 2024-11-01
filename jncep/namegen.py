@@ -41,8 +41,8 @@ CACHED_PARSED_NAMEGEGEN_RULES = None
 # dict : per language
 CACHED_STOPWORDS = {}
 
-# TODO for JNC Nina : something different => + i18n of Part, Volume
 # should be enough until 15
+# TODO for JNC Nina : something different => + i18n of Part, Volume
 EN_NUMBERS = {
     "one": 1,
     "two": 2,
@@ -59,6 +59,11 @@ EN_NUMBERS = {
     "thirteen": 13,
     "fourteen": 14,
     "fifteen": 15,
+    "sixteen": 16,
+    "seventeen": 17,
+    "eighteen": 18,
+    "nineteen": 19,
+    "twenty": 20,
 }
 
 

@@ -5,7 +5,7 @@ import click
 import trio
 
 from . import options
-from .. import core, jncalts, track, update, jncweb, utils
+from .. import core, jncalts, jncweb, track, update, utils
 from ..config import ENVVAR_PREFIX
 from ..trio_utils import coro
 from .base import CatchAllExceptionsCommand
@@ -130,14 +130,15 @@ async def update_tracked(
             ids_updated = False
             # Check if series_id is legacyId, update if so
             for series_url, value in tracked_series.items():
-                if (len(value.series_id) == 24 and
-                    all(c in "abcdef1234567890" for c in value.series_id)):
+                if len(value.series_id) == 24 and all(
+                    c in "abcdef1234567890" for c in value.series_id
+                ):
                     # LegacyId needs update to new id
                     console.info(f"Updating legacy id for {series_url}!")
                     jnc_resource = jncweb.resource_from_url(series_url)
                     series_id = await core.resolve_series(session, jnc_resource)
                     series = await core.fetch_meta(session, series_id)
-                    value['series_id'] = series.series_id
+                    value["series_id"] = series.series_id
                     tracked_series[series_url] = value
                     ids_updated = True
 

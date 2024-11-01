@@ -59,6 +59,7 @@ def resource_from_url(url):
         # new site
         # new site changed titles to series in URL
         # so process both
+        # Nina in FR has fr at root of path
         s_re = r"^(?:/(.{2}))?/(?:series|titles)/(.+?)(?:(?=/)|$)"
         c_re = r"^(?:/(.{2}))?/read/(.+?)(?:(?=/)|$)"
         v_re = r"^volume-(\d+)$"

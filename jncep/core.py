@@ -14,6 +14,7 @@ import time
 from typing import List
 
 import dateutil.parser
+from dateutil.relativedelta import relativedelta
 from exceptiongroup import BaseExceptionGroup
 import trio
 
@@ -521,17 +522,17 @@ async def resolve_series(session: JNCEPSession, jnc_resource):
             series_raw_data = await session.api.fetch_data(
                 "volumes", volume_slug, "serie"
             )
-            return session.api.get_resource_id(series_raw_data)
+            return series_raw_data.id
     elif jnc_resource.resource_type == jncweb.RESOURCE_TYPE_PART:
         part_slug = jnc_resource.slug
         series_raw_data = await session.api.fetch_data("parts", part_slug, "serie")
-        return session.api.get_resource_id(series_raw_data)
+        return series_raw_data.id
 
 
 async def fetch_meta(session, series_id_or_slug):
     series_agg = await session.api.fetch_data("series", series_id_or_slug, "aggregate")
     series_raw_data = series_agg.series
-    series_id = session.api.get_resource_id(series_raw_data)
+    series_id = series_raw_data.id
     series = Series(series_raw_data, series_id)
 
     volumes = []
@@ -541,7 +542,7 @@ async def fetch_meta(session, series_id_or_slug):
     if "volumes" in series_agg:
         for i, volume_with_parts in enumerate(series_agg.volumes):
             volume_raw_data = volume_with_parts.volume
-            volume_id = session.api.get_resource_id(volume_raw_data)
+            volume_id = volume_raw_data.id
             volume_num = i + 1
 
             volume = Volume(
@@ -550,19 +551,30 @@ async def fetch_meta(session, series_id_or_slug):
                 volume_num,
                 series=series,
             )
-            volumes.append(volume)
 
             parts = []
             volume.parts = parts
             if "parts" in volume_with_parts:
                 parts_raw_data = volume_with_parts.parts
                 for i, part_raw_data in enumerate(parts_raw_data):
-                    part_id = session.api.get_resource_id(part_raw_data)
+                    part_id = part_raw_data.id
+                    # assume the parts are ordered correctly in API response
+                    # FIXME volume 1 (expired) of The Invincible Summoner not ordered.
+                    # Others?
                     part_num = i + 1
                     part = Part(
                         part_raw_data, part_id, part_num, volume=volume, series=series
                     )
+                    # remove the parts not yet launched => pretend they are not there
+                    # change to accommodate API v2 update in october 2024
+                    if is_part_in_future(session.now, part):
+                        continue
                     parts.append(part)
+
+            # ignore volumes with no part launched
+            if len(parts) == 0:
+                continue
+            volumes.append(volume)
 
     return series
 
@@ -583,11 +595,8 @@ async def fetch_content(session, parts):
 
 
 def is_part_available(now, is_member, part):
-    # in Nina (v2 API): the parts are returned from the API even if not launched
-    # not the case in JNC main
-    # discard the parts that haven't launched yet
-    launch_date = dateutil.parser.parse(part.raw_data.launch)
-    if launch_date > now:
+    # priority: do not take it into account
+    if is_part_in_future(now, part):
         return False
 
     if part.raw_data.preview:
@@ -604,14 +613,53 @@ def is_part_available(now, is_member, part):
     if part.series.raw_data.catchup:
         return True
 
-    if not part.raw_data.expiration:
-        # not filled yet on JNC's end (happened for the first parts of a new series)
-        # cf GH #22
-        # assume it has not expired
+    exp_date = expiration_date(part)
+    if not exp_date:
+        # if no publishing date (thus no expiration) : assume available
+        # TODO think about it
         return True
 
-    expiration_date = dateutil.parser.parse(part.raw_data.expiration)
-    return expiration_date > now
+    return exp_date > now
+
+
+def is_part_in_future(now, part):
+    return dateutil.parser.parse(part.raw_data.launch) > now
+
+
+def expiration_date(part: Part):
+    # in the v2 API : the expiration field is not always present:
+    # if expired: null
+    # if not expired: field present but identical to the publishing date of volume ie
+    # different from what is being shown on the website (so probably wrong)
+    # On the JNC website: shown expiration always computed from publishing date
+    # => here always recompute from the volume publishing date field
+    pub_date_s = part.volume.raw_data.publishing
+    if not pub_date_s:
+        return None
+
+    pub_date = dateutil.parser.parse(pub_date_s)
+    return _compute_expiration_date(pub_date)
+
+
+def _compute_expiration_date(pub_date):
+    day = pub_date.day
+    month = pub_date.month
+    year = pub_date.year
+    # TODO should be 10h according to the JS code
+    exp_date = datetime(year, month, 15, hour=0, tzinfo=timezone.utc)
+
+    if day >= 9:
+        exp_date += relativedelta(months=1)
+
+    weekday = exp_date.weekday()
+    if weekday == 6:
+        # sunday => set to next monday
+        exp_date = exp_date.replace(day=16)
+    elif weekday == 5:
+        # saturday => set to next monday
+        exp_date = exp_date.replace(day=17)
+
+    return exp_date
 
 
 async def fetch_content_and_images_for_part(session, part_id):
@@ -621,6 +669,13 @@ async def fetch_content_and_images_for_part(session, part_id):
         if len(img_urls) > 0:
             tasks = [partial(fetch_image, session, img_url) for img_url in img_urls]
             images = await bag(tasks)
+
+            # in case the url was converted in fetch_image : change content so correct
+            # reference
+            # TODO replace with local filename (done later: URL changed to local
+            # filename)
+            for i, img_url in enumerate(img_urls):
+                content = content.replace(img_url, images[i].url)
 
             # filter images with download error
             images = list(filter(None, images))
@@ -641,8 +696,15 @@ async def fetch_content_and_images_for_part(session, part_id):
         return None
 
 
+def webp_to_jpeg(img_url: str):
+    # convert from webp to jpeg (webp not readable in some physical epub reader
+    # like kobo); scheme documented here : https://forums.j-novel.club/post/374895
+    return img_url.replace("/webp/", "/jpg/", 1)
+
+
 async def fetch_image(session, img_url):
     try:
+        img_url = webp_to_jpeg(img_url)
         img_bytes = await session.api.fetch_url(img_url)
         image = Image(img_url, img_bytes)
         image.local_filename = _local_image_filename(image)
