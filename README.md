@@ -132,43 +132,20 @@ jncep --debug update
 
 In case of an issue with `jncep`, it is recommended to launch with the `--debug` option and to include the output in the issue report (either inline or as a file attachment, if too long).
 
+## Help
+
+All the commands have a `--help` option that lists all the arguments. If the command has subcommands, those also have a `--help` option.
+
+For example:
+
+```console
+jncep epub --help
+jncep track add --help
+```
+
 ## epub
 
 The `epub` command is used for simple EPUB generation, based on a URL link to a part or volume or series on the J-Novel Club website.
-
-### Options
-
-To get some help about the arguments to the `epub` command, just launch with the `--help` option:
-
-```console
-~$ jncep epub --help
-Usage: jncep epub [OPTIONS] JNOVEL_CLUB_URL
-
-  Generate EPUB files for J-Novel Club pre-pub novels
-
-Options:
-  -l, --email TEXT        Login email for J-Novel Club account  [required]
-  -p, --password TEXT     Login password for J-Novel Club account  [required]
-  -o, --output DIRECTORY  Existing folder to write the output [default: The
-                          current directory]
-  -s, --parts TEXT        Specification of a range of parts to download in the
-                          form of <vol>[.part]:<vol>[.part] [default: All the
-                          content linked by the JNOVEL_CLUB_URL argument,
-                          either a single part, a whole volume or the whole
-                          series]
-  -v, --byvolume          Flag to indicate that the parts of different volumes
-                          should be output in separate EPUBs
-  -i, --images            Flag to indicate that the images of the novel should
-                          be extracted into the output folder
-  -c, --content           Flag to indicate that the raw content of the parts
-                          should be extracted into the output folder
-  -n, --no-replace        Flag to indicate that some unicode characters
-                          unlikely to be in an EPUB reader font should NOT be
-                          replaced and instead kept as is
-  -t, --css FILE          Path to custom CSS file for the EPUBs [default: The
-                          CSS provided by JNCEP]
-  --help                  Show this message and exit.
-```
 
 ### Examples
 
@@ -259,62 +236,11 @@ It is possible to override that using the namegen option: `-g` / `--namegen`, co
 
 The full documentation for that feature is [on another page](namegen.md).
 
-### Configuration file
+### Configuration file / Environment variables
 
-Just like the login and password, other options can be set in a configuration file. Here are the options that are used by the `epub` subcommand (and also by `update`):
+Just like the login and password, other options can be set in a configuration file. 
 
-- EMAIL
-- PASSWORD
-- OUTPUT
-- CSS
-- BYVOLUME
-- IMAGES
-- CONTENT
-- NOREPLACE
-
-To set an option, use the `jncep config set` command. For example:
-
-```console
-jncep config set OUTPUT "/user/gvellut/documents/jncepubs"
-```
-
-This will add a value for the OUTPUT configuration option. When the `jncep epub` command is run, the value of the `--output` option will be taken from the configuration file, unless the `--output` option is actually present on the command-line, in which case it will take priority.
-
-**Note**: For `OUTPUT` or `CSS`, the values of which should be file paths, the `jncep config set` command doesn't process the `~` (user HOME directory, usually expanded by the shell) nor resolves a relative path to an absolute one. The output of the command will show what exact value will be used later by the `epub` and `update` commands: No additional transformation will be performed.
-
-[See the paragraph about managing the configuration](#config) further in this page.
-
-#### Flags
-
-The options that set flags (BYVOLUME and below in the list above) should have one of the following values: `1`, `true`, `t`, `yes`, `y` or `on`. The value can be in upper case. 
-
-For unsetting, the simplest is to use `config unset` to remove the configuration option (the default value for all those flags is `False`). If a value is set, it should be one of the following: `0`, `false`, `f`, `no`, `n` or `off`.
-
-### Environment variables
-
-The options can also be set using environment variables. They are the same as the configuration options, but with a `JNCEP_` prefix:
-
-For example:
-- JNCEP_PASSWORD
-- JNCEP_OUTPUT
-- JNCEP_CSS
-- and so on ...
-
-The specifig way of setting them will depend on your shell. For example, with Bash:
-
-```console
-export JNCEP_BYVOLUME=1
-```
-
-The names of the environment variables are __case-sensitive__.
-
-### Priority order for option values
-
-The priority order for option values is as follows:
-1. If a value is passed on the command-line, it has the highest priority
-2. If no value is passed, the value is taken from an environment variable if present
-3. After that, the value is taken from the configuration file
-4. Some options have a default value defined in the code: If no value has been explicitly passed using one of the 3 methods above, that default value will be used. Some options have no default values and are instead required: If no value is passed using one of the 3 methods just described, an error will be raised.
+[See the paragraph about managing the configuration](#config) further in this page for more details.
 
 ## track
 
@@ -333,28 +259,6 @@ The tracking is performed by updating a local config file called `tracked.json` 
 The configuration folder, as well the `tracked.json` file will be created by the tool if they don't exist.
 
 The `tracked.json` file can be updated manually with a text editor if really needed but should generally be left alone (or `jncep` could malfunction).
-
-### Options
-
-To get some help about the arguments to the `track` command, just launch with the `--help` option:
-
-```console
-~$ jncep track --help
-Usage: jncep track [OPTIONS] COMMAND [ARGS]...
-
-  Track updates to a series
-
-Options:
-  --help  Show this message and exit.
-
-Commands:
-  add   Add a new series for tracking
-  list  List tracked series
-  rm    Remove a series from tracking
-  sync  Sync list of series to track based on series followed on J-Novel...
-```
-
-In turn, the `add`, `rm`, `list` and `sync` subcommands can be called with `--help` to get details about their arguments.
 
 ### Examples
 
@@ -425,51 +329,7 @@ This command is used to generate EPUB files for newly updated series that were p
 
 This command uses the launch date of the parts to find out if the series has been updated.
 
-### Options
-
-To get some help about the arguments to the `update` command, just launch with the `--help` option:
-
-```console
-~$ jncep update --help
-Usage: jncep update [OPTIONS] (JNOVEL_CLUB_URL?)
-
-  Generate EPUB files for new parts of all tracked series (or specific series
-  if a URL argument is passed)
-
-Options:
-  -l, --email TEXT        Login email for J-Novel Club account  [required]
-  -p, --password TEXT     Login password for J-Novel Club account  [required]
-  -o, --output DIRECTORY  Existing folder to write the output [default: The
-                          current directory]
-  -v, --byvolume          Flag to indicate that the parts of different volumes
-                          should be output in separate EPUBs
-  -i, --images            Flag to indicate that the images of the novel should
-                          be extracted into the output folder
-  -c, --content           Flag to indicate that the raw content of the parts
-                          should be extracted into the output folder
-  -n, --no-replace        Flag to indicate that some unicode characters
-                          unlikely to be in an EPUB reader font should NOT be
-                          replaced and instead kept as is
-  -t, --css FILE          Path to custom CSS file for the EPUBs [default: The
-                          CSS provided by JNCEP]
-  -s, --sync              Flag to sync tracked series based on series followed
-                          on J-Novel Club and update the new ones from the
-                          beginning of the series
-  -j, --jnc-managed       Flag to indicate whether to use the series followed
-                          on the J-Novel Club website as the tracking
-                          reference for updating (equivalent to running 'track
-                          sync --delete --beginning' followed by 'update')
-  -w, --whole             Flag to indicate whether the whole volume should be
-                          regenerated when a new part is detected during the
-                          update
-  -f, --whole-final       Flag to indicate whether an EPUB with a complete
-                          volume should also be generated when the final part
-                          of the volume is included in the update
-  -e, --use-events        Flag to use the events feed to check for updates
-  --help                  Show this message and exit.
-```
-
-Most of the arguments to the `epub` command are also found here.
+Most of the arguments to the `epub` command are also found on the `update` command.
 
 ### Example
 
@@ -537,29 +397,31 @@ It has 6 subcommands:
 
 The configuration options are stored inside a `config.ini` file in the configuration folder. The file essentially uses the `.ini` file format for properties, except it doesn't support the `[...]` headers. When using the `set` command, the file will be created if needed.
 
-### Options
+#### Environment variables
 
-To get some help about the `config` command, just launch with the `--help` option:
+The options can also be set using environment variables, without using a config file. Their names are the same as the configuration options, but with a `JNCEP_` prefix:
+
+For example:
+- JNCEP_PASSWORD
+- JNCEP_OUTPUT
+- JNCEP_CSS
+- and so on ...
+
+The specifig way of setting them will depend on your shell. For example, with Bash:
 
 ```console
-~$ jncep config --help
-Usage: jncep config [OPTIONS] COMMAND [ARGS]...
-
-  Manage configuration
-
-Options:
-  --help  Show this message and exit.
-
-Commands:
-  init     Create configuration file
-  list     List configuration options
-  migrate  Migrate to standard configuration folder...
-  set      Set configuration option
-  show     List configuration details
-  unset    Delete configuration option
+export JNCEP_BYVOLUME=1
 ```
 
-In turn, the subcommands can be called with `--help` to get details about their arguments.
+The names of the environment variables are __case-sensitive__.
+
+#### Priority order for option values
+
+The priority order for option values is as follows:
+1. If a value is passed on the command-line, it has the highest priority
+2. If no value is passed, the value is taken from an environment variable if present
+3. After that, the value is taken from the configuration file
+4. Some options have a default value defined in the code: If no value has been explicitly passed using one of the 3 methods above, that default value will be used. Some options have no default values and are instead required: If no value is passed using one of the 3 methods just described, an error will be raised.
 
 ### Configuration folder
 
@@ -641,9 +503,17 @@ The `config.ini` file will be created if needed and will contain the following l
 EMAIL = jnclogin@aol.com
 ```
 
-**Warning**: When using that command from the command-line, the shell may need some characters to be escaped. The rules vary depending on what shell is used. Also, for `OUTPUT` or `CSS`, the command doesn't process the `~` (user HOME directory, usually expanded by the shell) nor resolves a relative path to an absolute one. Please review the output to check if the option was set as intended. 
+**Warning**: When using that command from the command-line, the shell may need some characters to be escaped. The rules vary depending on what shell is used. 
+
+**Warning #2**: Also, for `OUTPUT` or `CSS`, the command doesn't process the `~` (user HOME directory, usually expanded by the shell) nor resolves a relative path to an absolute one. The output of the command will show what exact value will be used later by the `epub` and `update` commands: No additional transformation will be performed.
 
 An alternative to using this command (as well as `unset`) is to edit the `config.ini` file with a text editor. The file must be saved in the **UTF-8 encoding**.
+
+#### Flags
+
+The options that set flags should have one of the following values: `1`, `true`, `t`, `yes`, `y` or `on`. The value can be in upper case. 
+
+For unsetting, the simplest is to use `config unset` (see below) to remove the configuration option: The default value for all the flags is `False`. If a value is set, it should be one of the following: `0`, `false`, `f`, `no`, `n` or `off`.
 
 ### unset
 
