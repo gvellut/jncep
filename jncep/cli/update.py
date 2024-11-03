@@ -141,6 +141,11 @@ async def update_tracked(
         namegen_rules,
     )
 
+    if is_catchup:
+        await _process_catchup(credentials, epub_generation_options)
+        # abort directly
+        return
+
     update_options = update.UpdateOptions(
         is_sync,
         is_whole_volume,
@@ -152,32 +157,28 @@ async def update_tracked(
     track_manager = track.TrackConfigManager()
     tracked_series = track_manager.read_tracked_series()
 
-    async def _update_with_options(config, tracked_series_origin):
-        if is_catchup:
-            await _process_catchup(credentials, epub_generation_options)
-            # abort directly
-            return
+    async def _update_with_managed(config, tracked_series_origin):
+        # TODO catch exc for an origin ; or error in one => global error
+        async with core.JNCEPSession(config, credentials) as session:
+            if is_jnc_managed:
+                # may update tracked_series_origin (but reference kept in case
+                # call_for_each_origin is used
+                await _process_managed(
+                    config,
+                    ctx,
+                    credentials,
+                    track_manager,
+                    tracked_series_origin,
+                    update_options,
+                )
 
-        if is_jnc_managed:
-            # may update tracked_series_origin (but reference kept in case
-            # call_for_each_origin is used
-            await _process_managed(
-                config,
-                ctx,
-                credentials,
-                track_manager,
+            await _do_update_tracked(
+                session,
                 tracked_series_origin,
+                jnc_url,
+                epub_generation_options,
                 update_options,
             )
-
-        await _do_update_tracked(
-            config,
-            credentials,
-            tracked_series_origin,
-            jnc_url,
-            epub_generation_options,
-            update_options,
-        )
 
     if jnc_url:
         # restrict the calls to the origin of the jnc_URL
@@ -186,13 +187,13 @@ async def update_tracked(
 
         tracked_series_by_origin = jncalts.split_by_origin(tracked_series)
         tracked_series_origin = tracked_series_by_origin[config.ORIGIN]
-        await _update_with_options(config, tracked_series_origin)
+        await _update_with_managed(config, tracked_series_origin)
         jncalts.merge_single_origin(
             tracked_series_by_origin, config.ORIGIN, tracked_series_origin
         )
     else:
         _, tracked_series = await jncalts.call_for_each_origin(
-            credentials, _update_with_options, tracked_series
+            credentials, _update_with_managed, tracked_series
         )
 
     # always update and do not notifiy user
@@ -200,61 +201,57 @@ async def update_tracked(
 
 
 async def _do_update_tracked(
-    config,
-    credentials,
+    session,
     tracked_series,
     jnc_url,
     epub_generation_options,
     update_options,
 ):
-    # TODO catch exc for an origin ; or error in one => global error
-    async with core.JNCEPSession(config, credentials) as session:
-        # process sync first => possibly will add new series to track
-        new_synced = None
-        if update_options.is_sync:
-            console.status("Fetch followed series from J-Novel Club...")
-            follows = await core.fetch_follows(session)
-            # new series will also be added to tracked_series
-            new_synced, _ = await track.sync_series_forward(
-                session, follows, tracked_series, False
-            )
+    # process sync first => possibly will add new series to track
+    new_synced = None
+    if update_options.is_sync:
+        console.status("Fetch followed series from J-Novel Club...")
+        follows = await core.fetch_follows(session)
+        # new series will also be added to tracked_series
+        new_synced, _ = await track.sync_series_forward(
+            session, follows, tracked_series, False
+        )
 
-            if len(new_synced) == 0:
-                console.warning(
-                    "There are no new series to sync. Use the [highlight]Follow[/] "
-                    "button on a series page on the J-Novel Club website."
-                )
-                return
-
-        if len(tracked_series) == 0:
+        if len(new_synced) == 0:
             console.warning(
-                "There are no tracked series! Use the 'jncep track add' command "
-                "first."
+                "There are no new series to sync. Use the [highlight]Follow[/] "
+                "button on a series page on the J-Novel Club website."
             )
             return
 
-        if jnc_url:
-            console.status(f"Update '{jnc_url}'...")
+    if len(tracked_series) == 0:
+        console.warning(
+            "There are no tracked series! Use the 'jncep track add' command " "first."
+        )
+        return
 
-            await update.update_url_series(
-                session,
-                jnc_url,
-                epub_generation_options,
-                tracked_series,
-                new_synced,
-                update_options,
-            )
+    if jnc_url:
+        console.status(f"Update '{jnc_url}'...")
 
-        else:
-            console.status("Update all series...")
+        await update.update_url_series(
+            session,
+            jnc_url,
+            epub_generation_options,
+            tracked_series,
+            new_synced,
+            update_options,
+        )
 
-            await update.update_all_series(
-                session,
-                epub_generation_options,
-                tracked_series,
-                new_synced,
-                update_options,
-            )
+    else:
+        console.status("Update all series...")
+
+        await update.update_all_series(
+            session,
+            epub_generation_options,
+            tracked_series,
+            new_synced,
+            update_options,
+        )
 
 
 async def _process_managed(
