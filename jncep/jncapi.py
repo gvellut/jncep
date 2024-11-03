@@ -18,6 +18,8 @@ API_COMMON_HEADERS = {
     "content-type": "application/json",
 }
 
+logging.getLogger("httpx").disabled = True
+
 
 class InvalidCDNRequestException(Exception):
     pass
@@ -143,7 +145,7 @@ class JNC_API:
 
     async def me(self):
         path = f"{self.config.API_PATH_BASE}/me"
-        return await self._fetch_resource(path)
+        return await self.fetch_resource(path)
 
     @with_cache
     async def fetch_data(self, resource_type, slug_id, sub_resource="", skip=None):
@@ -151,7 +153,7 @@ class JNC_API:
             sub_resource = f"/{sub_resource}"
 
         path = f"{self.config.API_PATH_BASE}/{resource_type}/{slug_id}{sub_resource}"
-        return await self._fetch_resource(path, skip=skip)
+        return await self.fetch_resource(path, skip=skip)
 
     @with_cache
     async def fetch_content(self, slug_id, content_type):
@@ -164,17 +166,23 @@ class JNC_API:
         return r.text
 
     @with_cache
+    async def fetch_all_series(self, limit=500, skip=None):
+        path = f"{self.config.API_PATH_BASE}/series"
+        params = {"limit": limit}
+        return await self.fetch_resource(path, params=params, skip=skip)
+
+    @with_cache
     async def fetch_events(self, skip=None, **params):
         path = f"{self.config.API_PATH_BASE}/events"
-        return await self._fetch_resource(path, params=params, skip=skip)
+        return await self.fetch_resource(path, params=params, skip=skip)
 
     @with_cache
     async def fetch_follows(self, skip=None):
         path = f"{self.config.API_PATH_BASE}/series"
         body = json.dumps({"only_follows": True})
-        return await self._fetch_resource(path, "POST", body=body, skip=skip)
+        return await self.fetch_resource(path, "POST", body=body, skip=skip)
 
-    async def _fetch_resource(
+    async def fetch_resource(
         self, path, verb="GET", *, params=None, body=None, skip=None
     ):
         logger.debug(

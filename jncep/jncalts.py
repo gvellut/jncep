@@ -139,6 +139,11 @@ def split_by_origin(t):
     return t_split
 
 
+def merge_single_origin(t_split, origin, tracked_series_for_origin):
+    t_split[origin] = tracked_series_for_origin
+    _merge_from_origins(t_split)
+
+
 def _merge_from_origins(t_split):
     t = {}
     for track_series in t_split.values():

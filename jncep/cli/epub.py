@@ -96,63 +96,67 @@ async def generate_epub(
         else:
             part_spec_analyzed = await core.to_part_spec(series, jnc_resource)
 
-        console.status("Get content...")
+        await generate_epubs(
+            session, series, part_spec_analyzed, epub_generation_options
+        )
 
-        has_unavailable_parts = False
 
-        def part_filter(part):
-            if part_spec_analyzed.has_part(part):
-                if core.is_part_available(session.now, core.is_member(session), part):
-                    return True
-                else:
-                    nonlocal has_unavailable_parts
-                    has_unavailable_parts = True
-            return False
+async def generate_epubs(session, series, part_spec_analyzed, epub_generation_options):
+    console.status("Get content...")
 
-        (
-            volumes_to_download,
-            parts_to_download,
-        ) = core.relevant_volumes_and_parts_for_content(series, part_filter)
+    has_unavailable_parts = False
 
-        if not parts_to_download:
+    def part_filter(part):
+        if part_spec_analyzed.has_part(part):
+            if core.is_part_available(session.now, core.is_member(session), part):
+                return True
+            else:
+                nonlocal has_unavailable_parts
+                has_unavailable_parts = True
+        return False
+
+    (
+        volumes_to_download,
+        parts_to_download,
+    ) = core.relevant_volumes_and_parts_for_content(series, part_filter)
+
+    if not parts_to_download:
+        console.error(
+            "None of the requested parts are available! No EPUB will be generated.",
+        )
+        return
+
+    if has_unavailable_parts:
+        console.warning(
+            "Some of the requested parts are not available for reading!",
+        )
+
+    volumes_for_cover = core.relevant_volumes_for_cover(
+        volumes_to_download, epub_generation_options.is_by_volume
+    )
+
+    await core.fill_covers_and_content(session, volumes_for_cover, parts_to_download)
+
+    has_missing, has_available = core.has_missing_part_content(parts_to_download)
+    if has_missing:
+        if has_available:
+            console.warning(
+                "Some parts were not downloaded correctly! "
+                "Do you have a subscription?",
+            )
+            # continue: can generated an Epub with the downloaded parts
+        else:
             console.error(
-                "None of the requested parts are available! No EPUB will be generated.",
+                "None of the parts were downloaded correctly! "
+                "Do you have a subscription?",
             )
             return
 
-        if has_unavailable_parts:
-            console.warning(
-                "Some of the requested parts are not available for reading!",
-            )
+    console.status("Create EPUB...")
 
-        volumes_for_cover = core.relevant_volumes_for_cover(
-            volumes_to_download, epub_generation_options.is_by_volume
-        )
-
-        await core.fill_covers_and_content(
-            session, volumes_for_cover, parts_to_download
-        )
-
-        has_missing, has_available = core.has_missing_part_content(parts_to_download)
-        if has_missing:
-            if has_available:
-                console.warning(
-                    "Some parts were not downloaded correctly! "
-                    "Do you have a subscription?",
-                )
-                # continue: can generated an Epub with the downloaded parts
-            else:
-                console.error(
-                    "None of the parts were downloaded correctly! "
-                    "Do you have a subscription?",
-                )
-                return
-
-        console.status("Create EPUB...")
-
-        await core.create_epub(
-            series,
-            volumes_to_download,
-            parts_to_download,
-            epub_generation_options,
-        )
+    await core.create_epub(
+        series,
+        volumes_to_download,
+        parts_to_download,
+        epub_generation_options,
+    )

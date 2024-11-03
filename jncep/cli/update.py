@@ -5,10 +5,11 @@ import click
 import trio
 
 from . import options
-from .. import core, jncalts, track, update, utils
+from .. import core, jncalts, jncapi, spec, track, update, utils
 from ..config import ENVVAR_PREFIX
-from ..trio_utils import coro
+from ..trio_utils import bag, coro
 from .base import CatchAllExceptionsCommand
+from .epub import generate_epubs
 from .track import sync_series
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,13 @@ console = utils.getConsole()
         "Flag to sync tracked series based on series followed on J-Novel Club and "
         "update the new ones from the beginning of the series"
     ),
+)
+@click.option(
+    "-z",
+    "--catchup",
+    "is_catchup",
+    is_flag=True,
+    help="Flag to obtain all the catchup series (all volumes, all series)",
 )
 @click.option(
     "-j",
@@ -120,136 +128,226 @@ async def update_tracked(
     is_whole_volume_only,
     is_use_events,
     is_jnc_managed,
+    is_catchup,
 ):
+    epub_generation_options = core.EpubGenerationOptions(
+        output_dirpath,
+        is_subfolder,
+        is_by_volume,
+        is_extract_images,
+        is_extract_content,
+        is_not_replace_chars,
+        style_css_path,
+        namegen_rules,
+    )
+
+    update_options = update.UpdateOptions(
+        is_sync,
+        is_whole_volume,
+        is_whole_volume_on_final_part,
+        is_whole_volume_only,
+        is_use_events,
+    )
+
     track_manager = track.TrackConfigManager()
     tracked_series = track_manager.read_tracked_series()
 
-    async def update_tracked_for_origin(config, tracked_series_origin):
-        # TODO catch exc for an origin ; or error in one => global error
-        async with core.JNCEPSession(config, credentials) as session:
-            if is_jnc_managed:
-                # run the equivalent of:
-                # track sync --delete --beginning
-                # update
+    async def _update_with_options(config, tracked_series_origin):
+        if is_catchup:
+            await _process_catchup(credentials, epub_generation_options)
+            # abort directly
+            return
 
-                # do the sync_series inside an existing origin session so only one login
-                # for the origin
-                origin_credentials = credentials.extract_for_origin(config.ORIGIN)
-
-                # prune series that are not followed anymore + track from beginning
-                console.info("[important]track sync --delete --beginning[/]")
-
-                # TODO instead of passing through click use internal function
-                # no need for the rereading of the tracked series
-
-                # run_sync because we are already in a trio context so we wouldn't be
-                # able to nest another trio.run (inside the click command) othwerwise
-                # TODO check if newer Trio versions have lifted that limitation?
-                await trio.to_thread.run_sync(
-                    partial(
-                        ctx.invoke,
-                        sync_series,
-                        credentials=origin_credentials,
-                        is_delete=True,
-                        is_beginning=True,
-                    )
-                )
-
-                # need to reread since the tracked_series_origin is not updated by
-                # the invocation above: updates the file itself
-                tracked_series_updated = track_manager.read_tracked_series()
-                tracked_series_origin_updated = jncalts.split_by_origin(
-                    tracked_series_updated
-                )[config.ORIGIN]
-                # keep the reference to the tracked_series_origin but replace content
-                # with the newly synced tracking content
-                # the reference needs to be kept since used for the merge in
-                # call_for_each_origin
-                tracked_series_origin.clear()
-                tracked_series_origin.update(tracked_series_origin_updated)
-
-                # after that, let update run normally
-                console.info("[important]update[/]")
-                # set sync to False because doesn't make sense to sync again
-                # TODO log to the user ?
-                nonlocal is_sync
-                is_sync = False
-
-            epub_generation_options = core.EpubGenerationOptions(
-                output_dirpath,
-                is_subfolder,
-                is_by_volume,
-                is_extract_images,
-                is_extract_content,
-                is_not_replace_chars,
-                style_css_path,
-                namegen_rules,
+        if is_jnc_managed:
+            # may update tracked_series_origin (but reference kept in case
+            # call_for_each_origin is used
+            await _process_managed(
+                config,
+                ctx,
+                credentials,
+                track_manager,
+                tracked_series_origin,
+                update_options,
             )
 
-            update_options = update.UpdateOptions(
-                is_sync,
-                is_whole_volume,
-                is_whole_volume_on_final_part,
-                is_whole_volume_only,
-                is_use_events,
-            )
-
-            # process sync first => possibly will add new series to track
-            new_synced = None
-            if is_sync:
-                console.status("Fetch followed series from J-Novel Club...")
-                follows = await core.fetch_follows(session)
-                # new series will also be added to tracked_series
-                new_synced, _ = await track.sync_series_forward(
-                    session, follows, tracked_series_origin, False
-                )
-
-                if len(new_synced) == 0:
-                    console.warning(
-                        "There are no new series to sync. Use the [highlight]Follow[/] "
-                        "button on a series page on the J-Novel Club website."
-                    )
-                    return
-
-            if len(tracked_series_origin) == 0:
-                console.warning(
-                    "There are no tracked series! Use the 'jncep track add' command "
-                    "first."
-                )
-                return
-
-            if jnc_url:
-                console.status(f"Update '{jnc_url}'...")
-
-                await update.update_url_series(
-                    session,
-                    jnc_url,
-                    epub_generation_options,
-                    tracked_series_origin,
-                    new_synced,
-                    update_options,
-                )
-
-            else:
-                console.status("Update all series...")
-
-                await update.update_all_series(
-                    session,
-                    epub_generation_options,
-                    tracked_series_origin,
-                    new_synced,
-                    update_options,
-                )
+        await _do_update_tracked(
+            config,
+            credentials,
+            tracked_series_origin,
+            jnc_url,
+            epub_generation_options,
+            update_options,
+        )
 
     if jnc_url:
+        # restrict the calls to the origin of the jnc_URL
         origin = jncalts.find_origin(jnc_url)
         config = jncalts.get_alt_config_for_origin(origin)
 
-        await update_tracked_for_origin(config, tracked_series)
+        tracked_series_by_origin = jncalts.split_by_origin(tracked_series)
+        tracked_series_origin = tracked_series_by_origin[config.ORIGIN]
+        await _update_with_options(config, tracked_series_origin)
+        jncalts.merge_single_origin(
+            tracked_series_by_origin, config.ORIGIN, tracked_series_origin
+        )
     else:
         _, tracked_series = await jncalts.call_for_each_origin(
-            credentials, update_tracked_for_origin, tracked_series
+            credentials, _update_with_options, tracked_series
         )
 
     # always update and do not notifiy user
     track_manager.write_tracked_series(tracked_series)
+
+
+async def _do_update_tracked(
+    config,
+    credentials,
+    tracked_series,
+    jnc_url,
+    epub_generation_options,
+    update_options,
+):
+    # TODO catch exc for an origin ; or error in one => global error
+    async with core.JNCEPSession(config, credentials) as session:
+        # process sync first => possibly will add new series to track
+        new_synced = None
+        if update_options.is_sync:
+            console.status("Fetch followed series from J-Novel Club...")
+            follows = await core.fetch_follows(session)
+            # new series will also be added to tracked_series
+            new_synced, _ = await track.sync_series_forward(
+                session, follows, tracked_series, False
+            )
+
+            if len(new_synced) == 0:
+                console.warning(
+                    "There are no new series to sync. Use the [highlight]Follow[/] "
+                    "button on a series page on the J-Novel Club website."
+                )
+                return
+
+        if len(tracked_series) == 0:
+            console.warning(
+                "There are no tracked series! Use the 'jncep track add' command "
+                "first."
+            )
+            return
+
+        if jnc_url:
+            console.status(f"Update '{jnc_url}'...")
+
+            await update.update_url_series(
+                session,
+                jnc_url,
+                epub_generation_options,
+                tracked_series,
+                new_synced,
+                update_options,
+            )
+
+        else:
+            console.status("Update all series...")
+
+            await update.update_all_series(
+                session,
+                epub_generation_options,
+                tracked_series,
+                new_synced,
+                update_options,
+            )
+
+
+async def _process_managed(
+    config, ctx, credentials, track_manager, tracked_series_origin, update_options
+):
+    # run the equivalent of:
+    # track sync --delete --beginning
+    # update
+
+    # do the sync_series inside an existing origin session so only one login
+    # for the origin
+    origin_credentials = credentials.extract_for_origin(config.ORIGIN)
+
+    # prune series that are not followed anymore + track from beginning
+    console.info("[important]track sync --delete --beginning[/]")
+
+    # TODO instead of passing through click use internal function
+    # no need for the rereading of the tracked series
+
+    # run_sync because we are already in a trio context so we wouldn't be
+    # able to nest another trio.run (inside the click command) othwerwise
+    # TODO check if newer Trio versions have lifted that limitation?
+    await trio.to_thread.run_sync(
+        partial(
+            ctx.invoke,
+            sync_series,
+            credentials=origin_credentials,
+            is_delete=True,
+            is_beginning=True,
+        )
+    )
+
+    # need to reread since the tracked_series_origin is not updated by
+    # the invocation above: updates the file itself
+    tracked_series_updated = track_manager.read_tracked_series()
+    tracked_series_origin_updated = jncalts.split_by_origin(tracked_series_updated)[
+        config.ORIGIN
+    ]
+
+    # keep the reference to the tracked_series_origin but replace content
+    # with the newly synced tracking content
+    # the reference needs to be kept since used for the merge in
+    # call_for_each_origin
+    tracked_series_origin.clear()
+    tracked_series_origin.update(tracked_series_origin_updated)
+
+    # set sync to False because doesn't make sense to sync again
+    # TODO log to the user ?
+    update_options._replace(is_sync=False)
+
+    # after that, let update run normally
+    console.info("[important]update[/]")
+
+
+async def _process_catchup(credentials, epub_generation_options):
+    origins = credentials.origins_with_credentials()
+    for origin in origins:
+        alt_config = jncalts.get_alt_config_for_origin(origin)
+
+        async with core.JNCEPSession(alt_config, credentials) as session:
+            catchup_series = []
+            async for raw_series in jncapi.paginate(
+                session.api.fetch_all_series, "series"
+            ):
+                if raw_series.get("catchup"):
+                    if not core.is_novel(raw_series):
+                        continue
+                    catchup_series.append(raw_series)
+
+            if not catchup_series:
+                console.warning(f"No catchup series for {origin.DISPLAY_NAME}")
+                continue
+
+            tasks = []
+            for series in catchup_series:
+                tasks.append(
+                    partial(
+                        _generate_catchup_epubs,
+                        session,
+                        series,
+                        epub_generation_options,
+                    )
+                )
+            await bag(tasks)
+
+
+async def _generate_catchup_epubs(session, series, epub_generation_options):
+    series_id = series.id
+    series = await core.fetch_meta(session, series_id)
+
+    title = series.raw_data.title
+    console.info(f"The catchup series '[highlight]{title}'[/] will be downloadedf")
+    full_series_part_spec = spec.IdentifierSpec(spec.SERIES)
+    await generate_epubs(
+        session, series, full_series_part_spec, epub_generation_options
+    )

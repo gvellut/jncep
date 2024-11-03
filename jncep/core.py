@@ -672,9 +672,12 @@ async def fetch_content_and_images_for_part(session, part_id):
 
             # in case the url was converted in fetch_image : change content so correct
             # reference
-            # TODO replace with local filename (done later: URL changed to local
-            # filename)
+            # do it first : need the original img_url
+            # TODO do not do that? keep the original image URL instead of the JPEG url
             for i, img_url in enumerate(img_urls):
+                if not images[i]:
+                    # problem donwloading the url (sometimes: 403 Forbidden)
+                    continue
                 content = content.replace(img_url, images[i].url)
 
             # filter images with download error
