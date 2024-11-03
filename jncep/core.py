@@ -318,7 +318,11 @@ async def extract_images(parts, epub_generation_options):
             for image in images:
                 # change filename to something more readable since visible to
                 # user
-                _, ext = os.path.splitext(image.local_filename)
+                # force JPG extension: recent API update has webp extension for recent
+                # parts but always converted to JPG when downloading
+                # TODO never PNG ?
+                # _, ext = os.path.splitext(image.local_filename)
+                ext = ".jpg"
                 suffix = f"_Image_{image.order_in_part}"
                 img_filename = to_safe_filename(part.raw_data.title) + suffix + ext
                 img_filepath = os.path.join(
@@ -670,16 +674,6 @@ async def fetch_content_and_images_for_part(session, part_id):
             tasks = [partial(fetch_image, session, img_url) for img_url in img_urls]
             images = await bag(tasks)
 
-            # in case the url was converted in fetch_image : change content so correct
-            # reference
-            # do it first : need the original img_url
-            # TODO do not do that? keep the original image URL instead of the JPEG url
-            for i, img_url in enumerate(img_urls):
-                if not images[i]:
-                    # problem donwloading the url (sometimes: 403 Forbidden)
-                    continue
-                content = content.replace(img_url, images[i].url)
-
             # filter images with download error
             images = list(filter(None, images))
             for i, image in enumerate(images):
@@ -707,8 +701,9 @@ def webp_to_jpeg(img_url: str):
 
 async def fetch_image(session, img_url):
     try:
-        img_url = webp_to_jpeg(img_url)
-        img_bytes = await session.api.fetch_url(img_url)
+        jpeg_img_url = webp_to_jpeg(img_url)
+        img_bytes = await session.api.fetch_url(jpeg_img_url)
+        # keep the original img url => will appear in the content
         image = Image(img_url, img_bytes)
         image.local_filename = _local_image_filename(image)
         return image
