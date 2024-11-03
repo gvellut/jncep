@@ -81,7 +81,7 @@ class TrackConfigManager:
 
 
 async def track_series(session, tracked_series, series, is_beginning=False):
-    parts = core.all_parts_meta(series, session.now)
+    parts = core.all_parts_meta(series)
 
     # record current last part + name
     if not parts or is_beginning:

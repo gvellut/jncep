@@ -434,19 +434,10 @@ def _replace_image_urls(content, images: List[Image]):
     return content
 
 
-def all_parts_meta(series, only_launched_before=None):
+def all_parts_meta(series):
+    # return all parts : no need to filter out parts released in the future (v2 API)
+    # => always done in fetch_meta
     parts = [part for volume in series.volumes if volume.parts for part in volume.parts]
-
-    if only_launched_before:
-        # in Nina (v2 API): the parts are returned from the API even if not launched
-        # so filter by launch if requested
-        date = only_launched_before
-        parts = [
-            part
-            for part in parts
-            if dateutil.parser.parse(part.raw_data.launch) <= date
-        ]
-
     return parts
 
 

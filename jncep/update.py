@@ -219,7 +219,7 @@ def _update_tracking_data(series_details, series_meta, update_result, now):
     if not (update_result.is_updated or update_result.is_force_set_updated):
         return
 
-    parts = core.all_parts_meta(series_meta, now)
+    parts = core.all_parts_meta(series_meta)
     assert bool(parts)
 
     pn, pdate = core.last_part_number_and_date(parts)
@@ -381,7 +381,7 @@ async def _create_epub_for_new_parts(
     epub_generation_options,
     update_options,
 ):
-    parts = core.all_parts_meta(series, session.now)
+    parts = core.all_parts_meta(series)
 
     # Either
     update_result, availability = _find_available_parts(
