@@ -8,11 +8,11 @@ The version inside the master Github repo is missing some support for JNC Nina (
 
 ## Samples
 
-- `t:legacy_t|n:_t>str_filesafe|f:legacy_f`: this is the defaut rule if no namegen argument is defined. It defines the 3 sections: `t:` (EPUB title), `n:` (file name) and `f:` (folder name). The special rule `_t` is used: it takes the output of the `t:` rule. The rules for `t:` and `f:` use the legacy rules. Note that the folder will be generated only if the `--subfolder` argument is passed to the jncep command: Otherwise it has no effect.
+- `t:legacy_t|n:_t>str_filesafe|f:legacy_f`: this is the defaut rule if no namegen argument is defined. It defines rules for the 3 sections: `t:` (EPUB title), `n:` (file name) and `f:` (folder name). The special rule `_t` is used: it takes the output of the `t:` rule. The rules for `t:` and `f:` use the legacy rules. Note that the folder will be generated only if the `--subfolder` argument is passed to the jncep command: Otherwise it has no effect.
 - `t:fc_full>p_title>pn_rm_if_complete>pn_prepend_vn_if_multiple>pn_full>v_title>vn_full>s_title>to_string|f:to_series>fc_rm>pn_rm>vn_rm>s_title>text>filesafe_underscore`: It is the equivalent of the default rule but without using the legacy rules. The `n:` rule is missing so it is taken to be the default `n:` rule (ie `_t>str_filesafe`; see above).
 - `fc_full>p_title`: This doesn't have the `tnf` prefixes. In this case, it assumed to be a `t:` prefix (the other ones being the default).
 - suppress part naming in volumes [Issue 44](https://github.com/gvellut/jncep/issues/44): `n:fc_rm>p_to_volume>pn_rm>v_title>vn_full>s_title>to_string>str_filesafe`. With this the EPUB title will be generated as default, only the file name will be customized. Even if single part : "Demon_Lord_Retry_Volume_9.epub"
-- only the Volume is shown and numbered, additionally flags could be set for converting spelled out numbers into decimals and removing underscores + padding [Issue 29](https://github.com/gvellut/jncep/issues/29): `n:fc_rm>p_split_part>v_split_volume>pn_0pad>vn_number>vn_0pad>vn_merge>pn_rm_if_complete>pn_prepend_vn>pn_short>s_title>ss_rm_subtitle>to_string(1)`
+- only the Volume is shown and numbered, additionally flags could be set for converting spelled out numbers into decimals and removing underscores + padding [Issue 29](https://github.com/gvellut/jncep/issues/29): `n:fc_rm>p_split_part>v_split_volume>pn_0pad>vn_number>vn_0pad>vn_merge>pn_rm_if_complete>pn_prepend_vn>pn_short>s_title>ss_rm_subtitle>to_string`. Part 2 of Volume 6 Part One of [Rebuild World](https://j-novel.club/series/rebuild-world) will be: "Rebuild World 06.01.02.epub"
 
 ## Syntax
 
