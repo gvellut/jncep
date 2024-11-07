@@ -16,3 +16,4 @@ __pycache__
 /output_test
 /output_test2
 .DS_Store
+.venv

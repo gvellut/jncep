@@ -288,6 +288,7 @@ def _process_single_epub_content(
         toc,
         contents,
         images,
+        complete,
     )
 
     return book_details

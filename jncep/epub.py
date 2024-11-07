@@ -20,6 +20,7 @@ class BookDetails:
     toc = attr.ib()
     contents = attr.ib()
     images = attr.ib()
+    complete = attr.ib()
 
 
 @attr.s
@@ -61,6 +62,10 @@ def output_epub(output_filepath, book_details: BookDetails, style_css_path=None)
     book.set_language(lang)
     book.add_author(book_details.author)
     book.add_metadata("DC", "description", book_details.description)
+    book.add_metadata('DC', 'publisher', 'J-Novel Club (generated)')
+    book.add_metadata('DC', 'subject', 'Light Novel')
+    if not book_details.complete:
+        book.add_metadata('DC', 'subject', 'partial')
     for tag in book_details.tags:
         book.add_metadata("DC", "subject", tag)
 
