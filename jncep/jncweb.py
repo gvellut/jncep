@@ -77,7 +77,7 @@ def resource_from_url(url):
                 # tuple with volume
                 return JNCResource(
                     url,
-                    (series_slug, int(m.group(2))),
+                    (series_slug, int(m.group(1))),
                     True,
                     RESOURCE_TYPE_VOLUME,
                     origin,
