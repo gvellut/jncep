@@ -355,37 +355,23 @@ Or if no tracked series has seen any updates:
 All series are already up to date!
 ```
 
-### Sync
+### Sync & JNC-Managed
 
 The `--sync` flag can be passed (together with the other options), in which case the list of tracked series is first updated based on the list of followed series on the J-Novel Club website (equivalent of `jncep track sync`), then, only for the newly added series, an EPUB is created with the parts from the beginning.
 
 It can be useful for when a new series starts publishing: It can be set as Followed on the website then this `jncep update --sync` command can be launched to subscribe to the series and get all the newly released parts in one go, and without having to copy/paste a URL.
 
+The `--jnc-managed` flag goes a bit further than `--sync`: It assumes the Follows on the J-Novel Club website are used to manage tracking. This allows to never use `track add ...` or `track rm ...`. When run with this argument, the `update` command first updates the local list of tracked series according to the list of followed series on the website (including deletion if some series have been unfollowed). Then newly followed series are fetched from the beginning and the others are updated normally. This can be run in the normal course of things, not just when new series have been followed like `--sync`.
+
 ### Events feed
 
 If you have a lot of followed series and update often, the flag `--use-events` can be used. In that case, the `update` command will first check the events feed provided by J-Novel Club: It includes all the part releases and can be used to know which series will need to be downloaded. With this flag, the tool saves time by not checking all the series individually.
-
-### Configuration & environment variables
-
-Compared to the `epub` command, the `update` command understands the additional configuration options:
-- USE_EVENTS
-- WHOLE
-- WHOLE_FINAL
-- JNC_MANAGED
-
-Since they are flags, they should have a value like `1`, `true`, `t`, `yes`, `y` or `on` (case insensitive) if set.
-
-They are also available as environment variables:
-- JNCEP_USE_EVENTS
-- JNCEP_WHOLE
-- JNCEP_WHOLE_FINAL
-- JNCEP_JNC_MANAGED
 
 ### Automation
 
 The `update` command can be called in the background from launchd (on macOS) or a scheduled task (on Windows) or cron (on Linux) in order to regularly download new content if available and create EPUBs (for example, once a day). 
 
-There is no notification built in the `jncep update` command but the text output can be combined with other tools to make something suitable. If there are updates, the `jncep update` command outputs something like `2 series sucessfully updated!`, which can be processed by another tool do create a notification.
+There is no notification built in the `jncep update` command but the text output can be combined with other tools to make something suitable. If there are updates, the `jncep update` command outputs something like `2 series sucessfully updated!`, which can be processed by another tool to create a notification.
 
 ## config
 
