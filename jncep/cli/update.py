@@ -343,7 +343,7 @@ async def _generate_catchup_epubs(session, series, epub_generation_options):
     series = await core.fetch_meta(session, series_id)
 
     title = series.raw_data.title
-    console.info(f"The catchup series '[highlight]{title}'[/] will be downloadedf")
+    console.info(f"The catchup series '[highlight]{title}[/]' will be downloaded")
     full_series_part_spec = spec.IdentifierSpec(spec.SERIES)
     await generate_epubs(
         session, series, full_series_part_spec, epub_generation_options
