@@ -268,3 +268,48 @@ ROOT_CONSOLE = RootConsole()
 
 def getConsole():
     return ROOT_CONSOLE
+
+
+def split_by_chapter(content):
+    combined_content = ""
+    chapter_titles = []
+    first_before_content = ""
+    first_inside_content = ""
+    first_after_content = ""
+    main_div_pattern = r'^(.*?)<div class="main">(.*?)</div>(.*?)$'
+    h1_title_pattern = r'<h1[^>]*>(.*?)</h1>'
+    returned_content = []
+
+    for i, c in enumerate(content):
+        reconstructed_content = ""
+        match = re.search(main_div_pattern, c, re.DOTALL)
+        titles = re.findall(h1_title_pattern, c)
+        if match:
+            # Extract the content before, inside, and after the first <div class="main">
+            before_content = match.group(1).strip()
+            inside_content = match.group(2).strip()
+            after_content = match.group(3).strip()
+            combined_content += inside_content.strip()
+            if i == 0:
+                first_before_content = before_content
+                first_after_content = after_content
+
+
+        if len(titles) > 0:
+            chapter_titles.extend(titles)  # Add to the list of chapter titles
+        else:
+            chapter_titles.append(f"Untitled {i + 1}")
+    print(combined_content)
+    parts = re.split(r"(?=<h1[^>]*>)", combined_content, flags=re.DOTALL)
+    #print(parts[0])
+    #
+    #(<img[^>]*?>.*?<h1[^>]*>.*?</h1>|<h1[^>]*>.*?</h1>)
+    #
+    for i, part in enumerate(parts):
+        if part.strip():  # Ignore empty parts
+            # Save each part to a separate file or process as needed
+            title = chapter_titles[i] if i < len(chapter_titles) else f"Untitled {i + 1}"
+            reconstructed_content = re.sub(r'<title>.*?</title>', f'<title>{title}</title>', first_before_content)+part + first_after_content
+            returned_content.append(reconstructed_content)
+    #print(returned_content[0])
+    return returned_content, chapter_titles
