@@ -15,7 +15,7 @@ import importlib_resources as imres
 from lark import Lark, Transformer, v_args
 from lark.exceptions import LarkError
 
-from .utils import getConsole, to_safe_filename
+from .utils import getConsole, to_safe_filename, to_safe_foldername
 
 logger = logging.getLogger(__name__)
 console = getConsole()
@@ -934,7 +934,7 @@ def legacy_f(components: List[Component]):
     elif s_component:
         series = s_component.value
 
-    folder = to_safe_filename(series.raw_data.title)
+    folder = to_safe_foldername(series.raw_data.title)
 
     str_com = Component(ComType.STR, folder)
     _replace_all(components, str_com)
