@@ -106,18 +106,20 @@ class JNC_API:
     ):
         self.config = config
 
+        timeout = httpx.Timeout(api_default_timeout, pool=None)
         self.api_session = httpx.AsyncClient(
             base_url=config.API_URL_BASE,
             limits=httpx.Limits(max_connections=api_connections),
             headers=API_COMMON_HEADERS,
-            timeout=api_default_timeout,
+            timeout=timeout,
         )
 
         # full URL always provided (CDN) so no need for base location parameter
         # also multiple URL possible
+        timeout = httpx.Timeout(cdn_default_timeout, pool=None)
         self.cdn_session = httpx.AsyncClient(
             limits=httpx.Limits(max_connections=cdn_connections),
-            timeout=cdn_default_timeout,
+            timeout=timeout,
         )
 
         self.token = None
