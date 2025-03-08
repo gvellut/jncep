@@ -17,3 +17,7 @@ __pycache__
 /output_test2
 .DS_Store
 .venv
+
+
+pytest.ini
+test_output

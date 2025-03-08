@@ -132,7 +132,9 @@ class JNC_API:
         payload = {"login": email, "password": password, "slim": True}
         params = {**API_COMMON_PARAMS}
 
-        r = await self.api_session.post(path, data=json.dumps(payload), params=params)
+        r = await self.api_session.post(
+            path, content=json.dumps(payload), params=params
+        )
         r.raise_for_status()
 
         data = r.json()
@@ -242,7 +244,7 @@ class JNC_API:
             headers = {**auth, **headers}
 
         request = session.build_request(
-            verb, path, headers=headers, params=params, data=body, **kwargs
+            verb, path, headers=headers, params=params, content=body, **kwargs
         )
         r = await session.send(request)
         r.raise_for_status()
