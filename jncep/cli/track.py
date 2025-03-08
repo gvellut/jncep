@@ -110,7 +110,7 @@ async def sync_series(
 
                 if new_synced or del_synced:
                     console.info(
-                        "The list of followed series has been sucessfully updated!"
+                        "The list of followed series has been sucessfully synced!"
                         + f"from {session.origin}!",
                         style="success",
                     )
@@ -132,7 +132,7 @@ async def sync_series(
 
                 if new_synced or del_synced:
                     console.info(
-                        "The list of tracked series has been sucessfully updated "
+                        "The list of tracked series has been sucessfully synced "
                         + f"from {session.origin}!",
                         style="success",
                     )
