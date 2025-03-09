@@ -6,6 +6,12 @@ A list of rules (to choose from a predefined list) are applied to transform the 
 It is not very well documented or tested so if you need something and you don't see how to do it, you can open an issue and I will try to help (or tell you it is not possible...)
 The version inside the master Github repo is missing some support for JNC Nina (will be added before release).
 
+## Note about JNC Nina
+
+Some functionalities (parsing and title generation) are not yet implemented outside English (ie for the main J-Novel Club website) so it is recommended not to use this functionnality with JNC Nina (or not use the rules that have issues with multilingual support).
+
+Full support will be added for the next version.
+
 ## Samples
 
 - `t:legacy_t|n:_t>str_filesafe|f:legacy_f`: this is the defaut rule if no namegen argument is defined. It defines rules for the 3 sections: `t:` (EPUB title), `n:` (file name) and `f:` (folder name). The special rule `_t` is used: it takes the output of the `t:` rule. The rules for `t:` and `f:` use the legacy rules. Note that the folder will be generated only if the `--subfolder` argument is passed to the jncep command: Otherwise it has no effect.
