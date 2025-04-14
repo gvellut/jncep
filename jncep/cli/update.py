@@ -4,10 +4,10 @@ import logging
 import click
 import trio
 
-from . import options
 from .. import core, jncalts, jncapi, spec, track, update, utils
 from ..config import ENVVAR_PREFIX
 from ..trio_utils import bag, coro
+from . import options
 from .base import CatchAllExceptionsCommand
 from .epub import generate_epubs
 from .track import sync_series
@@ -226,7 +226,7 @@ async def _do_update_tracked(
 
     if len(tracked_series) == 0:
         console.warning(
-            "There are no tracked series! Use the 'jncep track add' command " "first."
+            "There are no tracked series! Use the 'jncep track add' command first."
         )
         return
 

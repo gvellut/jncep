@@ -4,16 +4,6 @@ __version__ = "51"
 # not actually used by jncep but import error
 import socket
 
-
-def if_nametoindex(_):
-    raise OSError("not implemented")
-
-
-def if_indextoname(_):
-    raise OSError("not implemented")
-
-
-if not hasattr(socket, "if_nametoindex"):
-    socket.if_nametoindex = if_nametoindex
-if not hasattr(socket, "if_indextoname"):
-    socket.if_indextoname = if_indextoname
+# not used so doesn't matter, just that the names are importable
+socket.if_nametoindex = None
+socket.if_indextoname = None

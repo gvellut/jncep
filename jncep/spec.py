@@ -185,8 +185,7 @@ class Interval:
 
             if vn < 1 or vn > len(series.volumes):
                 raise SpecError(
-                    f"Bad right spec for series: Volume '{original_spec2[0]}' "
-                    "not found"
+                    f"Bad right spec for series: Volume '{original_spec2[0]}' not found"
                 )
 
             if pn != END_OF_VOLUME:

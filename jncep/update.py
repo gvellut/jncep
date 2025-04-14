@@ -289,7 +289,7 @@ async def _handle_series(
 
         emoji = ""
         if console.is_advanced():
-            emoji = "\u274C "
+            emoji = "\u274c "
         # FIXME show the user some feedback as to the nature of the error
         console.error(
             f"{emoji}Error updating '{title}'! "
@@ -348,10 +348,8 @@ def _verify_series_needs_update_check(event_feed, series_details):
 
 def _can_any_use_events_feed(tracking_data):
     return any(
-        (
-            _can_use_events_feed(series_details)
-            for series_details in tracking_data.values()
-        )
+        _can_use_events_feed(series_details)
+        for series_details in tracking_data.values()
     )
 
 

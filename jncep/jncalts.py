@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from enum import auto, Enum
-from typing import Dict
+from enum import Enum, auto
 
 import attr
 
@@ -55,7 +54,7 @@ JNC_NINA_CONFIG = AltConfig(
 )
 
 
-ALT_CONFIGS: Dict[AltOrigin, AltConfig] = {
+ALT_CONFIGS: dict[AltOrigin, AltConfig] = {
     AltOrigin.JNC_MAIN: JNC_MAIN_CONFIG,
     AltOrigin.JNC_NINA: JNC_NINA_CONFIG,
 }
@@ -68,7 +67,7 @@ class AltOriginError(Exception):
 @attr.s
 class AltCredentials:
     # contains mapping : origin => tuple (email, pw)
-    credential_mapping: Dict = attr.ib()
+    credential_mapping: dict = attr.ib()
 
     def get_credentials(self, origin: AltOrigin):
         # just the login, pw tuple

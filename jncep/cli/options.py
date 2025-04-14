@@ -70,7 +70,6 @@ def process_credentials_options(f):
         # if in there : possibly the cli commmand has be command using ctx.invoke
         # reuse and ignore the login, pw options (which will be empty)
         if "credentials" not in kwargs:
-
             if not email_nina and password_nina:
                 email_nina = email
 

@@ -2,10 +2,10 @@ import logging
 
 import click
 
-from . import options
 from .. import core, jncalts, jncweb, spec, track, utils
 from ..trio_utils import coro
 from ..utils import tryint
+from . import options
 from .base import CatchAllExceptionsCommand
 
 logger = logging.getLogger(__name__)
@@ -141,8 +141,7 @@ async def generate_epubs(session, series, part_spec_analyzed, epub_generation_op
     if has_missing:
         if has_available:
             console.warning(
-                "Some parts were not downloaded correctly! "
-                "Do you have a subscription?",
+                "Some parts were not downloaded correctly! Do you have a subscription?",
             )
             # continue: can generated an Epub with the downloaded parts
         else:

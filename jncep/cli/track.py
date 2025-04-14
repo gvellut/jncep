@@ -1,13 +1,14 @@
+from __future__ import annotations
+
 import logging
-from typing import List
 
 import click
 import dateutil.parser
 
-from . import options
 from .. import core, jncalts, jncweb, track, utils
 from ..trio_utils import coro
 from ..utils import tryint
+from . import options
 from .base import CatchAllExceptionsCommand
 
 logger = logging.getLogger(__name__)
@@ -99,7 +100,7 @@ async def sync_series(
 
     async def sync_series_for_origin(config, tracked_series_origin):
         async with core.JNCEPSession(config, credentials) as session:
-            follows: List[jncweb.JNCResource] = await core.fetch_follows(session)
+            follows: list[jncweb.JNCResource] = await core.fetch_follows(session)
 
             if is_reverse:
                 console.status(f"Sync to {session.origin}...")

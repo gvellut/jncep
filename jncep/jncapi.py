@@ -288,4 +288,4 @@ def _url_starts_with(url, choice_urls):
     if isinstance(choice_urls, str):
         choice_urls = [choice_urls]
 
-    return any((url.startswith(choice_url) for choice_url in choice_urls))
+    return any(url.startswith(choice_url) for choice_url in choice_urls)

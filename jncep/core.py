@@ -11,7 +11,6 @@ import platform
 import re
 import sys
 import time
-from typing import List
 
 import dateutil.parser
 from dateutil.relativedelta import relativedelta
@@ -58,11 +57,10 @@ class SeriesNotANovelError(Exception):
     pass
 
 
-_GLOBAL_SESSION_INSTANCE = ContextVar("session", default={})
+_GLOBAL_SESSION_INSTANCE = ContextVar("session", default=None)
 
 
 class JNCEPSession:
-
     # TODO change name : config => alt_config so no confusion with the JNCEP user config
     def __init__(self, config: jncalts.AltConfig, credentials):
         self.config = config
@@ -77,6 +75,8 @@ class JNCEPSession:
         # to handle nested sessions ie call to a cli commmand from another cli command
         # open only one session for an origin (nested)
         session_dict = _GLOBAL_SESSION_INSTANCE.get()
+        if session_dict is None:
+            session_dict = {}
         if self.config.ORIGIN not in session_dict:
             await self.login(self.email, self.password)
             session_dict[self.config.ORIGIN] = self
@@ -123,7 +123,7 @@ class JNCEPSession:
 
         emoji = ""
         if console.is_advanced():
-            emoji = "\u26A1 "
+            emoji = "\u26a1 "
         console.info(
             f"{emoji}Logged in to {self.config.ORIGIN} with email "
             + f"'[highlight]{display_email}[/]'"
@@ -183,7 +183,7 @@ async def create_epub(series, volumes, parts, epub_generation_options):
         # laughing face
         emoji = ""
         if console.is_advanced():
-            emoji = "\U0001F600 "
+            emoji = "\U0001f600 "
         console.info(
             f"{emoji}Success! EPUB generated in '{output_filepath}'!",
             style="success",
@@ -419,14 +419,14 @@ def _replace_chars(content):
     # U+1F3F6 => Black Rosette
     # U+25C7 => White Diamond
     # U+2605 => Black star
-    chars_to_replace = ["\u2671", "\u25C6", "\U0001F3F6", "\u25C7", "\u2605"]
+    chars_to_replace = ["\u2671", "\u25c6", "\U0001f3f6", "\u25c7", "\u2605"]
     replacement_char = "**"
     regex = "|".join(chars_to_replace)
     content = re.sub(regex, replacement_char, content)
     return content
 
 
-def _replace_image_urls(content, images: List[Image]):
+def _replace_image_urls(content, images: list[Image]):
     for image in images:
         # the filename relative to the epub content root
         # the file will be added to the Epub archive

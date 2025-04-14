@@ -4,8 +4,8 @@ import pytest
 from jncep.model import Part
 from jncep.namegen import (
     FC,
-    generate_names,
     InvalidNamegenRulesError,
+    generate_names,
     parse_namegen_rules,
 )
 
@@ -48,6 +48,6 @@ def test_generate_names():
     part = Part(Addict({"title": "Hello"}), "azaez", 1)
     names = generate_names(None, [], [part], FC(False, False), gen_rules)
     assert isinstance(names, list), "Expected a list"
-    assert all(
-        isinstance(name, str) for name in names
-    ), "Expected all names to be strings"
+    assert all(isinstance(name, str) for name in names), (
+        "Expected all names to be strings"
+    )
