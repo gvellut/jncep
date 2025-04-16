@@ -1,7 +1,8 @@
+from __future__ import annotations
+
 from functools import partial, wraps
 import logging
 import sys
-from typing import List
 import warnings
 
 import attr
@@ -43,9 +44,9 @@ def coro(f):
             # TODO does this make sense ???
             base_ex = handle_PriorityExceptions(ex)
             if base_ex:
-                raise base_ex
+                raise base_ex from ex
             # just the first
-            raise ex.exceptions[0]
+            raise ex.exceptions[0] from ex
 
     return wrapper
 
@@ -71,11 +72,11 @@ class Future:
         try:
             async with self.result_chan:
                 return await self.result_chan.receive()
-        except trio.ClosedResourceError:
+        except trio.ClosedResourceError as ex:
             raise RuntimeError(
                 "Trio resource closed (did you try to call outcome twice on this "
                 "future?"
-            )
+            ) from ex
 
 
 async def bag(async_fns):
@@ -104,7 +105,7 @@ def background(nursery: trio.Nursery, async_fn) -> Future:
     return Future(recv_chan)
 
 
-def gather(nursery: trio.Nursery, futures: List[Future]) -> Future:
+def gather(nursery: trio.Nursery, futures: list[Future]) -> Future:
     result_list = [None] * len(futures)
     parent_send_chan, parent_recv_chan = trio.open_memory_channel(0)
     child_send_chan, child_recv_chan = trio.open_memory_channel(0)
@@ -123,7 +124,7 @@ def gather(nursery: trio.Nursery, futures: List[Future]) -> Future:
 
     async def receiver():
         async with child_recv_chan:
-            async for i in child_recv_chan:
+            async for _ in child_recv_chan:
                 # Just consume all results from the channel until exhausted
                 pass
         # And then wrap up the result and push it to the parent channel

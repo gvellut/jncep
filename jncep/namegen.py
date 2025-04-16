@@ -2,20 +2,19 @@ from __future__ import annotations
 
 from collections import namedtuple
 import copy
-from enum import auto, Enum
+from enum import Enum, auto
 import logging
 import numbers
 import re
 import string
 import sys
-from typing import List
 
 from attr import define
 import importlib_resources as imres
 from lark import Lark, Transformer, v_args
 from lark.exceptions import LarkError
 
-from .utils import getConsole, to_safe_filename
+from .utils import getConsole, to_safe_filename, to_safe_foldername
 
 logger = logging.getLogger(__name__)
 console = getConsole()
@@ -251,7 +250,7 @@ def _do_parse_namegen_rules(namegen_rules):
         print(f"Error details: {error_details}")
         raise InvalidNamegenRulesError(
             "Invalid namegen rules provided. Details: " + error_details
-        )
+        ) from e
 
     if logger.level <= logging.DEBUG:
         logger.debug(f"parse = {gen_rules}")
@@ -335,7 +334,7 @@ def _default_initialize_components(series, volumes, parts, fc):
     return components
 
 
-def _apply_rules(components: List[Component], rules):
+def _apply_rules(components: list[Component], rules):
     for rule_name, args in rules:
         logger.debug(f"Apply rule: {rule_name} with args {args}")
 
@@ -355,14 +354,14 @@ def _apply_rules(components: List[Component], rules):
 # GEN_RULES_BEGIN
 
 
-def fc_rm(components: List[Component]):
+def fc_rm(components: list[Component]):
     component = _find_component_type(ComType.FC, components)
     if not component:
         return
     _del_component(components, component)
 
 
-def fc_rm_if_complete(components: List[Component]):
+def fc_rm_if_complete(components: list[Component]):
     component = _find_component_type(ComType.FC, components)
     if not component:
         return
@@ -370,7 +369,7 @@ def fc_rm_if_complete(components: List[Component]):
         _del_component(components, component)
 
 
-def fc_short(components: List[Component]):
+def fc_short(components: list[Component]):
     component = _find_component_type(ComType.FC, components)
     if not component:
         return
@@ -386,7 +385,7 @@ def fc_short(components: List[Component]):
     _replace_component(components, component, str_component)
 
 
-def fc_full(components: List[Component]):
+def fc_full(components: list[Component]):
     component = _find_component_type(ComType.FC, components)
     if not component:
         return
@@ -403,7 +402,7 @@ def fc_full(components: List[Component]):
     _replace_component(components, component, str_component)
 
 
-def p_to_volume(components: List[Component]):
+def p_to_volume(components: list[Component]):
     component = _find_component_type(ComType.P, components)
     if not component:
         return
@@ -414,7 +413,7 @@ def p_to_volume(components: List[Component]):
     _replace_component(components, component, v_com, pn_com)
 
 
-def p_to_series(components: List[Component]):
+def p_to_series(components: list[Component]):
     p_component = _find_component_type(ComType.P, components)
     if not p_component:
         return
@@ -428,7 +427,7 @@ def p_to_series(components: List[Component]):
     )
 
 
-def p_split_part(components: List[Component]):
+def p_split_part(components: list[Component]):
     p_component = _find_component_type(ComType.P, components)
     if not p_component:
         return
@@ -442,7 +441,7 @@ def p_split_part(components: List[Component]):
     _replace_component(components, p_component, v_com, pn_com)
 
 
-def p_title(components: List[Component]):
+def p_title(components: list[Component]):
     component = _find_component_type(ComType.P, components)
     if not component:
         return
@@ -452,14 +451,14 @@ def p_title(components: List[Component]):
     _replace_component(components, component, str_component)
 
 
-def pn_rm(components: List[Component]):
+def pn_rm(components: list[Component]):
     pn_component = _find_component_type(ComType.PN, components)
     if not pn_component:
         return
     _del_component(components, pn_component)
 
 
-def pn_rm_if_complete(components: List[Component]):
+def pn_rm_if_complete(components: list[Component]):
     pn_component = _find_component_type(ComType.PN, components)
     if not pn_component:
         return
@@ -471,7 +470,7 @@ def pn_rm_if_complete(components: List[Component]):
         _del_component(components, pn_component)
 
 
-def pn_prepend_vn_if_multiple(components: List[Component]):
+def pn_prepend_vn_if_multiple(components: list[Component]):
     pn_component = _find_component_type(ComType.PN, components)
     if not pn_component:
         return
@@ -493,7 +492,7 @@ def pn_prepend_vn_if_multiple(components: List[Component]):
         pn_component.value[i] = new_tr_pn
 
 
-def pn_prepend_vn(components: List[Component]):
+def pn_prepend_vn(components: list[Component]):
     pn_component = _find_component_type(ComType.PN, components)
     if not pn_component:
         return
@@ -512,7 +511,7 @@ def pn_prepend_vn(components: List[Component]):
         pn_component.value[i] = new_tr_pn
 
 
-def pn_0pad(components: List[Component]):
+def pn_0pad(components: list[Component]):
     component = _find_component_type(ComType.PN, components)
     if not component:
         return
@@ -520,7 +519,7 @@ def pn_0pad(components: List[Component]):
     component.value = [str(pn).zfill(2) for pn in part_numbers]
 
 
-def pn_short(components: List[Component]):
+def pn_short(components: list[Component]):
     component = _find_component_type(ComType.PN, components)
     if not component:
         return
@@ -537,7 +536,7 @@ def pn_short(components: List[Component]):
     _replace_component(components, component, str_component)
 
 
-def pn_full(components: List[Component]):
+def pn_full(components: list[Component]):
     component = _find_component_type(ComType.PN, components)
     if not component:
         return
@@ -555,7 +554,7 @@ def pn_full(components: List[Component]):
     _replace_component(components, component, str_component)
 
 
-def v_to_series(components: List[Component]):
+def v_to_series(components: list[Component]):
     component = _find_component_type(ComType.V, components)
     if not component:
         return
@@ -566,7 +565,7 @@ def v_to_series(components: List[Component]):
     _replace_component(components, component, s_com, vn_com)
 
 
-def v_split_volume(components: List[Component]):
+def v_split_volume(components: list[Component]):
     component = _find_component_type(ComType.V, components)
     if not component:
         return
@@ -602,7 +601,7 @@ def _parse_volume_number(vn):
     return result
 
 
-def v_title(components: List[Component]):
+def v_title(components: list[Component]):
     component = _find_component_type(ComType.V, components)
     if not component:
         return
@@ -612,14 +611,14 @@ def v_title(components: List[Component]):
     _replace_component(components, component, str_component)
 
 
-def vn_rm(components: List[Component]):
+def vn_rm(components: list[Component]):
     vn_component = _find_component_type(ComType.VN, components)
     if not vn_component:
         return
     _del_component(components, vn_component)
 
 
-def vn_rm_if_pn(components: List[Component]):
+def vn_rm_if_pn(components: list[Component]):
     vn_component = _find_component_type(ComType.VN, components)
     if not vn_component:
         return
@@ -629,7 +628,7 @@ def vn_rm_if_pn(components: List[Component]):
     _del_component(components, vn_component)
 
 
-def vn_number(components: List[Component]):
+def vn_number(components: list[Component]):
     vn_component = _find_component_type(ComType.VN, components)
     if not vn_component:
         return
@@ -649,7 +648,7 @@ def vn_number(components: List[Component]):
                     v[j] = (n, p[1])
 
 
-def vn_merge(components: List[Component]):
+def vn_merge(components: list[Component]):
     vn_component = _find_component_type(ComType.VN, components)
     if not vn_component:
         return
@@ -661,7 +660,7 @@ def vn_merge(components: List[Component]):
             volume_numbers[i] = [(vn, VnType.VN_MERGED)]
 
 
-def vn_0pad(components: List[Component]):
+def vn_0pad(components: list[Component]):
     vn_component = _find_component_type(ComType.VN, components)
     if not vn_component:
         return
@@ -673,7 +672,7 @@ def vn_0pad(components: List[Component]):
         volume_numbers[i] = padded
 
 
-def vn_short(components: List[Component]):
+def vn_short(components: list[Component]):
     component = _find_component_type(ComType.VN, components)
     if not component:
         return
@@ -697,7 +696,7 @@ def vn_short(components: List[Component]):
     _replace_component(components, component, str_component)
 
 
-def vn_full(components: List[Component]):
+def vn_full(components: list[Component]):
     component = _find_component_type(ComType.VN, components)
     if not component:
         return
@@ -743,12 +742,12 @@ def vn_full(components: List[Component]):
     _replace_component(components, component, str_component)
 
 
-def to_series(components: List[Component]):
+def to_series(components: list[Component]):
     v_to_series(components)
     p_to_series(components)
 
 
-def s_title(components: List[Component]):
+def s_title(components: list[Component]):
     component = _find_component_type(ComType.S, components)
     if not component:
         return
@@ -758,7 +757,7 @@ def s_title(components: List[Component]):
     _replace_component(components, component, str_component)
 
 
-def s_slug(components: List[Component]):
+def s_slug(components: list[Component]):
     component = _find_component_type(ComType.S, components)
     if not component:
         return
@@ -768,7 +767,7 @@ def s_slug(components: List[Component]):
     _replace_component(components, component, str_component)
 
 
-def ss_rm_stopwords(components: List[Component]):
+def ss_rm_stopwords(components: list[Component]):
     component = _find_component_type(ComType.S_STR, components)
     if not component:
         return
@@ -784,7 +783,7 @@ def ss_rm_stopwords(components: List[Component]):
     component.value = output
 
 
-def ss_rm_subtitle(components: List[Component]):
+def ss_rm_subtitle(components: list[Component]):
     component = _find_component_type(ComType.S_STR, components)
     if not component:
         return
@@ -794,7 +793,7 @@ def ss_rm_subtitle(components: List[Component]):
     component.value = output
 
 
-def ss_acronym(components: List[Component]):
+def ss_acronym(components: list[Component]):
     component = _find_component_type(ComType.S_STR, components)
     if not component:
         return
@@ -807,7 +806,7 @@ def ss_acronym(components: List[Component]):
     component.value = output
 
 
-def ss_first(components: List[Component], first_n=3):
+def ss_first(components: list[Component], first_n=3):
     component = _find_component_type(ComType.S_STR, components)
     if not component:
         return
@@ -820,7 +819,7 @@ def ss_first(components: List[Component], first_n=3):
     component.value = output
 
 
-def ss_max_len(components: List[Component], max_len_n=30):
+def ss_max_len(components: list[Component], max_len_n=30):
     component = _find_component_type(ComType.S_STR, components)
     if not component:
         return
@@ -829,7 +828,7 @@ def ss_max_len(components: List[Component], max_len_n=30):
     component.value = output
 
 
-def legacy_t(components: List[Component]):
+def legacy_t(components: list[Component]):
     # assume launched first, not after transformation
     p_component = _find_component_type(ComType.P, components)
     v_component = _find_component_type(ComType.V, components)
@@ -879,8 +878,7 @@ def legacy_t(components: List[Component]):
 
             # TODO i18n
             part_segment = (
-                f"Parts {volume_num0}.{part_num0} to "
-                f"{volume_num1}.{part_num1}{suffix}"
+                f"Parts {volume_num0}.{part_num0} to {volume_num1}.{part_num1}{suffix}"
             )
 
             if title_base[-1] in string.punctuation:
@@ -920,7 +918,7 @@ def legacy_t(components: List[Component]):
     _replace_all(components, str_component)
 
 
-def legacy_f(components: List[Component]):
+def legacy_f(components: list[Component]):
     # assume launched first, not after transformation
     # must be one of the three according to _initialize_components
     p_component = _find_component_type(ComType.P, components)
@@ -934,14 +932,14 @@ def legacy_f(components: List[Component]):
     elif s_component:
         series = s_component.value
 
-    folder = to_safe_filename(series.raw_data.title)
+    folder = to_safe_foldername(series.raw_data.title)
 
     str_com = Component(ComType.STR, folder)
     _replace_all(components, str_com)
 
 
 # no boolean in the rule language so use integer for flag
-def to_string(components: List[Component], add_colon=0):
+def to_string(components: list[Component], add_colon=0):
     str_values = []
     for c in components:
         if c.tag == ComType.S_STR:
@@ -967,17 +965,17 @@ def to_string(components: List[Component], add_colon=0):
     _replace_all(components, str_component)
 
 
-def str_rm_space(components: List[Component]):
+def str_rm_space(components: list[Component]):
     str_component = _find_str_component_implicit_string(components)
     str_component.value = str_component.value.replace(" ", "")
 
 
-def str_replace_space(components: List[Component], char_replace="_"):
+def str_replace_space(components: list[Component], char_replace="_"):
     str_component = _find_str_component_implicit_string(components)
     str_component.value = str_component.value.replace(" ", char_replace)
 
 
-def str_filesafe(components: List[Component], char_replace="_", preserve_chars=""):
+def str_filesafe(components: list[Component], char_replace="_", preserve_chars=""):
     str_component = _find_str_component_implicit_string(components)
     str_component.value = to_safe_filename(
         str_component.value, char_replace, preserve_chars
@@ -987,7 +985,7 @@ def str_filesafe(components: List[Component], char_replace="_", preserve_chars="
 # GEN_RULES_END
 
 
-def _find_component_type(ctype: ComType, components: List[Component]):
+def _find_component_type(ctype: ComType, components: list[Component]):
     for component in components:
         if component.tag == ctype:
             return component
@@ -1084,7 +1082,7 @@ def _load_stopwords(language):
 
 
 def _get_functions_between_comments(filename, start_comment, end_comment):
-    with open(filename, "r") as file:
+    with open(filename) as file:
         lines = file.readlines()
 
     start_line = next(

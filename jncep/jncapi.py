@@ -106,18 +106,20 @@ class JNC_API:
     ):
         self.config = config
 
+        timeout = httpx.Timeout(api_default_timeout, pool=None)
         self.api_session = httpx.AsyncClient(
             base_url=config.API_URL_BASE,
             limits=httpx.Limits(max_connections=api_connections),
             headers=API_COMMON_HEADERS,
-            timeout=api_default_timeout,
+            timeout=timeout,
         )
 
         # full URL always provided (CDN) so no need for base location parameter
         # also multiple URL possible
+        timeout = httpx.Timeout(cdn_default_timeout, pool=None)
         self.cdn_session = httpx.AsyncClient(
             limits=httpx.Limits(max_connections=cdn_connections),
-            timeout=cdn_default_timeout,
+            timeout=timeout,
         )
 
         self.token = None
@@ -132,7 +134,9 @@ class JNC_API:
         payload = {"login": email, "password": password, "slim": True}
         params = {**API_COMMON_PARAMS}
 
-        r = await self.api_session.post(path, data=json.dumps(payload), params=params)
+        r = await self.api_session.post(
+            path, content=json.dumps(payload), params=params
+        )
         r.raise_for_status()
 
         data = r.json()
@@ -242,7 +246,7 @@ class JNC_API:
             headers = {**auth, **headers}
 
         request = session.build_request(
-            verb, path, headers=headers, params=params, data=body, **kwargs
+            verb, path, headers=headers, params=params, content=body, **kwargs
         )
         r = await session.send(request)
         r.raise_for_status()
@@ -284,4 +288,4 @@ def _url_starts_with(url, choice_urls):
     if isinstance(choice_urls, str):
         choice_urls = [choice_urls]
 
-    return any((url.startswith(choice_url) for choice_url in choice_urls))
+    return any(url.startswith(choice_url) for choice_url in choice_urls)

@@ -7,7 +7,7 @@ from .cli.config import config_manage
 from .cli.epub import generate_epub
 from .cli.track import track_series
 from .cli.update import update_tracked
-from .config import apply_options_from_config, DEFAULT_CONFIG_FILEPATH
+from .config import DEFAULT_CONFIG_FILEPATH, apply_options_from_config
 from .utils import getConsole, module_info, setup_logging
 
 logger = logging.getLogger(module_info())

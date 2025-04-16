@@ -129,7 +129,7 @@ class ConfigManager:
             # default section)
             return config
 
-        with open(self.config_file_path, "r", encoding="utf-8") as f:
+        with open(self.config_file_path, encoding="utf-8") as f:
             # add a section transparently to conform to a .ini file
             # it is also the default section in the parser so will be
             # there even if

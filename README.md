@@ -14,6 +14,16 @@ pip install jncep
 
 The command above will install the `jncep` Python library and its dependencies. The library includes a command-line script, also named `jncep`, whose functionality is described below.
 
+## Alternative with uv
+
+If you don't have Python, it is possible to use [uv](https://docs.astral.sh/uv/) ([installation instructions](https://docs.astral.sh/uv/getting-started/installation/) ; you can also download a simple binary from Github: https://github.com/astral-sh/uv/releases).
+
+Once `uv` is installed, run the commands like documented on this page by prefixing them with [`uvx`](https://docs.astral.sh/uv/guides/tools/):
+
+`uvx jncep ...`
+
+The tool will be upgraded automatically when a new `jncep` version is released.
+
 # Limitations & disclaimer
 
 This tool only works with J-Novel Club __novels__, not manga.

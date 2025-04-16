@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from enum import auto, Enum
-from typing import List
+from enum import Enum, auto
 
 import attr
 
@@ -11,7 +10,7 @@ class Series:
     raw_data = attr.ib()
     series_id = attr.ib()
 
-    volumes: List[Volume] = attr.ib(None)
+    volumes: list[Volume] = attr.ib(None)
 
 
 @attr.s
@@ -20,7 +19,7 @@ class Volume:
     volume_id = attr.ib()
 
     num: int = attr.ib()
-    parts: List[Part] = attr.ib(None)
+    parts: list[Part] = attr.ib(None)
     cover: Image = attr.ib(None)
     series: Series = attr.ib(None)
 
@@ -34,7 +33,7 @@ class Part:
     volume: Volume = attr.ib(None)
     series: Series = attr.ib(None)
     content: str = attr.ib(None)
-    images: List[Image] = attr.ib(None)
+    images: list[Image] = attr.ib(None)
 
     epub_content = attr.ib(None)
 

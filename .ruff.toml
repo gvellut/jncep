@@ -1,0 +1,25 @@
+line-length = 88
+target-version = "py38"
+
+[lint]
+select = [
+    # pycodestyle
+    "E",
+    # Pyflakes
+    "F",
+    # pyupgrade
+    "UP",
+    # flake8-bugbear
+    "B",
+    # flake8-simplify
+    #"SIM",
+    # isort
+    # "I",
+]
+# do not auto del the unused imports
+unfixable = ["F401"]
+
+[lint.isort]
+combine-as-imports = true
+force-sort-within-sections = true
+order-by-type = true

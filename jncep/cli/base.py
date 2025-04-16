@@ -16,7 +16,7 @@ class CatchAllExceptionsCommand(click.Command):
         try:
             return super().invoke(ctx)
         except Exception as ex:
-            raise UnrecoverableJNCEPError(str(ex), sys.exc_info())
+            raise UnrecoverableJNCEPError(str(ex), sys.exc_info()) from ex
 
 
 class UnrecoverableJNCEPError(click.ClickException):
@@ -29,7 +29,7 @@ class UnrecoverableJNCEPError(click.ClickException):
 
         emoji = ""
         if console.is_advanced():
-            emoji = "\u274C "
+            emoji = "\u274c "
         console.error(f"*** {emoji}An unrecoverable error occured ***")
         console.error(self.message)
 

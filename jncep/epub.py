@@ -21,6 +21,7 @@ class BookDetails:
     toc = attr.ib()
     contents = attr.ib()
     images = attr.ib()
+    complete = attr.ib()
 
 
 @attr.s
@@ -46,7 +47,7 @@ def get_css(style_css_path):
 
     # always the same during the execution, so read once and cache
     if style_css_path:
-        with open(style_css_path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(style_css_path, encoding="utf-8", errors="ignore") as f:
             CACHED_STYLE_CSS = f.read()
     else:
         CACHED_STYLE_CSS = read_default_style_css()
@@ -65,6 +66,10 @@ def output_epub(output_filepath, book_details: BookDetails, style_css_path=None)
     book.set_language(lang)
     book.add_author(book_details.author)
     book.add_metadata("DC", "description", book_details.description)
+    book.add_metadata("DC", "publisher", "J-Novel Club (generated)")
+    book.add_metadata("DC", "subject", "Light Novel")
+    if not book_details.complete:
+        book.add_metadata("DC", "subject", "partial")
     for tag in book_details.tags:
         book.add_metadata("DC", "subject", tag)
 

@@ -2,7 +2,7 @@ from addict import Dict as Addict
 import pytest
 
 from jncep.model import Part, Volume
-from jncep.spec import analyze_part_specs, SpecError
+from jncep.spec import SpecError, analyze_part_specs
 
 
 def _to_vp(vn, pn):
