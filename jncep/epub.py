@@ -57,7 +57,7 @@ def get_css(style_css_path):
 
 def output_epub(output_filepath, book_details: BookDetails, style_css_path=None):
     with open("output.txt", "w", encoding="utf-8") as file:
-        file.write(str(book_details))
+        file.write(str(book_details.contents))
     #print(book_details)
     lang = "en"
     book = epub.EpubBook()
@@ -140,7 +140,8 @@ def output_epub(output_filepath, book_details: BookDetails, style_css_path=None)
     chapters = []
     new_contents, titles_list = utils.split_by_chapter(book_details.contents)
     #print(book_details.contents)
-
+    with open("output.html", "w", encoding="utf-8") as file:
+        file.write(str(new_contents))
     #titles_list = ["chap"] * 100  # Array with n elements, all initialized to 0
     print(len(new_contents))
     print(len(titles_list))
@@ -150,7 +151,7 @@ def output_epub(output_filepath, book_details: BookDetails, style_css_path=None)
     for i, content in enumerate(new_contents):
 
         print(i)
-        print(titles_list[i])
+        #print(titles_list[i])
         print("read")
         c = epub.EpubHtml(
             title=titles_list[i], file_name=f"chap_{i}.xhtml", lang=lang

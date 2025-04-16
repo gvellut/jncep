@@ -271,10 +271,9 @@ def split_by_chapter(content):
     h1_title_pattern = r'<h1[^>]*>(.*?)</h1>'
     returned_content = []
 
-    for i, c in enumerate(content):
+    for i, c in enumerate(content):  #iterate over each part
         reconstructed_content = ""
-        match = re.search(main_div_pattern, c, re.DOTALL)
-        titles = re.findall(h1_title_pattern, c)
+        match = re.search(main_div_pattern, c, re.DOTALL)  # Separate out the main content from the rest
         if match:
             # Extract the content before, inside, and after the first <div class="main">
             before_content = match.group(1).strip()
@@ -285,22 +284,30 @@ def split_by_chapter(content):
                 first_before_content = before_content
                 first_after_content = after_content
 
+    #print(combined_content)
 
-        if len(titles) > 0:
-            chapter_titles.extend(titles)  # Add to the list of chapter titles
-        else:
-            chapter_titles.append(f"Untitled {i + 1}")
-    print(combined_content)
-    parts = re.split(r"(?=<h1[^>]*>)", combined_content, flags=re.DOTALL)
-    #print(parts[0])
-    #
-    #(<img[^>]*?>.*?<h1[^>]*>.*?</h1>|<h1[^>]*>.*?</h1>)
-    #
+    parts = re.split(r"(?=<h1[^>]*>)", combined_content, flags=re.DOTALL)  # split the combined text into chapters
+
     for i, part in enumerate(parts):
         if part.strip():  # Ignore empty parts
-            # Save each part to a separate file or process as needed
-            title = chapter_titles[i] if i < len(chapter_titles) else f"Untitled {i + 1}"
-            reconstructed_content = re.sub(r'<title>.*?</title>', f'<title>{title}</title>', first_before_content)+part + first_after_content
+            titles = re.findall(h1_title_pattern, part)  # Find the title in the chapter
+
+            if is_cover_chapter(part):
+                title = "Cover"
+            elif len(titles) > 0:
+                title = titles[0]
+            else:
+                print("untitled chapter found")  # Untitled Chapters are just labelled incrementally
+                title = f"Incomplete Chapter {i + 1}"
+            chapter_titles.append(title)
+            reconstructed_content = re.sub(r'<title>.*?</title>', f'<title>{title}</title>',
+                                           first_before_content) + part + first_after_content
             returned_content.append(reconstructed_content)
-    #print(returned_content[0])
     return returned_content, chapter_titles
+
+
+def is_cover_chapter(part):
+    cover_h1_pattern = r'<img[^>]*\bcover\b[^>]*>'
+    if re.search(cover_h1_pattern, part) is not None:
+        print("cover found")
+        return True
