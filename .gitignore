@@ -18,6 +18,5 @@ __pycache__
 .DS_Store
 .venv
 
-
 pytest.ini
 test_output
