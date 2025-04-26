@@ -1076,4 +1076,4 @@ def is_member(session):
     # TODO non paying is "USER" ; normal member is "MEMBER", what about premium?
     # Nina doesn't have premium level membership
     # TODO other parameters ?
-    return session.me.level != "USER" and session.me.subscriptionStatus == "ACTIVE"
+    return session.me.level != "USER" and (session.me.subscriptionStatus == "ACTIVE" or session.me.subscriptionStatus == "TRIALING")
