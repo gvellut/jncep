@@ -459,7 +459,7 @@ def last_part_number_and_date(parts):
     return pn, pdate
 
 
-def last_part_with_non_available_volume(
+def latest_part_from_non_available_volume(
     session: JNCEPSession, volumes: list[Volume], parts: list[Part]
 ):
     # used for display output in track_series
@@ -467,8 +467,8 @@ def last_part_with_non_available_volume(
     # part before part 1 of the first volume with all parts still available
     # need the last non available so date compared after its publication date (like
     # what is written in tracked.json)
-    last_non_available_pn = None
-    last_non_available_pdate = None
+    latest_non_available_pn = None
+    latest_non_available_pdate = None
     is_beginning = False
 
     if not volumes:
@@ -498,12 +498,12 @@ def last_part_with_non_available_volume(
                     for part in parts
                     if part.raw_data.launch < first_part.raw_data.launch
                 ]
-                last_non_available_pn, last_non_available_pdate = (
+                latest_non_available_pn, latest_non_available_pdate = (
                     last_part_number_and_date(parts_to_consider)
                 )
             break
 
-    if not last_non_available_pdate:
+    if not latest_non_available_pdate:
         if is_beginning:
             # first available part is actually the beginning of the series
             return None, None, True
@@ -513,7 +513,7 @@ def last_part_with_non_available_volume(
 
     # part details (for tracking), valume detail (for display), beginning, last
     return (
-        (last_non_available_pn, last_non_available_pdate),
+        (latest_non_available_pn, latest_non_available_pdate),
         first_available_volume,
         False,
     )

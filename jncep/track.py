@@ -89,10 +89,11 @@ async def track_series(
 ):
     parts = core.all_parts_meta(series)
 
+    part_details = None
     if is_first_available_volume:
         # is_beginning is the same as the argument name so enters same branch later
         part_details, first_available_volume, is_beginning = (
-            core.last_part_with_non_available_volume(session, series.volumes, parts)
+            core.latest_part_from_non_available_volume(session, series.volumes, parts)
         )
 
     # record current last part + name
