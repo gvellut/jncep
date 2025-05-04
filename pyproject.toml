@@ -4,7 +4,7 @@ version = "52"
 description = "Command-line tool to generate EPUB files for J-Novel Club and JNC Nina pre-pub novels"
 license = "GPL-3.0-or-later"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 authors = [{ name = "Guilhem Vellut", email = "guilhem.vellut@gmail.com" }]
 keywords = ["epub", "jnc", "jnovel"]
 classifiers = [

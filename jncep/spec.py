@@ -3,6 +3,8 @@ import re
 
 import attr
 
+from .model import Part
+
 logger = logging.getLogger(__name__)
 
 RANGE_SEP = ":"
@@ -256,7 +258,7 @@ class IdentifierSpec:
         return self.part_id == part.part_id
 
 
-def to_relative_spec_from_part(part):
+def to_relative_spec_from_part(part: Part):
     volume_number = part.volume.num
     part_number = part.num_in_volume
     return f"{volume_number}.{part_number}"
