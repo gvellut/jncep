@@ -566,6 +566,18 @@ It creates the new folder and performs a simple copy of the files present in the
 
 **Note**: `jncep` will keep functioning with the `<HOME>/.jncep` folder so it is not actually necessary to run this command.
 
+# Development
+
+If you need to make changes to the code (for example, in order to submit a patch), here is how to setup a developement environment:
+
+- install [uv](https://docs.astral.sh/uv/)
+- clone the repo
+- inside the checked-out directory, run: `uv sync`
+- a virtual environment with dependencies will be created inside the `.venv` folder and can be activated (manually or through an IDE). `uv` will also install a managed Python if not installed on your system.
+- the commands can be run with the module `jncep.jncep`
+
+The source code is formatted and linted using [ruff](https://docs.astral.sh/ruff/) (there is also a VSCode extension). But if you open a PR, I will format and clean anyway so no real need to bother.
+
 # TODO (maybe)
 
 - self-contained executable for macOS and Windows with PyInstaller
