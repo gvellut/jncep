@@ -59,7 +59,7 @@ def is_in_trio_context():
         return False
 
 
-# taken from trio-future (but needs py > 3.7.0) so done here
+# taken from trio-future: incompatible with trio > 0.19 so done here
 @attr.s
 class Future:
     result_chan: trio.abc.ReceiveChannel = attr.ib()

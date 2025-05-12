@@ -1,6 +1,7 @@
+import importlib.resources as imres
+
 import attr
 from ebooklib import epub
-import importlib_resources as imres
 
 from .model import Image
 

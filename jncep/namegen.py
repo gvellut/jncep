@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import namedtuple
 import copy
 from enum import Enum, auto
+import importlib.resources as imres
 import logging
 import numbers
 import re
@@ -10,7 +11,6 @@ import string
 import sys
 
 from attr import define
-import importlib_resources as imres
 from lark import Lark, Transformer, v_args
 from lark.exceptions import LarkError
 
