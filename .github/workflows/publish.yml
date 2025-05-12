@@ -1,8 +1,9 @@
 name: publish
 
 on:
-    release:
-        types: [created]
+    push:
+        tags:
+            - v*
 
 jobs:
     publish:
@@ -13,26 +14,26 @@ jobs:
             - name: Checkout sources
               uses: actions/checkout@v4
 
-            - name: Set up Python
-              uses: actions/setup-python@v5
+            - name: Install uv
+              uses: astral-sh/setup-uv@v5
               with:
-                  python-version: "3.8"
+                  enable-cache: true
 
-            - name: Install package for testing
+            - name: Install the project
               run: |
-                  pip install -e .
-            
-            - name: Minimal test
+                  uv sync --locked
+
+            - name: Update version in __init__ from pyproject
               run: |
-                  jncep --help
-            
-            - name: Install dev dependencies
+                  bash scripts_build/update_init_version.sh
+
+            - name: Minimal test (loading of deps)
               run: |
-                  pip install -r requirements-dev.txt
+                  uv run jncep --help
 
             - name: Build pip package
               run: |
-                  python setup.py sdist bdist_wheel
+                  uv build
 
             - name: Publish package to PyPI
               uses: pypa/gh-action-pypi-publish@release/v1
