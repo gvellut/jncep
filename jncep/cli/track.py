@@ -23,6 +23,17 @@ beginning_option = click.option(
     help="Flag to add new series from the beginning",
 )
 
+first_available_volume_option = click.option(
+    "-f",
+    "--first-available-volume",
+    "is_first_available_volume",
+    is_flag=True,
+    help=(
+        "Flag to add new series from the first available volume (so no "
+        "Part 1 by itself)"
+    ),
+)
+
 
 @click.group(name="track", help="Track updates to a series")
 def track_series():
@@ -35,8 +46,14 @@ def track_series():
 @click.argument("jnc_url", metavar="JNOVEL_CLUB_URL", required=True)
 @options.credentials_options
 @beginning_option
+@first_available_volume_option
 @coro
-async def add_track_series(jnc_url, credentials: jncalts.AltCredentials, is_beginning):
+async def add_track_series(
+    jnc_url,
+    credentials: jncalts.AltCredentials,
+    is_beginning,
+    is_first_available_volume,
+):
     origin = jncalts.find_origin(jnc_url)
     config = jncalts.get_alt_config_for_origin(origin)
 
@@ -60,7 +77,9 @@ async def add_track_series(jnc_url, credentials: jncalts.AltCredentials, is_begi
             )
             return
 
-        await track.track_series(session, tracked_series, series, is_beginning)
+        await track.track_series(
+            session, tracked_series, series, is_beginning, is_first_available_volume
+        )
 
         # TOO async write
         track_manager.write_tracked_series(tracked_series)
@@ -91,9 +110,14 @@ async def add_track_series(jnc_url, credentials: jncalts.AltCredentials, is_begi
     help="Flag to delete series not found on the sync source",
 )
 @beginning_option
+@first_available_volume_option
 @coro
 async def sync_series(
-    credentials: jncalts.AltCredentials, is_reverse, is_delete, is_beginning
+    credentials: jncalts.AltCredentials,
+    is_reverse,
+    is_delete,
+    is_beginning,
+    is_first_available_volume,
 ):
     track_manager = track.TrackConfigManager()
     tracked_series = track_manager.read_tracked_series()
@@ -128,7 +152,12 @@ async def sync_series(
                 console.status(f"Sync tracked series from {session.origin}...")
 
                 new_synced, del_synced = await track.sync_series_forward(
-                    session, follows, tracked_series_origin, is_delete, is_beginning
+                    session,
+                    follows,
+                    tracked_series_origin,
+                    is_delete,
+                    is_beginning,
+                    is_first_available_volume,
                 )
 
                 if new_synced or del_synced:
@@ -223,8 +252,8 @@ def list_track_series(is_detail):
         for index, (ser_url, ser_details) in enumerate(tracked_series.items()):
             details = None
             if ser_details.part == 0:
-                if ser_details.last_check_date == track.FROM_BEGINNING_CHECK_DATE:
-                    # added with --beginning
+                if ser_details.last_check_date == track.FAR_IN_THE_PAST_CHECK_DATE:
+                    # added with --beginning or --first-available-volume
                     details = "Not yet updated"
                 else:
                     details = "No part released"

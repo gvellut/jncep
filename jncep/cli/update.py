@@ -213,6 +213,8 @@ async def _do_update_tracked(
         console.status("Fetch followed series from J-Novel Club...")
         follows = await core.fetch_follows(session)
         # new series will also be added to tracked_series
+        # FIXME add is_beginning option and remove special processing for is_sync in
+        # _find_available_parts
         new_synced, _ = await track.sync_series_forward(
             session, follows, tracked_series, False
         )
@@ -266,7 +268,7 @@ async def _process_managed(
     origin_credentials = credentials.extract_for_origin(config.ORIGIN)
 
     # prune series that are not followed anymore + track from beginning
-    console.info("[important]track sync --delete --beginning[/]")
+    console.info("[important]track sync --delete --first-available-volume[/]")
 
     # TODO instead of passing through click use internal function
     # no need for the rereading of the tracked series
@@ -280,7 +282,7 @@ async def _process_managed(
             sync_series,
             credentials=origin_credentials,
             is_delete=True,
-            is_beginning=True,
+            is_first_available_volume=True,
         )
     )
 

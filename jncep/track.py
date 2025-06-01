@@ -18,7 +18,7 @@ TRACK_FILE_NAME = "tracked.json"
 
 DEFAULT_CONFIG_FILEPATH = config.config_dir() / TRACK_FILE_NAME
 
-FROM_BEGINNING_CHECK_DATE = "1000-10-10T10:10:10Z"
+FAR_IN_THE_PAST_CHECK_DATE = "1000-10-10T10:10:10Z"
 
 
 class TrackConfigManager:
@@ -80,8 +80,21 @@ class TrackConfigManager:
         return converted_b
 
 
-async def track_series(session, tracked_series, series, is_beginning=False):
+async def track_series(
+    session,
+    tracked_series,
+    series,
+    is_beginning=False,
+    is_first_available_volume=False,
+):
     parts = core.all_parts_meta(series)
+
+    part_details = None
+    if is_first_available_volume:
+        # is_beginning is the same as the argument name so enters same branch later
+        part_details, first_available_volume, is_beginning = (
+            core.latest_part_from_non_available_volume(session, series.volumes, parts)
+        )
 
     # record current last part + name
     if not parts or is_beginning:
@@ -96,26 +109,35 @@ async def track_series(session, tracked_series, series, is_beginning=False):
             style="success",
         )
     else:
-        pn, pdate = core.last_part_number_and_date(parts)
+        # if is_first_available_volume : may have been already computed
+        if part_details:
+            pn, pdate = part_details
+            console.info(
+                f"The series '[highlight]{series.raw_data.title}[/]' is now tracked, "
+                f"starting from [highlight]"
+                f"{first_available_volume.raw_data.shortTitle}[/]",
+                style="success",
+            )
+        else:
+            pn, pdate = core.last_part_number_and_date(parts)
+            part_date = dateutil.parser.parse(pdate)
+            part_date_formatted = part_date.strftime("%b %d, %Y")
+            # TODO display something in case last_part_number and last_part_date_raw do
+            # not correspond to the same part?
+            console.info(
+                f"The series '[highlight]{series.raw_data.title}[/]' is now tracked, "
+                f"starting after part [highlight]{pn} [{part_date_formatted}]"
+                f"[/]",
+                style="success",
+            )
 
-        part_date = dateutil.parser.parse(pdate)
-        part_date_formatted = part_date.strftime("%b %d, %Y")
-        # TODO display something in case last_part_number and last_part_date_raw do not
-        # correspond to the same part?
-        console.info(
-            f"The series '[highlight]{series.raw_data.title}[/]' is now tracked, "
-            f"starting after part [highlight]{pn} [{part_date_formatted}]"
-            f"[/]",
-            style="success",
-        )
-
-    if is_beginning:
+    if is_beginning or is_first_available_volume:
         # TODO add a flag to indicate --beginning ; keep track of the last part
         # anyway instead of the special part=0 and last_check_date in that case
         # see also cli.track list_track_series
         # date far in the past: used in case of --use-events => will always end up
         # checking the full metadata of the series (as if --use-events was not used)
-        last_check_date = FROM_BEGINNING_CHECK_DATE
+        last_check_date = FAR_IN_THE_PAST_CHECK_DATE
     else:
         last_check_date = utils.isoformat_with_z(session.now)
 
@@ -133,7 +155,12 @@ async def track_series(session, tracked_series, series, is_beginning=False):
 
 
 async def sync_series_forward(
-    session, follows, tracked_series, is_delete, is_beginning=False
+    session,
+    follows,
+    tracked_series,
+    is_delete,
+    is_beginning=False,
+    is_first_available_volume=False,
 ):
     # sync local tracked series based on remote follows
     new_synced = []
@@ -142,7 +169,9 @@ async def sync_series_forward(
     async def do_track(jnc_resource):
         series_id = await core.resolve_series(session, jnc_resource)
         series = await core.fetch_meta(session, series_id)
-        await track_series(session, tracked_series, series, is_beginning)
+        await track_series(
+            session, tracked_series, series, is_beginning, is_first_available_volume
+        )
         # manga already excluded from follows so no need to check
 
         series_url = jncweb.url_from_series_slug(session.origin, series.raw_data.slug)

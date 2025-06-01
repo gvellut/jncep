@@ -437,7 +437,7 @@ def _replace_image_urls(content, images: list[Image]):
 
 def all_parts_meta(series):
     # return all parts : no need to filter out parts released in the future (v2 API)
-    # => always done in fetch_meta
+    # => always done in fetch_meta before this
     parts = [part for volume in series.volumes if volume.parts for part in volume.parts]
     return parts
 
@@ -457,6 +457,75 @@ def last_part_number_and_date(parts):
     pdate = last_part_date.raw_data.launch
 
     return pn, pdate
+
+
+def latest_part_from_non_available_volume(
+    session: JNCEPSession, volumes: list[Volume], parts: list[Part]
+):
+    # used for display output in track_series
+    first_available_volume = None
+    # part before part 1 of the first volume with all parts still available
+    # need the last non available so date compared after its publication date (like
+    # what is written in tracked.json)
+    latest_non_available_pn = None
+    latest_non_available_pdate = None
+    is_beginning = False
+
+    if not volumes:
+        # series not started
+        is_beginning = True
+
+    for i, volume in enumerate(volumes):
+        if is_volume_available(session, volume):
+            # Note : volumes with no part launched are ignored in resolve_series
+            # so if volume before is expired: first_available_volume will not be filled
+            # and it will appear in output as tracking from after the last (expired)
+            # part instead of current (not started) volume
+            # TODO change ? see impact
+
+            # this is the first volume with all released parts also available
+            first_available_volume = volume
+            if i == 0:
+                is_beginning = True
+            else:
+                # if multiple volumes released in parallel (side stories)
+                # volumes[i - 1].parts[-1] may not be the last released so look for it
+                # TODO if parallel => maybe a later volume is not available.  but no
+                # way to tell to ignore. Almost never happens too
+                first_part = volume.parts[0]
+                parts_to_consider = [
+                    part
+                    for part in parts
+                    if part.raw_data.launch < first_part.raw_data.launch
+                ]
+                latest_non_available_pn, latest_non_available_pdate = (
+                    last_part_number_and_date(parts_to_consider)
+                )
+            break
+
+    if not latest_non_available_pdate:
+        if is_beginning:
+            # first available part is actually the beginning of the series
+            return None, None, True
+
+        # all volumes are expired : so no details and will be the same as "last part"
+        return None, None, False
+
+    # part details (for tracking), valume detail (for display), beginning, last
+    return (
+        (latest_non_available_pn, latest_non_available_pdate),
+        first_available_volume,
+        False,
+    )
+
+
+def is_volume_available(session, volume):
+    # all parts available
+    # TODO it might be temporary because of catchups : for now include it anyway
+    parts_available = (
+        is_part_available(session.now, is_member(session), p) for p in volume.parts
+    )
+    return all(parts_available)
 
 
 async def to_part_spec(series, jnc_resource):
@@ -1076,4 +1145,7 @@ def is_member(session):
     # TODO non paying is "USER" ; normal member is "MEMBER", what about premium?
     # Nina doesn't have premium level membership
     # TODO other parameters ?
-    return session.me.level != "USER" and session.me.subscriptionStatus == "ACTIVE"
+    return session.me.level != "USER" and (
+        session.me.subscriptionStatus == "ACTIVE"
+        or session.me.subscriptionStatus == "TRIALING"
+    )
