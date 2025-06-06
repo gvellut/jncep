@@ -91,7 +91,7 @@ async def track_series(
 
     part_details = None
     if is_first_available_volume:
-        # is_beginning is the same as the argument name so enters same branch later
+        # is_beginning has same name as the argument name so enters same branch later
         part_details, first_available_volume, is_beginning = (
             core.latest_part_from_non_available_volume(session, series.volumes, parts)
         )
@@ -109,7 +109,8 @@ async def track_series(
             style="success",
         )
     else:
-        # if is_first_available_volume : may have been already computed
+        # if is_first_available_volume : may have been already computed ie the last
+        # part from the volume preceding first_available_volume
         if part_details:
             pn, pdate = part_details
             console.info(

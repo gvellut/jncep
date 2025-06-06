@@ -60,7 +60,7 @@ console = utils.getConsole()
     help=(
         "Flag to indicate whether to use the series followed on the J-Novel Club "
         "website as the tracking reference for updating (equivalent to "
-        "running 'track sync --delete --beginning' followed by 'update')"
+        "running 'track sync --delete --first-available-volume' followed by 'update')"
     ),
 )
 @click.option(
@@ -260,7 +260,7 @@ async def _process_managed(
     config, ctx, credentials, track_manager, tracked_series_origin, update_options
 ):
     # run the equivalent of:
-    # track sync --delete --beginning
+    # track sync --delete --first-available-volumeg
     # update
 
     # do the sync_series inside an existing origin session so only one login
