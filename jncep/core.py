@@ -419,7 +419,15 @@ def _replace_chars(content):
     # U+1F3F6 => Black Rosette
     # U+25C7 => White Diamond
     # U+2605 => Black star
-    chars_to_replace = ["\u2671", "\u25c6", "\U0001f3f6", "\u25c7", "\u2605"]
+    chars_to_replace = [
+        "\u2671",
+        "\u25c6",
+        "\U0001f3f6",
+        "\u25c7",
+        "\u2605",
+        "\u25bc",
+        "\u25b3",
+    ]
     replacement_char = "**"
     regex = "|".join(chars_to_replace)
     content = re.sub(regex, replacement_char, content)
@@ -760,7 +768,7 @@ def webp_to_jpeg(img_url: str):
     return img_url.replace("/webp/", "/jpg/", 1)
 
 
-async def fetch_image(session, img_url):
+async def fetch_image(session: JNCEPSession, img_url):
     try:
         jpeg_img_url = webp_to_jpeg(img_url)
         img_bytes = await session.api.fetch_url(jpeg_img_url)
