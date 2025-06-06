@@ -413,12 +413,11 @@ def _extract_author(creators, default="Unknown Author"):
 
 
 def _replace_chars(content):
+    # https://unicode.scarfboy.com/ for code
     # both the chars to replace and replacement are hardcoded
-    # U+2671 => East Syriac Cross
-    # U+25C6 => Black Diamond
-    # U+1F3F6 => Black Rosette
-    # U+25C7 => White Diamond
-    # U+2605 => Black star
+    # TODO leave the raw unicode character copied from content instead of code?
+    # TODO make it automatic ie for all characters not in alphabet + punctuation?
+    # TODO add option to set replacement or add characters not processed
     chars_to_replace = [
         "\u2671",
         "\u25c6",
@@ -427,6 +426,9 @@ def _replace_chars(content):
         "\u2605",
         "\u25bc",
         "\u25b3",
+        "\u25ef",
+        "\u273d",
+        "\u2725",
     ]
     replacement_char = "**"
     regex = "|".join(chars_to_replace)
