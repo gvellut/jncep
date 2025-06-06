@@ -270,17 +270,15 @@ class JNC_API:
 
     @with_cache
     async def fetch_url(self, url: str):
-        if not _url_starts_with(url, self.config.CDN_IMG_URL_BASE):
-            raise InvalidCDNRequestException(
-                f"{url} doesn't start with {self.config.CDN_IMG_URL_BASE}"
-            )
-
-        # for CDN images
+        # used to access CDN images
+        # no longer check the URL domain cf CDN_IMG_URL_BASE
         logger.debug(f"IMAGE {url}")
         r = await self.cdn_session.get(url)
         r.raise_for_status()
         # should be JPEG
         # TODO check ?
+        # if code 200 and not JPEG, image will be broken or will not appear.
+        # TODO try to read and print warning?
         return r.content
 
 
