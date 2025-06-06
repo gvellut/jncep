@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
 
-git tag -d "$1"
-git push origin --delete "$1"
+RELEASE_TAG="$1"
+
+git tag -d "$RELEASE_TAG"
+git push origin --delete "$RELEASE_TAG"

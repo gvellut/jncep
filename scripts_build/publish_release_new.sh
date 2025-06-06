@@ -19,4 +19,4 @@ if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
   fi
 fi
 
-gh release create "$RELEASE_TAG" --verify-tag --fail-on-no-commits
+gh release create "$RELEASE_TAG" --verify-tag --fail-on-no-commits --generate-notes --title "$RELEASE_TAG"
