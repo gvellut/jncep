@@ -144,7 +144,7 @@ class JNC_API:
 
     async def logout(self):
         path = f"{self.config.API_PATH_BASE}/auth/logout"
-        await self._call_labs_api_authenticated("POST", path)
+        await self._call_authenticated("POST", path)
         self.token = None
 
     async def me(self):
@@ -166,7 +166,7 @@ class JNC_API:
 
         logger.debug(f"API {self.config.ORIGIN} EMBED {path}")
 
-        r = await self._call_labs_api_authenticated("GET", path)
+        r = await self._call_authenticated("GET", path)
         return r.text
 
     @with_cache
@@ -201,54 +201,36 @@ class JNC_API:
         if skip is not None:
             params.update(skip=skip)
 
-        r = await self._call_labs_api_authenticated(
-            verb, path, params=params, body=body
-        )
+        r = await self._call_authenticated(verb, path, params=params, body=body)
 
         d = Addict(r.json())
         deep_freeze(d)
         return d
 
-    async def _call_labs_api_authenticated(
-        self, verb, path, *, headers=None, params=None, body=None, **kwargs
-    ):
-        # ~common base path + params set in caller: some calls (embed) to the Labs API
-        # do not have them
-        auth = {"Authorization": f"Bearer {self.token}"}
-        r = await self._call_authenticated(
-            self.api_session,
-            verb,
-            path,
-            auth,
-            headers=headers,
-            params=params,
-            body=body,
-            **kwargs,
-        )
-
-        return r
-
     async def _call_authenticated(
         self,
-        session,
         verb,
         path,
-        auth,
         *,
         headers=None,
         params=None,
         body=None,
         **kwargs,
     ):
+        # ~common base path + params set in caller: some calls (embed) to the Labs API
+        # do not have them
+
+        auth = {"Authorization": f"Bearer {self.token}"}
+
         if not headers:
             headers = auth
         else:
             headers = {**auth, **headers}
 
-        request = session.build_request(
+        request = self.api_session.build_request(
             verb, path, headers=headers, params=params, content=body, **kwargs
         )
-        r = await session.send(request)
+        r = await self.api_session.send(request)
         r.raise_for_status()
 
         return r
@@ -265,7 +247,7 @@ class JNC_API:
 
         logger.debug(f"FOLLOW {verb} {path}")
 
-        r = await self._call_labs_api_authenticated(verb, path)
+        r = await self._call_authenticated(verb, path)
         r.raise_for_status()
 
     @with_cache
