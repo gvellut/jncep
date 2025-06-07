@@ -259,3 +259,55 @@ ROOT_CONSOLE = RootConsole()
 
 def getConsole():
     return ROOT_CONSOLE
+
+
+def split_by_chapter(content):
+    combined_content = ""
+    chapter_titles = []
+    first_before_content = ""
+    first_inside_content = ""
+    first_after_content = ""
+    main_div_pattern = r'^(.*?)<div class="main">(.*?)</div>(.*?)$'
+    h1_title_pattern = r'<h1[^>]*>(.*?)</h1>'
+    returned_content = []
+
+    for i, c in enumerate(content):  #iterate over each part
+        reconstructed_content = ""
+        match = re.search(main_div_pattern, c, re.DOTALL)  # Separate out the main content from the rest
+        if match:
+            # Extract the content before, inside, and after the first <div class="main">
+            before_content = match.group(1).strip()
+            inside_content = match.group(2).strip()
+            after_content = match.group(3).strip()
+            combined_content += inside_content.strip()
+            if i == 0:
+                first_before_content = before_content
+                first_after_content = after_content
+
+    #print(combined_content)
+
+    parts = re.split(r"(?=<h1[^>]*>)", combined_content, flags=re.DOTALL)  # split the combined text into chapters
+
+    for i, part in enumerate(parts):
+        if part.strip():  # Ignore empty parts
+            titles = re.findall(h1_title_pattern, part)  # Find the title in the chapter
+
+            if is_cover_chapter(part):
+                title = "Cover"
+            elif len(titles) > 0:
+                title = titles[0]
+            else:
+                print("untitled chapter found")  # Untitled Chapters are just labelled incrementally
+                title = f"Incomplete Chapter {i + 1}"
+            chapter_titles.append(title)
+            reconstructed_content = re.sub(r'<title>.*?</title>', f'<title>{title}</title>',
+                                           first_before_content) + part + first_after_content
+            returned_content.append(reconstructed_content)
+    return returned_content, chapter_titles
+
+
+def is_cover_chapter(part):
+    cover_h1_pattern = r'<img[^>]*\bcover\b[^>]*>'
+    if re.search(cover_h1_pattern, part) is not None:
+        print("cover found")
+        return True
