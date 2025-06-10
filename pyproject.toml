@@ -1,6 +1,6 @@
 [project]
 name = "jncep"
-version = "52"
+version = "53"
 description = "Command-line tool to generate EPUB files for J-Novel Club and JNC Nina pre-pub novels"
 license = "GPL-3.0-or-later"
 readme = "README.md"
