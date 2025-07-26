@@ -210,7 +210,6 @@ wheels = [
 
 [[package]]
 name = "jncep"
-version = "53"
 source = { editable = "." }
 dependencies = [
     { name = "addict" },
