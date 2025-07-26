@@ -1,4 +1,4 @@
-__version__ = "dev"
+__version__ = "54"
 
 # fix some issue with methods not present on some system (PyDroid)
 # not actually used by jncep but import error

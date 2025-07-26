@@ -23,10 +23,6 @@ jobs:
         run: |
           uv sync --locked
 
-      - name: Update version in __init__ from pyproject
-        run: |
-          bash scripts_build/update_init_version.sh
-
       - name: Minimal test (loading of deps)
         run: |
           uv run jncep --help
