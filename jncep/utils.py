@@ -18,21 +18,11 @@ logger = logging.getLogger(__name__)
 
 def setup_logging(is_debug):
     format = "%(asctime)s %(name)-12s %(levelname)-8s %(message)s"
-    if not logging.getLogger().handlers:
-        # coloredlogs is not used
-        logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=format)
-    else:
-        # Colored_logs has installed its own handler but not configured the way
-        # I want
-        logging.getLogger().handlers[0].formatter.datefmt = "%Y-%m-%d,%H:%M:%S,%f"
-        # coloredlogs changes the level of the handler
-        logging.getLogger().handlers[0].setLevel(logging.NOTSET)
+    logging.basicConfig(stream=sys.stdout, level=logging.INFO, format=format)
 
     logger_pkg = logging.getLogger(__package__)
     if is_debug:
         logger_pkg.setLevel(logging.DEBUG)
-        # keep debug console (ie logging)
-        # or issues mixing the print and the logs with Rich
     else:
         logger_pkg.setLevel(logging.INFO)
         getConsole().console = RichConsole()

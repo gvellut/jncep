@@ -106,12 +106,35 @@ class JNC_API:
     ):
         self.config = config
 
+        hooks = None
+        if logging.getLogger("jncep").level == logging.DEBUG:
+
+            async def log_request(request):
+                logger.debug(
+                    "HTTP Request: %s %s",
+                    request.method,
+                    request.url,
+                )
+                logger.debug(f"HTTP Request Headers: {request.headers}")
+
+            async def log_response(response):
+                logger.debug(
+                    "HTTP Response: %s %d %s",
+                    response.http_version,
+                    response.status_code,
+                    response.reason_phrase,
+                )
+                logger.debug(f"HTTP Response Headers: {response.headers}")
+
+            hooks = {"request": [log_request], "response": [log_response]}
+
         timeout = httpx.Timeout(api_default_timeout, pool=None)
         self.api_session = httpx.AsyncClient(
             base_url=config.API_URL_BASE,
             limits=httpx.Limits(max_connections=api_connections),
             headers=API_COMMON_HEADERS,
             timeout=timeout,
+            event_hooks=hooks,
         )
 
         # full URL always provided (CDN) so no need for base location parameter
@@ -120,6 +143,7 @@ class JNC_API:
         self.cdn_session = httpx.AsyncClient(
             limits=httpx.Limits(max_connections=cdn_connections),
             timeout=timeout,
+            event_hooks=hooks,
         )
 
         self.token = None

@@ -83,7 +83,7 @@ The rules are as follows (TODO document briefly):
 The rules apply to the following parts of the title, according to their prefixes:
 
 - `fc`: Final Complete (the indication at the end of the file name)
-- `p`: Part. It refers to the part as coming from the J-Novel Club API: Its title includes the series name, the volume number and the part number, always *Part <number>*.
+- `p`: Part. It refers to the part as coming from the J-Novel Club API: Its title includes the series name, the volume number and the part number, always *Part &lt;number&gt*.
 - `pn`: Part number
 - `v`: Volume. It refers to the volume as coming from the J-Novel Club API: Its title includes the series name and the volume number, possibly in multiple items like *Part 5 Volume 2*.
 - `vn`: Volume number
