@@ -31,6 +31,8 @@ def setup_logging(is_debug):
     logger_pkg = logging.getLogger(__package__)
     if is_debug:
         logger_pkg.setLevel(logging.DEBUG)
+        # keep debug console (ie logging)
+        # or issues mixing the print and the logs with Rich
     else:
         logger_pkg.setLevel(logging.INFO)
         getConsole().console = RichConsole()
