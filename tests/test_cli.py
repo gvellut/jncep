@@ -41,6 +41,12 @@ def test_simple_fetch_epub():
         ],
     )
     assert result.exit_code == 0
+    output_file = os.path.join(
+        output_dirpath,
+        "Long_Story_Short_I_m_Living_in_the_Mountains_Volume_1_Part_1.epub",
+    )
+    assert os.path.exists(output_file)
+    assert os.path.getsize(output_file) > 0
 
 
 @pytest.mark.exp
@@ -69,6 +75,14 @@ def test_simple_fetch_epub_jna():
         ],
     )
     assert result.exit_code == 0
+    # The title on the website is "Brunhild, die Drachenschlächterin - Teil 1"
+    # to_safe_filename will convert this to "Brunhild_die_Drachenschlichterin_-_Teil_1.epub"
+    output_file = os.path.join(
+        output_dirpath,
+        "Brunhild_die_Drachenschlichterin_-_Teil_1.epub",
+    )
+    assert os.path.exists(output_file)
+    assert os.path.getsize(output_file) > 0
 
 
 def delete_all_files_in_directory(directory_path):
