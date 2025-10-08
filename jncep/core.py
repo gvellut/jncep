@@ -17,7 +17,7 @@ from dateutil.relativedelta import relativedelta
 from exceptiongroup import BaseExceptionGroup
 import trio
 
-from . import epub, jncalts, jncapi, jncweb, namegen, spec, utils
+from . import epub, jncalts, jncapi, jncweb, namegen, namegen_utils, spec, utils
 from .model import Image, Language, Part, Series, Volume
 from .trio_utils import bag
 from .utils import is_debug, to_safe_filename
@@ -258,12 +258,39 @@ def _process_single_epub_content(
         else:
             toc = [f"Part {part.num_in_volume}" for part in parts]
 
-    gen_rules = namegen.parse_namegen_rules(options.namegen_rules)
     complete = len(volumes) == 1 and is_volume_complete(volumes[0], parts)
     fc = namegen.FC(is_part_final(parts[-1]), complete)
-    title, filename, folder = namegen.generate_names(
-        series, volumes, parts, fc, gen_rules
-    )
+
+    if isinstance(options.namegen_rules, dict):
+        logger.debug("Using namegen.py functions for naming.")
+        custom_funcs = options.namegen_rules
+        args = (series, volumes, parts, fc)
+
+        if "to_title" in custom_funcs:
+            logger.debug("Using custom 'to_title' function.")
+            title = custom_funcs["to_title"](*args)
+        else:
+            logger.debug("Using default 'to_title' function.")
+            title = namegen_utils.legacy_title(*args)
+
+        if "to_filename" in custom_funcs:
+            logger.debug("Using custom 'to_filename' function.")
+            filename = custom_funcs["to_filename"](*args)
+        else:
+            logger.debug("Using default 'to_filename' function.")
+            filename = namegen_utils.legacy_filename(*args)
+
+        if "to_folder" in custom_funcs:
+            logger.debug("Using custom 'to_folder' function.")
+            folder = custom_funcs["to_folder"](*args)
+        else:
+            logger.debug("Using default 'to_folder' function.")
+            folder = namegen_utils.legacy_folder(*args)
+    else:
+        logger.debug("Using namegen mini-language for naming.")
+        title, filename, folder = namegen.generate_names(
+            series, volumes, parts, fc, options.namegen_rules
+        )
 
     if options.is_subfolder:
         subfolder = folder

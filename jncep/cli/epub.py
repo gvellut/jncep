@@ -37,6 +37,7 @@ console = utils.getConsole()
 @options.raw_content_option
 @options.no_replace_chars_option
 @options.css_option
+@options.process_namegen_option
 @options.namegen_option
 @coro
 async def generate_epub(

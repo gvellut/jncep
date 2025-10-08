@@ -1,4 +1,5 @@
 import shutil
+from pathlib import Path
 
 import click
 
@@ -6,6 +7,71 @@ from .. import config, track, utils
 from .base import CatchAllExceptionsCommand
 
 console = utils.getConsole()
+
+NAMEGEN_PY_TEMPLATE = """\
+\"\"\"
+Custom name generation for jncep.
+
+This file allows you to define your own functions for generating the title,
+filename, and folder for the EPUBs created by jncep.
+
+You can define any of the following functions:
+- to_title(series, volumes, parts, fc)
+- to_filename(series, volumes, parts, fc)
+- to_folder(series, volumes, parts, fc)
+
+If a function is not defined, the default jncep naming logic will be used for that part.
+
+The parameters are:
+- series: The series object. (jncep.model.Series)
+- volumes: A list of volume objects included in the EPUB. (jncep.model.Volume)
+- parts: A list of part objects included in the EPUB. (jncep.model.Part)
+- fc: A named tuple with two booleans: `final` and `complete`. (jncep.namegen.FC)
+
+You can import utility functions from `jncep.namegen_utils`. For example:
+from jncep.namegen_utils import legacy_title, legacy_filename, legacy_folder
+from jncep.utils import to_safe_filename, to_safe_foldername
+\"\"\"
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    # These imports are only for type hinting and will not be available at runtime
+    # unless jncep is installed in a way that makes it importable.
+    from jncep.model import Series, Volume, Part
+    from jncep.namegen import FC
+
+# You can import these helpers to build your own names
+from jncep.namegen_utils import legacy_title, legacy_filename, legacy_folder
+
+
+def to_title(series: "Series", volumes: list["Volume"], parts: list["Part"], fc: "FC") -> str:
+    \"\"\"
+    Generates the EPUB title.
+    This example uses the default legacy title generation.
+    \"\"\"
+    # Replace with your logic
+    return legacy_title(series, volumes, parts, fc)
+
+
+def to_filename(series: "Series", volumes: list["Volume"], parts: list["Part"], fc: "FC") -> str:
+    \"\"\"
+    Generates the EPUB filename (without extension).
+    This example uses the default legacy filename generation.
+    \"\"\"
+    # Replace with your logic
+    return legacy_filename(series, volumes, parts, fc)
+
+
+def to_folder(series: "Series", volumes: list["Volume"], parts: list["Part"], fc: "FC") -> str:
+    \"\"\"
+    Generates the subfolder name for the EPUB.
+    This example uses the default legacy folder generation.
+    \"\"\"
+    # Replace with your logic
+    return legacy_folder(series, volumes, parts, fc)
+"""
 
 
 @click.group(name="config", help="Manage configuration")
@@ -133,6 +199,58 @@ def unset_option(option):
         console.info(f"Option '[highlight]{option}[/]' unset", style="success")
 
     config_manager.write_config_options(config_options)
+
+
+@config_manage.command(
+    name="generate-namegen-py",
+    help="Generate a template namegen.py file for custom EPUB naming.",
+    cls=CatchAllExceptionsCommand,
+)
+@click.option(
+    "-o",
+    "--output",
+    "output_path",
+    type=click.Path(resolve_path=True),
+    help="Path to generate the file. Can be a directory.",
+)
+@click.option(
+    "-f",
+    "--overwrite",
+    "is_overwrite",
+    is_flag=True,
+    help="Overwrite the file if it already exists.",
+)
+def generate_namegen_py(output_path, is_overwrite):
+    if output_path:
+        path = Path(output_path)
+        if path.is_dir():
+            filepath = path / "namegen.py"
+        else:
+            if not path.parent.exists():
+                console.error(f"Directory not found: {path.parent}")
+                return
+            filepath = path
+    else:
+        config_dir = config.config_dir()
+        config_dir.mkdir(parents=True, exist_ok=True)
+        filepath = config_dir / "namegen.py"
+
+    if filepath.exists() and not is_overwrite:
+        console.error(
+            f"File already exists: [highlight]{filepath}[/]. Use --overwrite to replace it."
+        )
+        return
+
+    if filepath.exists() and is_overwrite:
+        click.confirm(
+            f"File '{filepath}' already exists. Do you want to overwrite it?",
+            abort=True,
+        )
+
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(NAMEGEN_PY_TEMPLATE)
+
+    console.info(f"Successfully generated [highlight]{filepath}[/]", style="success")
 
 
 @config_manage.command(

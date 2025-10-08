@@ -14,6 +14,7 @@ from attr import define
 from lark import Lark, Transformer, v_args
 from lark.exceptions import LarkError
 
+from . import namegen_utils
 from .utils import getConsole, to_safe_filename, to_safe_foldername
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,6 @@ FOLDER_SECTION = "f"
 # for n use the rules in case t has been defined by user
 DEFAULT_NAMEGEN_RULES = "t:legacy_t|n:_t>str_filesafe|f:legacy_f"
 
-CACHED_PARSED_NAMEGEGEN_RULES = None
 # dict : per language
 CACHED_STOPWORDS = {}
 
@@ -214,15 +214,9 @@ def _init_module():
 # FIXME use class
 
 
-def parse_namegen_rules(namegen_rules, cache=True):
-    global CACHED_PARSED_NAMEGEGEN_RULES
-
-    if cache and CACHED_PARSED_NAMEGEGEN_RULES:
-        return CACHED_PARSED_NAMEGEGEN_RULES
-
+def parse_namegen_rules(namegen_rules):
     default_gen_rules = None
     if namegen_rules:
-        # always the same during the execution so read once and cache
         gen_rules = _do_parse_namegen_rules(namegen_rules)
 
         for prefix in [TITLE_SECTION, FILENAME_SECTION, FOLDER_SECTION]:
@@ -231,13 +225,9 @@ def parse_namegen_rules(namegen_rules, cache=True):
                     default_gen_rules = _do_parse_namegen_rules(DEFAULT_NAMEGEN_RULES)
                 gen_rules[prefix] = default_gen_rules[prefix]
 
-        if cache:
-            CACHED_PARSED_NAMEGEGEN_RULES = gen_rules
         return gen_rules
     else:
         default_gen_rules = _do_parse_namegen_rules(DEFAULT_NAMEGEN_RULES)
-        if cache:
-            CACHED_PARSED_NAMEGEGEN_RULES = default_gen_rules
         return default_gen_rules
 
 
@@ -834,85 +824,26 @@ def legacy_t(components: list[Component]):
     v_component = _find_component_type(ComType.V, components)
     s_component = _find_component_type(ComType.S, components)
     fc_component = _find_component_type(ComType.FC, components)
+    fc = fc_component.value
 
     if p_component:
-        # single part
         part = p_component.value
-        title_base = part.raw_data.title
-
-        suffix = ""
-        is_final = fc_component.value.final
-        if is_final:
-            # TODO i18n
-            suffix = " [Final]"
-
-        title = f"{title_base}{suffix}"
-    else:
-        if s_component:
-            # multiple volumes
-            series = s_component.value
-
-            title_base = series.raw_data.title
-
-            vn_component = _find_component_type(ComType.VN, components)
-            volumes = vn_component.base_value
-            # ordered already
-            volume_nums = [str(v.num) for v in volumes]
-            volume_nums = ", ".join(volume_nums[:-1]) + " & " + volume_nums[-1]
-            # TODO i18n
-            volume_segment = f"Volumes {volume_nums}"
-
-            pn_component = _find_component_type(ComType.PN, components)
-            parts = pn_component.base_value
-            volume_num0 = parts[0].volume.num
-            part_num0 = parts[0].num_in_volume
-            volume_num1 = parts[-1].volume.num
-            part_num1 = parts[-1].num_in_volume
-
-            # check only last part in the epub
-            suffix = ""
-            is_final = fc_component.value.final
-            if is_final:
-                # TODO i18n
-                suffix = " - Final"
-
-            # TODO i18n
-            part_segment = (
-                f"Parts {volume_num0}.{part_num0} to {volume_num1}.{part_num1}{suffix}"
-            )
-
-            if title_base[-1] in string.punctuation:
-                # like JNC : no double punctuation mark
-                colon = ""
-            else:
-                colon = ":"
-            title = f"{title_base}{colon} {volume_segment} [{part_segment}]"
-
-        else:
-            # single volume
-            volume = v_component.value
-            title_base = volume.raw_data.title
-
-            pn_component = _find_component_type(ComType.PN, components)
-            parts = pn_component.base_value
-
-            part_num0 = parts[0].num_in_volume
-            part_num1 = parts[-1].num_in_volume
-
-            is_complete = fc_component.value.complete
-            is_final = fc_component.value.final
-            if is_complete:
-                # TODO i18n
-                part_segment = "Complete"
-            else:
-                # check the last part in the epub
-                suffix = ""
-                if is_final:
-                    # TODO i18n
-                    suffix = " - Final"
-                part_segment = f"Parts {part_num0} to {part_num1}{suffix}"
-
-            title = f"{title_base} [{part_segment}]"
+        volume = part.volume
+        series = volume.series
+        title = namegen_utils.legacy_title(series, [volume], [part], fc)
+    elif s_component:
+        series = s_component.value
+        vn_component = _find_component_type(ComType.VN, components)
+        volumes = vn_component.base_value
+        pn_component = _find_component_type(ComType.PN, components)
+        parts = pn_component.base_value
+        title = namegen_utils.legacy_title(series, volumes, parts, fc)
+    else:  # v_component
+        volume = v_component.value
+        series = volume.series
+        pn_component = _find_component_type(ComType.PN, components)
+        parts = pn_component.base_value
+        title = namegen_utils.legacy_title(series, [volume], parts, fc)
 
     str_component = Component(ComType.STR, title)
     _replace_all(components, str_component)
@@ -929,10 +860,11 @@ def legacy_f(components: list[Component]):
         series = p_component.value.volume.series
     elif v_component:
         series = v_component.value.series
-    elif s_component:
+    else:  # s_component
         series = s_component.value
 
-    folder = to_safe_foldername(series.raw_data.title)
+    # The other args are not used by legacy_folder
+    folder = namegen_utils.legacy_folder(series, None, None, None)
 
     str_com = Component(ComType.STR, folder)
     _replace_all(components, str_com)
