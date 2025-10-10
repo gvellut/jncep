@@ -1,17 +1,11 @@
 import functools
-import importlib.util
-import logging
 import os
-from pathlib import Path
 
 import click
 import click_option_group as cog
 
-from .. import config, namegen
 from ..config import ENVVAR_PREFIX
 from ..jncalts import AltCredentials, AltOrigin
-
-logger = logging.getLogger(__name__)
 
 credentials_group = cog.OptionGroup(
     "Credentials",
@@ -199,88 +193,5 @@ namegen_option = click.option(
     "--namegen",
     "namegen_rules",
     envvar=f"{ENVVAR_PREFIX}NAMEGEN",
-    help="Name generation rules as a string, or path to a .py file (see documentation).",
+    help="Name generation rules (see GH for documentation)",
 )
-
-
-def process_namegen_option(f):
-    @functools.wraps(f)
-    def wrapper(*args, **kwargs):
-        namegen_param = kwargs.get("namegen_rules")
-        namegen_py_path = None
-
-        if namegen_param:
-            if namegen_param.endswith(".py"):
-                path = Path(namegen_param)
-                if not path.is_absolute():
-                    raise click.UsageError("--namegen path must be absolute.")
-                if not path.exists():
-                    raise click.UsageError(f"File not found: {namegen_param}")
-                namegen_py_path = path
-                logger.debug(f"Using namegen file from option: {namegen_py_path}")
-            else:
-                # It's a rule string, parse it
-                logger.debug("Using namegen rule string from option.")
-                kwargs["namegen_rules"] = namegen.parse_namegen_rules(namegen_param)
-        else:
-            # Check config directory for namegen.py
-            config_namegen_py = config.config_dir() / "namegen.py"
-            if config_namegen_py.exists():
-                namegen_py_path = config_namegen_py
-                logger.debug(
-                    f"Using namegen file from config directory: {namegen_py_path}"
-                )
-
-        if namegen_py_path:
-            spec = importlib.util.spec_from_file_location(
-                "namegen_custom", namegen_py_path
-            )
-            namegen_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(namegen_module)
-
-            loaded_funcs = {}
-            if hasattr(namegen_module, "to_title"):
-                loaded_funcs["to_title"] = getattr(namegen_module, "to_title")
-                logger.debug("Found 'to_title' function in namegen file.")
-            else:
-                logger.debug(
-                    "'to_title' function not found in namegen file, will use default."
-                )
-
-            if hasattr(namegen_module, "to_filename"):
-                loaded_funcs["to_filename"] = getattr(namegen_module, "to_filename")
-                logger.debug("Found 'to_filename' function in namegen file.")
-            else:
-                logger.debug(
-                    "'to_filename' function not found in namegen file, will use default."
-                )
-
-            if hasattr(namegen_module, "to_folder"):
-                loaded_funcs["to_folder"] = getattr(namegen_module, "to_folder")
-                logger.debug("Found 'to_folder' function in namegen file.")
-            else:
-                logger.debug(
-                    "'to_folder' function not found in namegen file, will use default."
-                )
-
-            if loaded_funcs:
-                kwargs["namegen_rules"] = loaded_funcs
-            else:
-                # py file exists but has no valid functions, use default
-                logger.debug(
-                    "namegen.py file found but no valid functions. Using default rules."
-                )
-                kwargs["namegen_rules"] = namegen.parse_namegen_rules(
-                    namegen.DEFAULT_NAMEGEN_RULES
-                )
-
-        elif "namegen_rules" not in kwargs or not kwargs["namegen_rules"]:
-            # No option, no config file, parse default rules
-            logger.debug("Using default namegen rules.")
-            kwargs["namegen_rules"] = namegen.parse_namegen_rules(
-                namegen.DEFAULT_NAMEGEN_RULES
-            )
-
-        return f(*args, **kwargs)
-
-    return wrapper

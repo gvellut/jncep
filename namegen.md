@@ -38,7 +38,7 @@ To get started, you can generate a template `namegen.py` file with the following
 ```bash
 jncep config generate-namegen-py
 ```
-This will create a `namegen.py` file in your config directory with pre-defined functions and helpful comments. You can also specify an output path:
+This will create a `namegen.py` file in your config directory with function stubs. You can also specify an output path:
 ```bash
 jncep config generate-namegen-py --output /path/to/generate/
 ```
@@ -52,6 +52,8 @@ If you want to use an LLM to help you write a `namegen.py` file, you can use the
 **LLM Blurb:**
 
 I need you to write a Python script named `namegen.py` for `jncep`, a tool that creates EPUBs from J-Novel Club. This script will define how the EPUB title, filename, and subfolder are generated. The script can contain three functions: `to_title`, `to_filename`, and `to_folder`.
+
+The script must start with: `from jncep.namegen_utils import *`
 
 Here are the function signatures and the data structures you will work with:
 
@@ -70,7 +72,7 @@ Your script should handle three primary scenarios for EPUB generation:
 2.  **Multiple Parts in a Single Volume:** `volumes` contains one item, and `parts` contains multiple items.
 3.  **Multiple Parts across Multiple Volumes:** `volumes` and `parts` both contain multiple items.
 
-You can import and use helper functions from `jncep.namegen_utils`, such as `legacy_title`, `legacy_filename`, and `legacy_folder`, to replicate the default behavior.
+You can use helper functions from `jncep.namegen_utils`, such as `legacy_title`, `legacy_filename`, and `legacy_folder`, to replicate the default behavior.
 
 ---
 

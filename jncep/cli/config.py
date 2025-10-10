@@ -9,68 +9,20 @@ from .base import CatchAllExceptionsCommand
 console = utils.getConsole()
 
 NAMEGEN_PY_TEMPLATE = """\
-\"\"\"
-Custom name generation for jncep.
-
-This file allows you to define your own functions for generating the title,
-filename, and folder for the EPUBs created by jncep.
-
-You can define any of the following functions:
-- to_title(series, volumes, parts, fc)
-- to_filename(series, volumes, parts, fc)
-- to_folder(series, volumes, parts, fc)
-
-If a function is not defined, the default jncep naming logic will be used for that part.
-
-The parameters are:
-- series: The series object. (jncep.model.Series)
-- volumes: A list of volume objects included in the EPUB. (jncep.model.Volume)
-- parts: A list of part objects included in the EPUB. (jncep.model.Part)
-- fc: A named tuple with two booleans: `final` and `complete`. (jncep.namegen.FC)
-
-You can import utility functions from `jncep.namegen_utils`. For example:
-from jncep.namegen_utils import legacy_title, legacy_filename, legacy_folder
-from jncep.utils import to_safe_filename, to_safe_foldername
-\"\"\"
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    # These imports are only for type hinting and will not be available at runtime
-    # unless jncep is installed in a way that makes it importable.
-    from jncep.model import Series, Volume, Part
-    from jncep.namegen import FC
-
-# You can import these helpers to build your own names
-from jncep.namegen_utils import legacy_title, legacy_filename, legacy_folder
+# See namegen.md for documentation
+from jncep.namegen_utils import *
 
 
 def to_title(series: "Series", volumes: list["Volume"], parts: list["Part"], fc: "FC") -> str:
-    \"\"\"
-    Generates the EPUB title.
-    This example uses the default legacy title generation.
-    \"\"\"
-    # Replace with your logic
-    return legacy_title(series, volumes, parts, fc)
+    pass
 
 
 def to_filename(series: "Series", volumes: list["Volume"], parts: list["Part"], fc: "FC") -> str:
-    \"\"\"
-    Generates the EPUB filename (without extension).
-    This example uses the default legacy filename generation.
-    \"\"\"
-    # Replace with your logic
-    return legacy_filename(series, volumes, parts, fc)
+    pass
 
 
 def to_folder(series: "Series", volumes: list["Volume"], parts: list["Part"], fc: "FC") -> str:
-    \"\"\"
-    Generates the subfolder name for the EPUB.
-    This example uses the default legacy folder generation.
-    \"\"\"
-    # Replace with your logic
-    return legacy_folder(series, volumes, parts, fc)
+    pass
 """
 
 
@@ -202,6 +154,26 @@ def unset_option(option):
 
 
 @config_manage.command(
+    name="init", help="Create configuration file", cls=CatchAllExceptionsCommand
+)
+def init_config():
+    config_filepath = config.DEFAULT_CONFIG_FILEPATH
+    if config_filepath.exists():
+        console.warning(f"Config file already exists: [highlight]{config_filepath}[/]")
+        return
+
+    config_manager = config.ConfigManager(config_filepath)
+    # will create empty config file
+    config_options = config_manager.read_config_options()
+    config_manager.write_config_options(config_options)
+
+    console.info(
+        f"New empty config file created: [highlight]{config_filepath}[/]",
+        style="success",
+    )
+
+
+@config_manage.command(
     name="generate-namegen-py",
     help="Generate a template namegen.py file for custom EPUB naming.",
     cls=CatchAllExceptionsCommand,
@@ -251,26 +223,6 @@ def generate_namegen_py(output_path, is_overwrite):
         f.write(NAMEGEN_PY_TEMPLATE)
 
     console.info(f"Successfully generated [highlight]{filepath}[/]", style="success")
-
-
-@config_manage.command(
-    name="init", help="Create configuration file", cls=CatchAllExceptionsCommand
-)
-def init_config():
-    config_filepath = config.DEFAULT_CONFIG_FILEPATH
-    if config_filepath.exists():
-        console.warning(f"Config file already exists: [highlight]{config_filepath}[/]")
-        return
-
-    config_manager = config.ConfigManager(config_filepath)
-    # will create empty config file
-    config_options = config_manager.read_config_options()
-    config_manager.write_config_options(config_options)
-
-    console.info(
-        f"New empty config file created: [highlight]{config_filepath}[/]",
-        style="success",
-    )
 
 
 @config_manage.command(
