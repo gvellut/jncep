@@ -1,3 +1,4 @@
+from pathlib import Path
 import shutil
 
 import click
@@ -153,6 +154,95 @@ def init_config():
         f"New empty config file created: [highlight]{config_filepath}[/]",
         style="success",
     )
+
+
+NAMEGEN_PY_TEMPLATE = """\
+# See namegen for documentation
+from jncep.namegen_utils import (
+    FC,
+    Part,
+    Series,
+    Volume,
+    legacy_filename,
+    legacy_folder,
+    legacy_title,
+    to_safe_filename,
+    to_safe_foldername,
+)
+
+
+def to_title(series: Series, volumes: list[Volume], parts: list[Part], fc: FC) -> str:
+    # Replace with your logic
+    return legacy_title(series, volumes, parts, fc)
+
+
+def to_filename(
+    title: str, series: Series, volumes: list[Volume], parts: list[Part], fc: FC
+) -> str:
+    # Replace with your logic
+    return legacy_filename(series, volumes, parts, fc)
+
+
+def to_folder(series: Series, volumes: list[Volume], parts: list[Part], fc: FC) -> str:
+    # Replace with your logic
+    return legacy_folder(series, volumes, parts, fc)
+
+"""  # noqa: E501
+
+DEFAULT_NAMEGEN_PY_FILENAME = "namegen.py"
+
+
+@config_manage.command(
+    name="namegen-py",
+    help="Generate a template namegen.py file for custom EPUB naming.",
+    cls=CatchAllExceptionsCommand,
+)
+@click.option(
+    "-o",
+    "--output",
+    "output_path",
+    type=click.Path(resolve_path=True),
+    help="Path to generate the file. Can be a directory.",
+)
+@click.option(
+    "-f",
+    "--overwrite",
+    "is_overwrite",
+    is_flag=True,
+    help="Overwrite the file if it already exists.",
+)
+def generate_namegen_py(output_path, is_overwrite):
+    if output_path:
+        path = Path(output_path)
+        if path.is_dir():
+            filepath = path / DEFAULT_NAMEGEN_PY_FILENAME
+        else:
+            if not path.parent.exists():
+                console.error(f"Directory not found: {path.parent}")
+                return
+            filepath = path
+    else:
+        config_dir = config.config_dir()
+        config_dir.mkdir(parents=True, exist_ok=True)
+        filepath = config_dir / DEFAULT_NAMEGEN_PY_FILENAME
+
+    if filepath.exists() and not is_overwrite:
+        console.error(
+            f"File already exists: [highlight]{filepath}[/]. Use --overwrite to "
+            "replace it."
+        )
+        return
+
+    if filepath.exists() and is_overwrite:
+        click.confirm(
+            f"File '{filepath}' already exists. Do you want to overwrite it?",
+            abort=True,
+        )
+
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(NAMEGEN_PY_TEMPLATE)
+
+    console.info(f"Successfully generated [highlight]{filepath}[/]", style="success")
 
 
 @config_manage.command(

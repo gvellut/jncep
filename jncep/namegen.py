@@ -4,17 +4,25 @@ from collections import namedtuple
 import copy
 from enum import Enum, auto
 import importlib.resources as imres
+import importlib.util
 import logging
 import numbers
+from pathlib import Path
 import re
 import string
 import sys
+from typing import TYPE_CHECKING
 
 from attr import define
 from lark import Lark, Transformer, v_args
 from lark.exceptions import LarkError
 
+from . import config
 from .utils import getConsole, to_safe_filename, to_safe_foldername
+
+if TYPE_CHECKING:
+    from .model import Part, Series, Volume
+
 
 logger = logging.getLogger(__name__)
 console = getConsole()
@@ -36,7 +44,6 @@ FOLDER_SECTION = "f"
 # for n use the rules in case t has been defined by user
 DEFAULT_NAMEGEN_RULES = "t:legacy_t|n:_t>str_filesafe|f:legacy_f"
 
-CACHED_PARSED_NAMEGEGEN_RULES = None
 # dict : per language
 CACHED_STOPWORDS = {}
 
@@ -175,6 +182,10 @@ class MyTransformer(Transformer):
 LARK_PARSER = Lark(GRAMMAR, parser="lalr")
 
 
+class InvalidNamegenPyError(Exception):
+    pass
+
+
 class InvalidNamegenRulesError(Exception):
     pass
 
@@ -211,34 +222,18 @@ def _init_module():
     GEN_RULE_FUNCS[RULE_SPECIAL_PREVIOUS] = _t
 
 
-# FIXME use class
-
-
-def parse_namegen_rules(namegen_rules, cache=True):
-    global CACHED_PARSED_NAMEGEGEN_RULES
-
-    if cache and CACHED_PARSED_NAMEGEGEN_RULES:
-        return CACHED_PARSED_NAMEGEGEN_RULES
-
+def parse_namegen_rules(namegen_rules):
     default_gen_rules = None
     if namegen_rules:
-        # always the same during the execution so read once and cache
         gen_rules = _do_parse_namegen_rules(namegen_rules)
-
         for prefix in [TITLE_SECTION, FILENAME_SECTION, FOLDER_SECTION]:
             if not gen_rules.get(prefix):
                 if default_gen_rules is None:
                     default_gen_rules = _do_parse_namegen_rules(DEFAULT_NAMEGEN_RULES)
                 gen_rules[prefix] = default_gen_rules[prefix]
-
-        if cache:
-            CACHED_PARSED_NAMEGEGEN_RULES = gen_rules
         return gen_rules
     else:
-        default_gen_rules = _do_parse_namegen_rules(DEFAULT_NAMEGEN_RULES)
-        if cache:
-            CACHED_PARSED_NAMEGEGEN_RULES = default_gen_rules
-        return default_gen_rules
+        return _do_parse_namegen_rules(DEFAULT_NAMEGEN_RULES)
 
 
 def _do_parse_namegen_rules(namegen_rules):
@@ -247,7 +242,6 @@ def _do_parse_namegen_rules(namegen_rules):
         gen_rules = MyTransformer().transform(tree)
     except LarkError as e:
         error_details = str(e)
-        print(f"Error details: {error_details}")
         raise InvalidNamegenRulesError(
             "Invalid namegen rules provided. Details: " + error_details
         ) from e
@@ -349,6 +343,61 @@ def _apply_rules(components: list[Component], rules):
             logger.debug(f"{msg} : {ex}", exc_info=sys.exc_info())
             # abort
             raise NamegenRuleCallError(msg) from ex
+
+
+def legacy_title(
+    series: Series, volumes: list[Volume], parts: list[Part], fc: FC
+) -> str:
+    if len(parts) == 1:
+        part = parts[0]
+        title_base = part.raw_data.title
+        suffix = " [Final]" if fc.final else ""
+        title = f"{title_base}{suffix}"
+    else:
+        if len(volumes) > 1:
+            title_base = series.raw_data.title
+            volume_nums = [str(v.num) for v in volumes]
+            volume_nums_str = ", ".join(volume_nums[:-1]) + " & " + volume_nums[-1]
+            volume_segment = f"Volumes {volume_nums_str}"
+            part_segment = (
+                f"Parts {parts[0].volume.num}.{parts[0].num_in_volume} "
+                f"to {parts[-1].volume.num}.{parts[-1].num_in_volume}"
+            )
+            if fc.final:
+                part_segment += " - Final"
+            colon = "" if title_base[-1] in string.punctuation else ":"
+            title = f"{title_base}{colon} {volume_segment} [{part_segment}]"
+        else:
+            volume = volumes[0]
+            title_base = volume.raw_data.title
+            if fc.complete:
+                part_segment = "Complete"
+            else:
+                part_segment = (
+                    f"Parts {parts[0].num_in_volume} to {parts[-1].num_in_volume}"
+                )
+                if fc.final:
+                    part_segment += " - Final"
+            title = f"{title_base} [{part_segment}]"
+    return title
+
+
+def legacy_filename(
+    series: Series, volumes: list[Volume], parts: list[Part], fc: FC
+) -> str:
+    title = legacy_title(series, volumes, parts, fc)
+    return _legacy_filename_from_title(title)
+
+
+def _legacy_filename_from_title(title):
+    # basic
+    return to_safe_filename(title)
+
+
+def legacy_folder(
+    series: Series, volumes: list[Volume], parts: list[Part], fc: FC
+) -> str:
+    return to_safe_foldername(series.raw_data.title)
 
 
 # GEN_RULES_BEGIN
@@ -829,93 +878,26 @@ def ss_max_len(components: list[Component], max_len_n=30):
 
 
 def legacy_t(components: list[Component]):
-    # assume launched first, not after transformation
     p_component = _find_component_type(ComType.P, components)
     v_component = _find_component_type(ComType.V, components)
     s_component = _find_component_type(ComType.S, components)
     fc_component = _find_component_type(ComType.FC, components)
-
+    fc = fc_component.value
     if p_component:
-        # single part
         part = p_component.value
-        title_base = part.raw_data.title
-
-        suffix = ""
-        is_final = fc_component.value.final
-        if is_final:
-            # TODO i18n
-            suffix = " [Final]"
-
-        title = f"{title_base}{suffix}"
+        title = legacy_title(part.volume.series, [part.volume], [part], fc)
+    elif s_component:
+        vn_component = _find_component_type(ComType.VN, components)
+        pn_component = _find_component_type(ComType.PN, components)
+        title = legacy_title(
+            s_component.value, vn_component.base_value, pn_component.base_value, fc
+        )
     else:
-        if s_component:
-            # multiple volumes
-            series = s_component.value
-
-            title_base = series.raw_data.title
-
-            vn_component = _find_component_type(ComType.VN, components)
-            volumes = vn_component.base_value
-            # ordered already
-            volume_nums = [str(v.num) for v in volumes]
-            volume_nums = ", ".join(volume_nums[:-1]) + " & " + volume_nums[-1]
-            # TODO i18n
-            volume_segment = f"Volumes {volume_nums}"
-
-            pn_component = _find_component_type(ComType.PN, components)
-            parts = pn_component.base_value
-            volume_num0 = parts[0].volume.num
-            part_num0 = parts[0].num_in_volume
-            volume_num1 = parts[-1].volume.num
-            part_num1 = parts[-1].num_in_volume
-
-            # check only last part in the epub
-            suffix = ""
-            is_final = fc_component.value.final
-            if is_final:
-                # TODO i18n
-                suffix = " - Final"
-
-            # TODO i18n
-            part_segment = (
-                f"Parts {volume_num0}.{part_num0} to {volume_num1}.{part_num1}{suffix}"
-            )
-
-            if title_base[-1] in string.punctuation:
-                # like JNC : no double punctuation mark
-                colon = ""
-            else:
-                colon = ":"
-            title = f"{title_base}{colon} {volume_segment} [{part_segment}]"
-
-        else:
-            # single volume
-            volume = v_component.value
-            title_base = volume.raw_data.title
-
-            pn_component = _find_component_type(ComType.PN, components)
-            parts = pn_component.base_value
-
-            part_num0 = parts[0].num_in_volume
-            part_num1 = parts[-1].num_in_volume
-
-            is_complete = fc_component.value.complete
-            is_final = fc_component.value.final
-            if is_complete:
-                # TODO i18n
-                part_segment = "Complete"
-            else:
-                # check the last part in the epub
-                suffix = ""
-                if is_final:
-                    # TODO i18n
-                    suffix = " - Final"
-                part_segment = f"Parts {part_num0} to {part_num1}{suffix}"
-
-            title = f"{title_base} [{part_segment}]"
-
-    str_component = Component(ComType.STR, title)
-    _replace_all(components, str_component)
+        pn_component = _find_component_type(ComType.PN, components)
+        title = legacy_title(
+            v_component.value.series, [v_component.value], pn_component.base_value, fc
+        )
+    _replace_all(components, Component(ComType.STR, title))
 
 
 def legacy_f(components: list[Component]):
@@ -1103,6 +1085,86 @@ def _get_functions_between_comments(filename, start_comment, end_comment):
     ]
 
     return [f.split("(")[0].replace("def ", "").strip() for f in functions]
+
+
+DEFAULT_NAMEGEN_SPECIAL_VALUE = "default"
+
+
+class NamegenMode(Enum):
+    PY = auto()
+    MINI_LANG = auto()
+
+
+def _load_py(namegen_py_path):
+    py_funcs = {}
+    spec = importlib.util.spec_from_file_location("namegen_custom", namegen_py_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    for func_name in ["to_title", "to_filename", "to_folder"]:
+        if hasattr(module, func_name):
+            py_funcs[func_name] = getattr(module, func_name)
+            logger.debug(f"Found '{func_name}' function in namegen file.")
+        else:
+            logger.debug(f"'{func_name}' function not found, will use default.")
+    return py_funcs
+
+
+class NameGenerator:
+    def __init__(self, namegen_option: str | None):
+        self._mode = None
+        self._py_funcs = {}
+        self._parsed_rules = None
+        self._process_option(namegen_option)
+
+    def _process_option(self, namegen_option: str | None):
+        if namegen_option:
+            if namegen_option.endswith(".py"):
+                path = Path(namegen_option)
+                if not path.exists():
+                    raise InvalidNamegenPyError(f"File not found: {namegen_option}")
+                namegen_py_path = path
+                self._mode = NamegenMode.PY
+                logger.debug(f"Using namegen file from option: {namegen_py_path}")
+                self._py_funcs = _load_py(namegen_py_path)
+            elif namegen_option.lower() != DEFAULT_NAMEGEN_SPECIAL_VALUE:
+                self._mode = NamegenMode.MINI_LANG
+                logger.debug("Using namegen rule string from option.")
+                self._parsed_rules = parse_namegen_rules(namegen_option)
+        else:
+            config_namegen_py = config.config_dir() / "namegen.py"
+            if config_namegen_py.exists():
+                namegen_py_path = config_namegen_py
+                self._mode = NamegenMode.PY
+                logger.debug(
+                    f"Using namegen file from config directory: {namegen_py_path}"
+                )
+                self._py_funcs = _load_py(namegen_py_path)
+
+        if not self._mode:
+            # either nothing passed or "default" passed to option
+            logger.debug("Using default rules.")
+            self._mode = NamegenMode.PY
+            self._py_funcs = {}
+
+    def generate(self, series, volumes, parts, fc):
+        if self._mode == NamegenMode.PY:
+            args = (series, volumes, parts, fc)
+
+            title_func = self._py_funcs.get("to_title", legacy_title)
+            title = title_func(*args)
+
+            if "to_filename" in self._py_funcs:
+                filename = self._py_funcs["to_filename"](title, *args)
+            else:
+                # so we don't regenerate the title again
+                filename = _legacy_filename_from_title(title)
+
+            folder_func = self._py_funcs.get("to_folder", legacy_folder)
+            folder = folder_func(*args)
+
+            return title, filename, folder
+        else:
+            return generate_names(series, volumes, parts, fc, self._parsed_rules)
 
 
 _init_module()

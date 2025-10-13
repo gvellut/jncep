@@ -35,7 +35,7 @@ EpubGenerationOptions = namedtuple(
         "is_extract_content",
         "is_not_replace_chars",
         "style_css_path",
-        "namegen_rules",
+        "name_generator",
     ],
 )
 
@@ -258,12 +258,10 @@ def _process_single_epub_content(
         else:
             toc = [f"Part {part.num_in_volume}" for part in parts]
 
-    gen_rules = namegen.parse_namegen_rules(options.namegen_rules)
+    name_generator = options.name_generator
     complete = len(volumes) == 1 and is_volume_complete(volumes[0], parts)
     fc = namegen.FC(is_part_final(parts[-1]), complete)
-    title, filename, folder = namegen.generate_names(
-        series, volumes, parts, fc, gen_rules
-    )
+    title, filename, folder = name_generator.generate(series, volumes, parts, fc)
 
     if options.is_subfolder:
         subfolder = folder

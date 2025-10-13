@@ -246,9 +246,11 @@ By default, the name is chosen to be something like:
 
 `Ascendance_of_a_Bookworm_Part_5_Volume_12_Part_1.epub`
 
-It can be verbose for some J-Novel titles... It is possible to override that using the `namegen` option: `-g` / `--namegen`, config option: `NAMEGEN`
+It can be verbose for some J-Novel titles... It is possible to override that using the `namegen` option: `-g` / `--namegen`, config option: `NAMEGEN`.
 
-The full documentation for that feature is [on another page](namegen.md) (work in progress).
+In addition to a mini-language for renaming, `jncep` now supports using a Python file (`.py`) for more advanced control over EPUB naming. You can create a `namegen.py` file with your own `to_title`, `to_filename`, and `to_folder` functions to customize the output.
+
+For detailed instructions on both the mini-language and the new Python-based system, including how to generate a template file with `jncep config generate-namegen-py`, please see the [full documentation here](namegen.md).
 
 ### Configuration file / Environment variables
 

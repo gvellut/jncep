@@ -2,7 +2,7 @@ import logging
 
 import click
 
-from .. import core, jncalts, jncweb, spec, track, utils
+from .. import core, jncalts, jncweb, namegen, spec, track, utils
 from ..trio_utils import coro
 from ..utils import tryint
 from . import options
@@ -52,6 +52,7 @@ async def generate_epub(
     style_css_path,
     namegen_rules,
 ):
+    name_generator = namegen.NameGenerator(namegen_rules)
     # created by group
     epub_generation_options = core.EpubGenerationOptions(
         output_dirpath,
@@ -61,7 +62,7 @@ async def generate_epub(
         is_extract_content,
         is_not_replace_chars,
         style_css_path,
-        namegen_rules,
+        name_generator,
     )
 
     index = tryint(jnc_url_or_index)
