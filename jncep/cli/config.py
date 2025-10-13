@@ -1,5 +1,5 @@
-import shutil
 from pathlib import Path
+import shutil
 
 import click
 
@@ -9,21 +9,30 @@ from .base import CatchAllExceptionsCommand
 console = utils.getConsole()
 
 NAMEGEN_PY_TEMPLATE = """\
-# See namegen.md for documentation
-from jncep.namegen_utils import *
+# See namegen for documentation
+from jncep.namegen_utils import FC, Part, Series, Volume, legacy_title, legacy_filename, legacy_folder
 
 
-def to_title(series: "Series", volumes: list["Volume"], parts: list["Part"], fc: "FC") -> str:
-    pass
+def to_title(
+    series: Series, volumes: list[Volume], parts: list[Part], fc: FC
+) -> str:
+    # Replace with your logic
+    return legacy_title(series, volumes, parts, fc)
+
+    
+def to_filename(
+    series: Series, volumes: list[Volume], parts: list[Part], fc: FC
+) -> str:
+    # Replace with your logic
+    return legacy_filename(series, volumes, parts, fc)
 
 
-def to_filename(series: "Series", volumes: list["Volume"], parts: list["Part"], fc: "FC") -> str:
-    pass
-
-
-def to_folder(series: "Series", volumes: list["Volume"], parts: list["Part"], fc: "FC") -> str:
-    pass
-"""
+def to_folder(
+    series: Series, volumes: list[Volume], parts: list[Part], fc: FC
+) -> str:
+    # Replace with your logic
+    return legacy_folder(series, volumes, parts, fc)
+"""  # noqa: E501
 
 
 @click.group(name="config", help="Manage configuration")
@@ -209,7 +218,8 @@ def generate_namegen_py(output_path, is_overwrite):
 
     if filepath.exists() and not is_overwrite:
         console.error(
-            f"File already exists: [highlight]{filepath}[/]. Use --overwrite to replace it."
+            f"File already exists: [highlight]{filepath}[/]. Use --overwrite to "
+            "replace it."
         )
         return
 

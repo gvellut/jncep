@@ -1,5 +1,5 @@
-import tempfile
 from pathlib import Path
+import tempfile
 
 from addict import Dict as Addict
 import pytest
@@ -47,14 +47,28 @@ def test_parse_title_namegen_rules_bad_section():
 
 def test_generate_names():
     gen_rules = parse_namegen_rules("t:legacy_t | f:_t")
-    series = Series(Addict({"title": "My Series", "raw_data": {"title": "My Series"}}), "s1")
-    volume = Volume(Addict({"title": "My Volume", "raw_data": {"title": "My Volume"}}), "v1", 1, series=series)
-    part = Part(Addict({"title": "Hello", "raw_data": {"title": "Hello"}}), "p1", 1, volume=volume)
+    series = Series(
+        Addict({"title": "My Series", "raw_data": {"title": "My Series"}}), "s1"
+    )
+    volume = Volume(
+        Addict({"title": "My Volume", "raw_data": {"title": "My Volume"}}),
+        "v1",
+        1,
+        series=series,
+    )
+    part = Part(
+        Addict({"title": "Hello", "raw_data": {"title": "Hello"}}),
+        "p1",
+        1,
+        volume=volume,
+    )
     volume.series = series
     part.volume = volume
     names = generate_names(series, [volume], [part], FC(False, False), gen_rules)
     assert isinstance(names, list), "Expected a list"
-    assert all(isinstance(name, str) for name in names), "Expected all names to be strings"
+    assert all(isinstance(name, str) for name in names), (
+        "Expected all names to be strings"
+    )
 
 
 def test_name_generator_with_py_file_fallback():
@@ -70,12 +84,25 @@ def to_title(series, volumes, parts, fc):
 
         name_generator = NameGenerator(str(namegen_py_path.absolute()))
 
-        series = Series(Addict({"title": "My Series", "raw_data": {"title": "My Series"}}), "s1")
-        volume = Volume(Addict({"title": "My Volume", "num": 1, "raw_data": {"title": "My Volume"}}), "v1", 1, series=series)
-        part = Part(Addict({"title": "My Part", "raw_data": {"title": "My Part"}}), "p1", 1, volume=volume)
+        series = Series(
+            Addict({"title": "My Series", "raw_data": {"title": "My Series"}}), "s1"
+        )
+        volume = Volume(
+            Addict(
+                {"title": "My Volume", "num": 1, "raw_data": {"title": "My Volume"}}
+            ),
+            "v1",
+            1,
+            series=series,
+        )
+        part = Part(
+            Addict({"title": "My Part", "raw_data": {"title": "My Part"}}),
+            "p1",
+            1,
+            volume=volume,
+        )
         volume.series = series
         part.volume = volume
-
 
         title, filename, folder = name_generator.generate(
             series, [volume], [part], FC(False, False)
@@ -85,13 +112,26 @@ def to_title(series, volumes, parts, fc):
         # Check fallback to default legacy_filename, which uses the generated title
         assert filename == "Custom_Title_From_Py"
         # Check fallback to default legacy_folder
-        assert folder == "My_Series"
+        assert folder == "My Series"
+
 
 def test_name_generator_with_mini_language():
     name_generator = NameGenerator("t:p_to_series>s_title>to_string")
-    series = Series(Addict({"title": "My Series", "raw_data": {"title": "My Series"}}), "s1")
-    volume = Volume(Addict({"title": "My Volume", "num": 1, "raw_data": {"title": "My Volume"}}), "v1", 1, series=series)
-    part = Part(Addict({"title": "My Part", "raw_data": {"title": "My Part"}}), "p1", 1, volume=volume)
+    series = Series(
+        Addict({"title": "My Series", "raw_data": {"title": "My Series"}}), "s1"
+    )
+    volume = Volume(
+        Addict({"title": "My Volume", "num": 1, "raw_data": {"title": "My Volume"}}),
+        "v1",
+        1,
+        series=series,
+    )
+    part = Part(
+        Addict({"title": "My Part", "raw_data": {"title": "My Part"}}),
+        "p1",
+        1,
+        volume=volume,
+    )
     volume.series = series
     part.volume = volume
 
@@ -102,4 +142,4 @@ def test_name_generator_with_mini_language():
     assert title == "My Series"
     # Check fallback to default legacy_filename and legacy_folder
     assert filename == "My_Series"
-    assert folder == "My_Series"
+    assert folder == "My Series"

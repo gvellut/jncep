@@ -1,9 +1,8 @@
-import glob
 import os
 import shutil
 
-import pytest
 from click.testing import CliRunner
+import pytest
 
 from jncep.cli import epub
 
@@ -32,6 +31,7 @@ def delete_all_files_in_directory(directory_path):
                 shutil.rmtree(file_path)
         except Exception as e:
             print(f"Failed to delete {file_path}. Reason: {e}")
+
 
 @pytest.mark.skipif(creds_not_available, reason="JNC test credentials not provided")
 def test_simple_fetch_epub():
@@ -66,7 +66,10 @@ def test_simple_fetch_epub():
     assert os.path.exists(output_file)
     assert os.path.getsize(output_file) > 0
 
-@pytest.mark.skipif(nina_creds_not_available, reason="JNC Nina test credentials not provided")
+
+@pytest.mark.skipif(
+    nina_creds_not_available, reason="JNC Nina test credentials not provided"
+)
 def test_simple_fetch_epub_jna():
     url = "https://jnc-nina.eu/read/brunhild-die-drachenschlaechterin-teil-1"
     email = os.getenv("JCNEP_TEST_EMAIL")
@@ -91,7 +94,7 @@ def test_simple_fetch_epub_jna():
     assert result.exit_code == 0
     output_file = os.path.join(
         output_dirpath,
-        "Brunhild_die_Drachenschlaechterin_-_Teil_1.epub",
+        "Brunhild_die_Drachenschlachterin_Teil_1.epub",
     )
     assert os.path.exists(output_file)
     assert os.path.getsize(output_file) > 0
