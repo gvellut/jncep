@@ -27,7 +27,7 @@ You can specify a Python file for name generation in two ways:
 
 The Python file can contain up to three functions:
 - `to_title(series, volumes, parts, fc)`: Returns the EPUB title (a string).
-- `to_filename(series, volumes, parts, fc)`: Returns the EPUB filename without the extension (a string).
+- `to_filename(title, series, volumes, parts, fc)`: Returns the EPUB filename without the `.epub` extension (a string).
 - `to_folder(series, volumes, parts, fc)`: Returns the name of the subfolder for the EPUB (a string).
 
 If any of these functions are not defined in your file, `jncep` will fall back to the default naming logic for that specific part.
@@ -36,12 +36,14 @@ If any of these functions are not defined in your file, `jncep` will fall back t
 
 To get started, you can generate a template `namegen.py` file with the following command:
 ```bash
-jncep config generate-namegen-py
+jncep config namegen-py
 ```
 This will create a `namegen.py` file in your config directory with function stubs. You can also specify an output path:
 ```bash
 jncep config generate-namegen-py --output /path/to/generate/
 ```
+
+In the latter case, you will have to configure the `--namegen` option to point to the path.
 
 ### LLM Blurb for `namegen.py`
 
@@ -57,22 +59,23 @@ The script must start with: `from jncep.namegen_utils import *`
 
 Here are the function signatures and the data structures you will work with:
 
-- `to_title(series: "Series", volumes: list["Volume"], parts: list["Part"], fc: "FC") -> str`
-- `to_filename(series: "Series", volumes: list["Volume"], parts: list["Part"], fc: "FC") -> str`
-- `to_folder(series: "Series", volumes: list["Volume"], parts: list["Part"], fc: "FC") -> str`
+- `to_title(series: Series, volumes: list[Volume], parts: list[Part], fc: FC) -> str`
+- `to_filename(title: str, series: Series, volumes: list[Volume], parts: list[Part], fc: FC) -> str`
+- `to_folder(series: Series, volumes: list[Volume], parts: list[Part], fc: FC) -> str`
 
 The input parameters are:
 - `series`: An object representing the novel series. It has a `raw_data` attribute with a `title` field (e.g., `series.raw_data.title`).
 - `volumes`: A list of volume objects included in the EPUB. Each `volume` has `raw_data` with a `title` and a `num` (the volume number).
 - `parts`: A list of part objects. Each `part` has `raw_data` with a `title` and a `num_in_volume`.
 - `fc`: A named tuple with two boolean flags: `fc.final` (is the last part of a volume) and `fc.complete` (is the entire volume complete).
+- `title`: A previously generated title (either from the to_title or default generated).
 
 Your script should handle three primary scenarios for EPUB generation:
 1.  **Single Part:** `parts` contains one item.
 2.  **Multiple Parts in a Single Volume:** `volumes` contains one item, and `parts` contains multiple items.
 3.  **Multiple Parts across Multiple Volumes:** `volumes` and `parts` both contain multiple items.
 
-You can use helper functions from `jncep.namegen_utils`, such as `legacy_title`, `legacy_filename`, and `legacy_folder`, to replicate the default behavior.
+You can use helper functions from `jncep.namegen_utils`, such as `legacy_title`, `legacy_filename`, and `legacy_folder`, `to_safe_filename`, `to_safe_foldername` to replicate the default behavior.
 
 ---
 
