@@ -182,6 +182,10 @@ class MyTransformer(Transformer):
 LARK_PARSER = Lark(GRAMMAR, parser="lalr")
 
 
+class InvalidNamegenPyError(Exception):
+    pass
+
+
 class InvalidNamegenRulesError(Exception):
     pass
 
@@ -382,6 +386,11 @@ def legacy_filename(
     series: Series, volumes: list[Volume], parts: list[Part], fc: FC
 ) -> str:
     title = legacy_title(series, volumes, parts, fc)
+    return _legacy_filename_from_title(title)
+
+
+def _legacy_filename_from_title(title):
+    # basic
     return to_safe_filename(title)
 
 
@@ -1078,65 +1087,77 @@ def _get_functions_between_comments(filename, start_comment, end_comment):
     return [f.split("(")[0].replace("def ", "").strip() for f in functions]
 
 
+DEFAULT_NAMEGEN_SPECIAL_VALUE = "default"
+
+
+class NamegenMode(Enum):
+    PY = auto()
+    MINI_LANG = auto()
+
+
+def _load_py(namegen_py_path):
+    py_funcs = {}
+    spec = importlib.util.spec_from_file_location("namegen_custom", namegen_py_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    for func_name in ["to_title", "to_filename", "to_folder"]:
+        if hasattr(module, func_name):
+            py_funcs[func_name] = getattr(module, func_name)
+            logger.debug(f"Found '{func_name}' function in namegen file.")
+        else:
+            logger.debug(f"'{func_name}' function not found, will use default.")
+    return py_funcs
+
+
 class NameGenerator:
     def __init__(self, namegen_option: str | None):
-        self._mode = "mini_language"
+        self._mode = None
         self._py_funcs = {}
         self._parsed_rules = None
         self._process_option(namegen_option)
 
     def _process_option(self, namegen_option: str | None):
-        from .cli.options import click
-
-        namegen_py_path = None
         if namegen_option:
             if namegen_option.endswith(".py"):
                 path = Path(namegen_option)
-                if not path.is_absolute():
-                    raise click.UsageError("--namegen path must be absolute.")
                 if not path.exists():
-                    raise click.UsageError(f"File not found: {namegen_option}")
+                    raise InvalidNamegenPyError(f"File not found: {namegen_option}")
                 namegen_py_path = path
+                self._mode = NamegenMode.PY
                 logger.debug(f"Using namegen file from option: {namegen_py_path}")
-            else:
+                self._py_funcs = _load_py(namegen_py_path)
+            elif namegen_option.lower() != DEFAULT_NAMEGEN_SPECIAL_VALUE:
+                self._mode = NamegenMode.MINI_LANG
                 logger.debug("Using namegen rule string from option.")
                 self._parsed_rules = parse_namegen_rules(namegen_option)
         else:
             config_namegen_py = config.config_dir() / "namegen.py"
             if config_namegen_py.exists():
                 namegen_py_path = config_namegen_py
+                self._mode = NamegenMode.PY
                 logger.debug(
                     f"Using namegen file from config directory: {namegen_py_path}"
                 )
+                self._py_funcs = _load_py(namegen_py_path)
 
-        if namegen_py_path:
-            self._mode = "py_file"
-            spec = importlib.util.spec_from_file_location(
-                "namegen_custom", namegen_py_path
-            )
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            for func_name in ["to_title", "to_filename", "to_folder"]:
-                if hasattr(module, func_name):
-                    self._py_funcs[func_name] = getattr(module, func_name)
-                    logger.debug(f"Found '{func_name}' function in namegen file.")
-                else:
-                    logger.debug(f"'{func_name}' function not found, will use default.")
-        elif self._parsed_rules is None:
-            logger.debug("Using default namegen rules.")
-            self._parsed_rules = parse_namegen_rules(DEFAULT_NAMEGEN_RULES)
+        if not self._mode:
+            # either nothing passed or "default" passed to option
+            logger.debug("Using default rules.")
+            self._mode = NamegenMode.PY
+            self._py_funcs = {}
 
     def generate(self, series, volumes, parts, fc):
-        if self._mode == "py_file":
+        if self._mode == NamegenMode.PY:
             args = (series, volumes, parts, fc)
 
             title_func = self._py_funcs.get("to_title", legacy_title)
             title = title_func(*args)
 
             if "to_filename" in self._py_funcs:
-                filename = self._py_funcs["to_filename"](*args)
+                filename = self._py_funcs["to_filename"](title, *args)
             else:
-                filename = to_safe_filename(title)
+                # so we don't regenerate the title again
+                filename = _legacy_filename_from_title(title)
 
             folder_func = self._py_funcs.get("to_folder", legacy_folder)
             folder = folder_func(*args)

@@ -55,6 +55,8 @@ def test_simple_fetch_epub():
             pwd,
             "--output",
             output_dirpath,
+            "--namegen",
+            "default",
             url,
         ],
     )
@@ -88,6 +90,8 @@ def test_simple_fetch_epub_jna():
             pwd,
             "--output",
             output_dirpath,
+            "--namegen",
+            "default",
             url,
         ],
     )

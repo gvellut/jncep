@@ -8,32 +8,6 @@ from .base import CatchAllExceptionsCommand
 
 console = utils.getConsole()
 
-NAMEGEN_PY_TEMPLATE = """\
-# See namegen for documentation
-from jncep.namegen_utils import FC, Part, Series, Volume, legacy_title, legacy_filename, legacy_folder
-
-
-def to_title(
-    series: Series, volumes: list[Volume], parts: list[Part], fc: FC
-) -> str:
-    # Replace with your logic
-    return legacy_title(series, volumes, parts, fc)
-
-    
-def to_filename(
-    series: Series, volumes: list[Volume], parts: list[Part], fc: FC
-) -> str:
-    # Replace with your logic
-    return legacy_filename(series, volumes, parts, fc)
-
-
-def to_folder(
-    series: Series, volumes: list[Volume], parts: list[Part], fc: FC
-) -> str:
-    # Replace with your logic
-    return legacy_folder(series, volumes, parts, fc)
-"""  # noqa: E501
-
 
 @click.group(name="config", help="Manage configuration")
 def config_manage():
@@ -182,8 +156,44 @@ def init_config():
     )
 
 
+NAMEGEN_PY_TEMPLATE = """\
+# See namegen for documentation
+from jncep.namegen_utils import (
+    FC,
+    Part,
+    Series,
+    Volume,
+    legacy_filename,
+    legacy_folder,
+    legacy_title,
+    to_safe_filename,
+    to_safe_foldername,
+)
+
+
+def to_title(series: Series, volumes: list[Volume], parts: list[Part], fc: FC) -> str:
+    # Replace with your logic
+    return legacy_title(series, volumes, parts, fc)
+
+
+def to_filename(
+    title: str, series: Series, volumes: list[Volume], parts: list[Part], fc: FC
+) -> str:
+    # Replace with your logic
+    return legacy_filename(series, volumes, parts, fc)
+
+
+def to_folder(series: Series, volumes: list[Volume], parts: list[Part], fc: FC) -> str:
+    # Replace with your logic
+    return legacy_folder(series, volumes, parts, fc)
+
+"""  # noqa: E501
+
+DEFAULT_NAMEGEN_PY_FILENAME = "namegen.py"
+
+
 @config_manage.command(
-    name="generate-namegen-py",
+    name="namegen-py",
     help="Generate a template namegen.py file for custom EPUB naming.",
     cls=CatchAllExceptionsCommand,
 )
@@ -205,7 +215,7 @@ def generate_namegen_py(output_path, is_overwrite):
     if output_path:
         path = Path(output_path)
         if path.is_dir():
-            filepath = path / "namegen.py"
+            filepath = path / DEFAULT_NAMEGEN_PY_FILENAME
         else:
             if not path.parent.exists():
                 console.error(f"Directory not found: {path.parent}")
@@ -214,7 +224,7 @@ def generate_namegen_py(output_path, is_overwrite):
     else:
         config_dir = config.config_dir()
         config_dir.mkdir(parents=True, exist_ok=True)
-        filepath = config_dir / "namegen.py"
+        filepath = config_dir / DEFAULT_NAMEGEN_PY_FILENAME
 
     if filepath.exists() and not is_overwrite:
         console.error(
