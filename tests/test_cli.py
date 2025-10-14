@@ -15,16 +15,12 @@ nina_creds_not_available = not (
 
 
 def delete_all_files_in_directory(directory_path):
-    # Check if the directory exists
     if not os.path.exists(directory_path):
         os.makedirs(directory_path)
         return
-
-    # Iterate over all the files and subdirectories in the given directory
     for filename in os.listdir(directory_path):
         file_path = os.path.join(directory_path, filename)
         try:
-            # Check if it is a file or directory and remove it accordingly
             if os.path.isfile(file_path) or os.path.islink(file_path):
                 os.unlink(file_path)
             elif os.path.isdir(file_path):
