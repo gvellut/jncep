@@ -686,12 +686,13 @@ def is_part_available(now, is_member, part):
     if part.series.raw_data.catchup:
         return True
 
-    exp_date = expiration_date(part)
-    if not exp_date:
-        # if no publishing date (thus no expiration) : assume available
-        # TODO think about it
-        return True
+    # Use the expiration field directly from the API
+    exp_date_s = part.raw_data.get("expiration")
+    if not exp_date_s:
+        # if no expiration date : assume expired (not available)
+        return False
 
+    exp_date = dateutil.parser.parse(exp_date_s)
     return exp_date > now
 
 
