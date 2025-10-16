@@ -686,20 +686,20 @@ def is_part_available(now, is_member, part):
     if part.series.raw_data.catchup:
         return True
 
-    exp_date = expiration_date(part)
-    if not exp_date:
+    exp_dt = expiration_datetime(part)
+    if not exp_dt:
         # if no publishing date (thus no expiration) : assume available
         # TODO think about it
         return True
 
-    return exp_date > now
+    return exp_dt > now
 
 
 def is_part_in_future(now, part):
     return dateutil.parser.parse(part.raw_data.launch) > now
 
 
-def expiration_date(part: Part):
+def expiration_datetime(part: Part):
     # in the v2 API : the expiration field is not always present:
     # if expired: null
     # if not expired: field present but identical to the publishing date of volume ie
@@ -711,15 +711,21 @@ def expiration_date(part: Part):
         return None
 
     pub_date = dateutil.parser.parse(pub_date_s)
-    return _compute_expiration_date(pub_date)
+    return _compute_expiration_datetime(pub_date)
 
 
-def _compute_expiration_date(pub_date):
+def _compute_expiration_datetime(pub_date):
+    # code lifted from JNC website series page:
+    # in Debugger : /_next/static/chunks/pages/series/%5Bslug%5D-539be0190514573d.js
+    # let n=e.getUTCDate(),r=e.getUTCMonth(),l=e.getUTCFullYear(),
+    # a=new Date(l,n>=9?r+1:r,15,10),s=a.getDay();return 0===s&&a.setDate(16),
+    # 6===s&&a.setDate(17),a
+    # changed function name from _date to _datetime since hours = 10 so time important
     day = pub_date.day
     month = pub_date.month
     year = pub_date.year
-    # TODO should be 10h according to the JS code
-    exp_date = datetime(year, month, 15, hour=0, tzinfo=timezone.utc)
+
+    exp_date = datetime(year, month, 15, hour=10, tzinfo=timezone.utc)
 
     if day >= 9:
         exp_date += relativedelta(months=1)
