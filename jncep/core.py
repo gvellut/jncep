@@ -17,7 +17,7 @@ from dateutil.relativedelta import relativedelta
 from exceptiongroup import BaseExceptionGroup
 import trio
 
-from . import epub, jncalts, jncapi, jncweb, namegen, spec, utils
+from . import epub, jncalts, jncapi, jncweb, namegen_utils, spec, utils
 from .model import Image, Language, Part, Series, Volume
 from .trio_utils import bag
 from .utils import is_debug, to_safe_filename
@@ -260,7 +260,7 @@ def _process_single_epub_content(
 
     name_generator = options.name_generator
     complete = len(volumes) == 1 and is_volume_complete(volumes[0], parts)
-    fc = namegen.FC(is_part_final(parts[-1]), complete)
+    fc = namegen_utils.FC(is_part_final(parts[-1]), complete)
     title, filename, folder = name_generator.generate(series, volumes, parts, fc)
 
     if options.is_subfolder:

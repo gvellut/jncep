@@ -5,13 +5,13 @@ from addict import Dict as Addict
 import pytest
 
 from jncep.model import Part, Series, Volume
-from jncep.namegen import (
-    FC,
+from jncep.namegen import NameGenerator
+from jncep.namegen_minilang import (
     InvalidNamegenRulesError,
-    NameGenerator,
     generate_names,
     parse_namegen_rules,
 )
+from jncep.namegen_utils import FC
 
 
 def test_parse_title_namegen_rules_single_t():

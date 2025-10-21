@@ -16,7 +16,7 @@ The command above will install the `jncep` Python library and its dependencies. 
 
 ## Alternative with uv
 
-If you don't have Python, it is possible to use [uv](https://docs.astral.sh/uv/) ([installation instructions](https://docs.astral.sh/uv/getting-started/installation/) ; you can also download a simple binary from Github: https://github.com/astral-sh/uv/releases).
+If you don't have Python, it is possible to use [uv](https://docs.astral.sh/uv/) ([installation instructions](https://docs.astral.sh/uv/getting-started/installation/)).
 
 Once `uv` is installed, run the commands like documented on this page by prefixing them with [`uvx`](https://docs.astral.sh/uv/guides/tools/):
 
@@ -240,17 +240,22 @@ To solve this issue (without having to mess with fonts), by default, this specif
 
 The default CSS used by the tool and embedded in the generated EPUB files can be found [in the repository](https://raw.githubusercontent.com/gvellut/jncep/master/jncep/res/style.css). It is possible to download it and customize it. Then you can tell the `epub` command to use your own version by passing the `-t/--css` option with the path to your custom CSS as value.
 
-### Naming of the output EPUB
+### Title & naming of the output EPUB
 
-By default, the name is chosen to be something like:
+Depending if there is only a single part or multiple parts in a single volume or multiple volumes, the title will come directly from the J-Novel Club API, or possibly with *Parts ...* or *Volumes ...* appended by `jncep`. Currently, for JNC Nina, there is no translation for those texts added (but it is planned). For example: 
 
-`Ascendance_of_a_Bookworm_Part_5_Volume_12_Part_1.epub`
+`Long Story Short I'm Living in the Mountains Volume 1 Part 1`
 
-It can be verbose for some J-Novel titles... It is possible to override that using the `namegen` option: `-g` / `--namegen`, config option: `NAMEGEN`.
+ By default, the EPUB filename is derived from the title in a simple way:
 
-In addition to a mini-language for renaming, `jncep` now supports using a Python file (`.py`) for more advanced control over EPUB naming. You can create a `namegen.py` file with your own `to_title`, `to_filename`, and `to_folder` functions to customize the output.
+`Long_Story_Short_I_m_Living_in_the_Mountains_Volume_1_Part_1.epub`
 
-For detailed instructions on both the mini-language and the new Python-based system, including how to generate a template file with `jncep config generate-namegen-py`, please see the [full documentation here](namegen.md).
+The default generated title and EPUB filename can be verbose for some J-Novel titles... It is possible to override that using the `namegen` option: `-g` / `--namegen`, config option: `NAMEGEN`. There are 2 possibilities for overriding the defaults:
+
+- a mini-language with expressions that can be composed to determine a title, EPUB filename or folder name. It might be a bit complicated though... The full expression string needs to be passed to the `--namegen` option.
+- there is also support for using a Python file (`.py`). That option is probably easier. You can create a `namegen.py` file with your own `to_title`, `to_filename`, and `to_folder` functions to customize the output. To use that, the path to the `.py` file can be passed to the `--namegen` option.
+
+For detailed instructions on both the mini-language and the new Python-based system, please see the [full documentation here](namegen.md).
 
 ### Configuration file / Environment variables
 

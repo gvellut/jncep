@@ -3,7 +3,7 @@ import shutil
 
 import click
 
-from .. import config, track, utils
+from .. import config, namegen, track, utils
 from .base import CatchAllExceptionsCommand
 
 console = utils.getConsole()
@@ -39,6 +39,10 @@ def config_list():
                 console.info(f"Found config file: [highlight]{f_.name}[/]")
                 _config_file_summary(f_)
                 continue
+            if f_.name == namegen.NAMEGEN_FILE_NAME:
+                console.info(f"Found namegen file: [highlight]{f_.name}[/]")
+                continue
+
         # ignore everything else
 
 
@@ -157,35 +161,24 @@ def init_config():
 
 
 NAMEGEN_PY_TEMPLATE = """\
-# See namegen for documentation
-from jncep.namegen_utils import (
-    FC,
-    Part,
-    Series,
-    Volume,
-    legacy_filename,
-    legacy_folder,
-    legacy_title,
-    to_safe_filename,
-    to_safe_foldername,
-)
+from jncep import namegen_utils as ng
 
 
-def to_title(series: Series, volumes: list[Volume], parts: list[Part], fc: FC) -> str:
+def to_title(series: ng.Series, volumes: list[ng.Volume], parts: list[ng.Part], fc: ng.FC) -> str:
     # Replace with your logic
-    return legacy_title(series, volumes, parts, fc)
+    return ng.default_title(series, volumes, parts, fc)
 
 
 def to_filename(
-    title: str, series: Series, volumes: list[Volume], parts: list[Part], fc: FC
+    title: str, series: ng.Series, volumes: list[ng.Volume], parts: list[ng.Part], fc: ng.FC
 ) -> str:
     # Replace with your logic
-    return legacy_filename(series, volumes, parts, fc)
+    return ng.default_filename(series, volumes, parts, fc)
 
 
-def to_folder(series: Series, volumes: list[Volume], parts: list[Part], fc: FC) -> str:
+def to_folder(series: ng.Series, volumes: list[ng.Volume], parts: list[ng.Part], fc: ng.FC) -> str:
     # Replace with your logic
-    return legacy_folder(series, volumes, parts, fc)
+    return ng.default_folder(series, volumes, parts, fc)
 
 """  # noqa: E501
 
@@ -218,7 +211,7 @@ def generate_namegen_py(output_path, is_overwrite):
             filepath = path / DEFAULT_NAMEGEN_PY_FILENAME
         else:
             if not path.parent.exists():
-                console.error(f"Directory not found: {path.parent}")
+                raise Exception(f"Directory not found: {path.parent}")
                 return
             filepath = path
     else:
@@ -227,8 +220,8 @@ def generate_namegen_py(output_path, is_overwrite):
         filepath = config_dir / DEFAULT_NAMEGEN_PY_FILENAME
 
     if filepath.exists() and not is_overwrite:
-        console.error(
-            f"File already exists: [highlight]{filepath}[/]. Use --overwrite to "
+        raise Exception(
+            f"File already exists: '[highlight]{filepath}[/]'. Use --overwrite to "
             "replace it."
         )
         return
@@ -242,9 +235,10 @@ def generate_namegen_py(output_path, is_overwrite):
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(NAMEGEN_PY_TEMPLATE)
 
-    console.info(f"Successfully generated [highlight]{filepath}[/]", style="success")
+    console.info(f"Successfully generated '[highlight]{filepath}[/]'", style="success")
 
 
+# FIXME remove ? stopped being useful in 2023
 @config_manage.command(
     name="migrate",
     help=f"Migrate to standard configuration folder [{config.APPDATA_CONFIG_DIR}]",
@@ -271,15 +265,16 @@ def config_migrate():
 
     migrate_config_dir.mkdir(parents=True)
 
-    from_track_filepath = current_config_dir / track.TRACK_FILE_NAME
-    if from_track_filepath.exists():
-        to_track_filepath = migrate_config_dir / track.TRACK_FILE_NAME
-        shutil.copy2(from_track_filepath, to_track_filepath)
-
-    from_config_filepath = current_config_dir / config.CONFIG_FILE_NAME
-    if from_config_filepath.exists():
-        to_config_filepath = migrate_config_dir / config.CONFIG_FILE_NAME
-        shutil.copy2(from_config_filepath, to_config_filepath)
+    files = [
+        track.TRACK_FILE_NAME,
+        config.CONFIG_FILE_NAME,
+        namegen.NAMEGEN_FILE_NAME,
+    ]
+    for f_ in files:
+        from_filepath = current_config_dir / f_
+        if from_filepath.exists():
+            to_filepath = migrate_config_dir / f_
+            shutil.copy2(from_filepath, to_filepath)
 
     console.info(
         "[success]"
