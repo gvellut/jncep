@@ -1,6 +1,5 @@
 import functools
 import os
-import pathlib
 
 import click
 import click_option_group as cog

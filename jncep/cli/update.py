@@ -4,12 +4,11 @@ import logging
 import click
 import trio
 
-from .. import core, jncalts, jncapi, spec, track, update, utils
+from .. import core, jncalts, track, update, utils
 from ..config import ENVVAR_PREFIX
-from ..trio_utils import bag, coro
+from ..trio_utils import coro
 from . import options
 from .base import CatchAllExceptionsCommand
-from .epub import generate_epubs
 from .track import sync_series
 
 logger = logging.getLogger(__name__)
