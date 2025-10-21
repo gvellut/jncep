@@ -45,13 +45,6 @@ console = utils.getConsole()
     ),
 )
 @click.option(
-    "-z",
-    "--catchup",
-    "is_catchup",
-    is_flag=True,
-    help="Flag to obtain all the catchup series (all volumes, all series)",
-)
-@click.option(
     "-j",
     "--jnc-managed",
     "is_jnc_managed",
@@ -128,7 +121,6 @@ async def update_tracked(
     is_whole_volume_only,
     is_use_events,
     is_jnc_managed,
-    is_catchup,
 ):
     epub_generation_options = core.EpubGenerationOptions(
         output_dirpath,
@@ -140,11 +132,6 @@ async def update_tracked(
         style_css_path,
         namegen_rules,
     )
-
-    if is_catchup:
-        await _process_catchup(credentials, epub_generation_options)
-        # abort directly
-        return
 
     update_options = update.UpdateOptions(
         is_sync,
@@ -306,47 +293,3 @@ async def _process_managed(
 
     # after that, let update run normally
     console.info("[important]update[/]")
-
-
-async def _process_catchup(credentials, epub_generation_options):
-    origins = credentials.origins_with_credentials()
-    for origin in origins:
-        alt_config = jncalts.get_alt_config_for_origin(origin)
-
-        async with core.JNCEPSession(alt_config, credentials) as session:
-            catchup_series = []
-            async for raw_series in jncapi.paginate(
-                session.api.fetch_all_series, "series"
-            ):
-                if raw_series.get("catchup"):
-                    if not core.is_novel(raw_series):
-                        continue
-                    catchup_series.append(raw_series)
-
-            if not catchup_series:
-                console.warning(f"No catchup series for {origin.DISPLAY_NAME}")
-                continue
-
-            tasks = []
-            for series in catchup_series:
-                tasks.append(
-                    partial(
-                        _generate_catchup_epubs,
-                        session,
-                        series,
-                        epub_generation_options,
-                    )
-                )
-            await bag(tasks)
-
-
-async def _generate_catchup_epubs(session, series, epub_generation_options):
-    series_id = series.id
-    series = await core.fetch_meta(session, series_id)
-
-    title = series.raw_data.title
-    console.info(f"The catchup series '[highlight]{title}[/]' will be downloaded")
-    full_series_part_spec = spec.IdentifierSpec(spec.SERIES)
-    await generate_epubs(
-        session, series, full_series_part_spec, epub_generation_options
-    )

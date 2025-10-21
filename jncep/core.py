@@ -528,8 +528,7 @@ def latest_part_from_non_available_volume(
 
 
 def is_volume_available(session, volume):
-    # all parts available
-    # TODO it might be temporary because of catchups : for now include it anyway
+    # check if all parts currently available
     parts_available = (
         is_part_available(session.now, is_member(session), p) for p in volume.parts
     )
@@ -602,7 +601,7 @@ async def resolve_series(session: JNCEPSession, jnc_resource):
         return series_raw_data.id
 
 
-async def fetch_meta(session, series_id_or_slug):
+async def fetch_meta(session: JNCEPSession, series_id_or_slug):
     series_agg = await session.api.fetch_data("series", series_id_or_slug, "aggregate")
     series_raw_data = series_agg.series
     series_id = series_raw_data.id
@@ -682,9 +681,6 @@ def is_part_available(now, is_member, part):
     # only previews are relevant for non members, if not owned
     if not is_member and not part.raw_data.preview:
         return False
-
-    if part.series.raw_data.catchup:
-        return True
 
     exp_dt = expiration_datetime(part)
     if not exp_dt:
