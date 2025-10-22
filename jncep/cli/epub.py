@@ -107,9 +107,13 @@ async def generate_epubs(session, series, part_spec_analyzed, epub_generation_op
 
     has_unavailable_parts = False
 
+    # TODO do not use filter before trying to download : try to download and see if
+    # rejected : print warning or error depending on command and if there can be no
+    # EPUB file generated (no download)
+    # may need to still filter for parts in future
     def part_filter(part):
         if part_spec_analyzed.has_part(part):
-            if core.is_part_available(session.now, core.is_member(session), part):
+            if core.is_part_available(session.now, session.member_status, part):
                 return True
             else:
                 nonlocal has_unavailable_parts

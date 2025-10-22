@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import namedtuple
 from contextvars import ContextVar
 from datetime import datetime, timezone
+from enum import Enum, auto
 from functools import partial
 from html.parser import HTMLParser
 import logging
@@ -11,6 +12,7 @@ import platform
 import re
 import sys
 import time
+from typing import NamedTuple
 
 import dateutil.parser
 from dateutil.relativedelta import relativedelta
@@ -49,6 +51,66 @@ EventFeed = namedtuple(
 )
 
 
+class MemberLevel(Enum):
+    USER = auto()  # for accounts with no subscription
+    MEMBER = auto()
+    PREMIUM_MEMBER = auto()
+
+    @staticmethod
+    def from_str(level_str: str) -> MemberLevel:
+        try:
+            return MemberLevel[level_str.upper()]
+        except KeyError:
+            console.warning(f"Unknown level : {level_str}")
+            # use that as default
+            return MemberLevel.USER
+
+
+class SubscriptionStatus(Enum):
+    ACTIVE = auto()
+    TRIALING = auto()
+    UNKNOWN = auto()  # for non members (just an account: Always with level = USER ?)
+
+    @staticmethod
+    def from_str(status_str: str) -> SubscriptionStatus:
+        try:
+            return SubscriptionStatus[status_str.upper()]
+        except KeyError:
+            console.warning(f"Unknown subscription status : {status_str}")
+            # use that as default
+            return SubscriptionStatus.UNKNOWN
+
+
+class MemberStatus(NamedTuple):
+    origin: jncalts.AltOrigin
+    name: str
+    # level and status are always filled in /me even for non members
+    level: MemberLevel
+    status: SubscriptionStatus
+    premium: bool  # should have no effect for jncep
+    club: bool  # prepubs
+    reader: bool  # reader's list
+
+    @property
+    def is_member(self):
+        return (
+            self.level != MemberLevel.USER and self.status != SubscriptionStatus.UNKNOWN
+        )
+
+    @property
+    def is_prepub(self):
+        # TODO not sure for nina if second part is necessary (not a subscriber so
+        # cannot really check if the details of subscription is returned for Nina)
+        return self.club or (
+            self.origin == jncalts.AltOrigin.JNC_NINA and self.is_member
+        )
+
+    @property
+    def is_readers_list(self):
+        # not available for Nina
+        return self.reader
+
+
 class FilePathTooLongError(Exception):
     pass
 
@@ -69,7 +131,9 @@ class JNCEPSession:
         self.email, self.password = credentials.get_credentials(config.ORIGIN)
 
         self.now = datetime.now(tz=timezone.utc)
+        # TODO only the member level is sufficient
         self.me = None
+        self.member_status = None
 
     async def __aenter__(self) -> JNCEPSession:
         # to handle nested sessions ie call to a cli commmand from another cli command
@@ -120,6 +184,7 @@ class JNCEPSession:
 
         # to be able to check subscription status
         self.me = await self.api.me()
+        self.member_status = member_status(self)
 
         emoji = ""
         if console.is_advanced():
@@ -136,6 +201,7 @@ class JNCEPSession:
             try:
                 console.info("Logout...")
                 self.me = None
+                self.member_status = None
                 await self.api.logout()
             except (BaseExceptionGroup, Exception) as ex:
                 logger.debug(f"Error logout: {ex}", exc_info=sys.exc_info())
@@ -530,7 +596,7 @@ def latest_part_from_non_available_volume(
 def is_volume_available(session, volume):
     # check if all parts currently available
     parts_available = (
-        is_part_available(session.now, is_member(session), p) for p in volume.parts
+        is_part_available(session.now, session.member_status, p) for p in volume.parts
     )
     return all(parts_available)
 
@@ -666,7 +732,7 @@ async def fetch_content(session, parts):
     return parts_content
 
 
-def is_part_available(now, is_member, part):
+def is_part_available(now, member_status: MemberStatus, part: Part):
     # priority: do not take it into account
     if is_part_in_future(now, part):
         return False
@@ -678,10 +744,18 @@ def is_part_available(now, is_member, part):
     if part.volume.raw_data.owned:
         return True
 
-    # only previews are relevant for non members, if not owned
-    if not is_member and not part.raw_data.preview:
+    # only previews and owned are relevant for non members
+    if not member_status.is_member:
         return False
 
+    if member_status.is_readers_list and part.volume.raw_data.readerStreamingEnabled:
+        return True
+        # user may be both reader's list AND prepub so keep checking after
+
+    if not member_status.is_prepub:
+        return False
+
+    # a member with access to prepubs : check expiration date
     exp_dt = expiration_datetime(part)
     if not exp_dt:
         # if no publishing date (thus no expiration) : assume available
@@ -862,7 +936,7 @@ async def fetch_cover_image_from_parts(session, parts):
     parts = [
         part
         for part in parts
-        if is_part_available(session.now, is_member(session), part)
+        if is_part_available(session.now, session.member_status, part)
     ]
     if not parts:
         return None
@@ -1151,11 +1225,32 @@ def guess_language(origin, series: Series):
     return Language.EN
 
 
-def is_member(session):
-    # TODO non paying is "USER" ; normal member is "MEMBER", what about premium?
-    # Nina doesn't have premium level membership
-    # TODO other parameters ?
-    return session.me.level != "USER" and (
-        session.me.subscriptionStatus == "ACTIVE"
-        or session.me.subscriptionStatus == "TRIALING"
+def member_status(session: JNCEPSession):
+    origin = session.origin
+
+    # non paying is USER ; normal member is MEMBER, premium is PREMIUM_MEMBER
+    # subscriptionStatus can be ACTIVE or TRIALING or UNKNOWN (for simple USER only?)
+    # the me path is not accessible if not logged in : not supported by JNCEP anyway
+    # JNC Nina doesn't have premium level membership nor reader list
+    # TODO not sure if subscriptionStatus is always null for Nina or just if status is
+    # UNKNOWN (in JNC : subscriptionStatus is null if UNKNOWN)
+    level_str = session.me.level
+    level = MemberLevel.from_str(level_str)
+    status_str = session.me.subscriptionStatus
+    status = SubscriptionStatus.from_str(status_str)
+
+    name = None
+    premium = club = reader = False
+    feats = session.me.subscriptionFeatures
+    if feats:
+        name = feats.name
+        premium = bool(feats.premium)
+        club = bool(feats.clubStreamingAccess)
+        reader = bool(feats.readerStreamingAccess)
+
+    logger.debug(
+        f"{origin=} {level_str=} {level=} {status=} {status_str=} {name=} {premium=} "
+        f"{club=} {reader=}"
     )
+
+    return MemberStatus(origin, name, level, status, premium, club, reader)
