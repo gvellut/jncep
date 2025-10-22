@@ -4,7 +4,7 @@ import logging
 import click
 import trio
 
-from .. import core, jncalts, track, update, utils
+from .. import core, jncalts, namegen, track, update, utils
 from ..config import ENVVAR_PREFIX
 from ..trio_utils import coro
 from . import options
@@ -121,6 +121,7 @@ async def update_tracked(
     is_use_events,
     is_jnc_managed,
 ):
+    name_generator = namegen.NameGenerator(namegen_rules)
     epub_generation_options = core.EpubGenerationOptions(
         output_dirpath,
         is_subfolder,
@@ -129,7 +130,7 @@ async def update_tracked(
         is_extract_content,
         is_not_replace_chars,
         style_css_path,
-        namegen_rules,
+        name_generator,
     )
 
     update_options = update.UpdateOptions(
