@@ -242,18 +242,20 @@ The default CSS used by the tool and embedded in the generated EPUB files can be
 
 ### Title & naming of the output EPUB
 
-Depending if there is only a single part or multiple parts in a single volume or multiple volumes, the title will come directly from the J-Novel Club API, or possibly with *Parts ...* or *Volumes ...* appended by `jncep`. Currently, for JNC Nina, there is no translation for those texts added (but it is planned). For example: 
+Depending if there is only a single part or multiple parts in a single volume or multiple volumes, the title will come directly from the J-Novel Club API, or possibly with *Parts ...* or *Volumes ...* appended by `jncep`. For example: 
 
 `Long Story Short I'm Living in the Mountains Volume 1 Part 1`
 
- By default, the EPUB filename is derived from the title in a simple way:
+By default, the EPUB filename is derived from the title in a simple way:
 
 `Long_Story_Short_I_m_Living_in_the_Mountains_Volume_1_Part_1.epub`
 
+**Note:** Currently, for JNC Nina, there is no translation for those added texts (but it is planned).
+
 The default generated title and EPUB filename can be verbose for some J-Novel titles... It is possible to override that using the `namegen` option: `-g` / `--namegen`, config option: `NAMEGEN`. There are 2 possibilities for overriding the defaults:
 
-- a mini-language with expressions that can be composed to determine a title, EPUB filename or folder name. It might be a bit complicated though... The full expression string needs to be passed to the `--namegen` option.
-- there is also support for using a Python file (`.py`). That option is probably easier. You can create a `namegen.py` file with your own `to_title`, `to_filename`, and `to_folder` functions to customize the output. To use that, the path to the `.py` file can be passed to the `--namegen` option.
+- a mini-language with expressions that can be composed to determine a title, EPUB filename or folder name. The full expression string needs to be passed to the `--namegen` option. This option is deprecated: It is better to use the second option.
+- there is also support for using a Python file (`.py`). You can create a `namegen.py` file with your own `to_title`, `to_filename`, and `to_folder` functions to customize the output. To use that, the path to the `.py` file can be passed to the `--namegen` option.
 
 For detailed instructions on both the mini-language and the new Python-based system, please see the [full documentation here](namegen.md).
 
@@ -587,6 +589,4 @@ The source code is formatted and linted using [ruff](https://docs.astral.sh/ruff
 
 # TODO (maybe)
 
-- self-contained executable for macOS and Windows with PyInstaller
-- simple GUI
 - automated testing (tox) with all supported Python versions
