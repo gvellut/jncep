@@ -89,7 +89,7 @@ class MemberStatus(NamedTuple):
     status: SubscriptionStatus
     premium: bool  # should have no effect for jncep
     club: bool  # prepubs
-    reader: bool  # reader's list
+    reader: bool  # reader's library
 
     @property
     def is_member(self):
@@ -106,7 +106,7 @@ class MemberStatus(NamedTuple):
         )
 
     @property
-    def is_readers_list(self):
+    def is_readers_library(self):
         # not available for Nina
         return self.reader
 
@@ -748,9 +748,9 @@ def is_part_available(now, member_status: MemberStatus, part: Part):
     if not member_status.is_member:
         return False
 
-    if member_status.is_readers_list and part.volume.raw_data.readerStreamingEnabled:
+    if member_status.is_readers_library and part.volume.raw_data.readerStreamingEnabled:
         return True
-        # user may be both reader's list AND prepub so keep checking after
+        # user may be both reader's library AND prepub so keep checking after
 
     if not member_status.is_prepub:
         return False
