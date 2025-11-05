@@ -11,7 +11,7 @@ if [ "$local_master" != "$remote_master" ]; then
   exit 1
 fi
 
-version=$(uv version --short)
+version=$(sed -n 's/^__version__ *= *"\([^"]*\)".*/\1/p' jncep/__init__.py)
 vtag="v$version"
 nd=$(date '+%Y-%m-%dT%H-%M-%S')
 
