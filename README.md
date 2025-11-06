@@ -401,6 +401,7 @@ It has 6 subcommands:
 - `list`: Show available options that can be set
 - `set`: Set the value of an option
 - `unset`: Unset an option
+- `namegen-py`: Generate a template `namegen.py` file for custom EPUB / title / folder naming
 - `init`: Create an empty `config.ini` file (for manual editing)
 - `migrate`: Migrate configuration files to the post-v41 configuration folder
 
@@ -539,6 +540,14 @@ Option 'OUTPUT' unset
 ```
 
 This will delete the `OUTPUT` option from the configuration file.
+
+### namegen-py
+
+The `namegen-py` subcommand generates a template `namegen.py` file for custom EPUB / title / folder naming logic. 
+
+The generated file has dummy functions to be filled by the user: Use this to define your own logic for titles, filenames or folder names. See [the documentation](namegen.md#python-based-naming) about this. If one of the functions is missing, the default logic will be used for that specific generation.
+
+The Python file can be generated inside the configuration folder or in any other location as specified with the `--output` option: In the former case, the file will be picked up automatically by `jncep`. In the latter case, you will need to also set the `NAMEGEN` config option to the location of the file.
 
 ### init
 
