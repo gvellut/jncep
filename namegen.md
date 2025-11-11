@@ -38,7 +38,7 @@ jncep config namegen-py
 ```
 This will create a `namegen.py` file in your config directory with function stubs. You can also specify an output path:
 ```bash
-jncep config generate-namegen-py --output /path/to/generate/
+jncep config namegen-py --output /path/to/generate/
 ```
 
 In the latter case, you will have to later configure the `--namegen` option to point to the path.
