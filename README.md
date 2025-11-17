@@ -53,7 +53,7 @@ The `jncep` tool must be launched on the command-line. It has 4 commands:
 
 ## J-Novel Club account credentials
 
-All the commands need some user credentials (email and password) in order to communicate with the J-Novel Club API. They are the same values as the ones used to log in to the J-Novel Club website with a browser (unless _Sign in with Google_ or _Sign in with Facebook_ is used: In that case, see the section just below).
+All the commands need some user credentials (email and password) in order to communicate with the J-Novel Club API. They are the same values as the ones used to log in to the J-Novel Club website with a browser.
 
 Those credentials can be passed directly on the command line using the `--email` and `--password` arguments to the __command__ (or subcommand for `track`), not the `jncep` tool directly. For example, using the `epub` command:
 
@@ -104,20 +104,6 @@ jncep epub https://j-novel.club/series/tearmoon-empire
 ```
 
 See the [general documentation on environment variables](#environment-variables-1).
-
-### Credentials when signing in at J-Novel Club with Google or Facebook
-
-**To update (still valid?)**
-
-It is not possible to directly use Google credentials (if _Sign in with Google_ is used on the J-Novel Club website) or Facebook credentials (with _Sign in with Facebook_). Instead, a password specific to J-Novel Club must first be created: It is the same process as the one needed to be performed in order to log in to the official J-Novel Club mobile app, in case Google or Facebook was originally used to sign up.
-
-Here is what needs to be done:
-- Log in to the J-Novel Club website with Facebook or Google
-- Go to the __Account__ page from the link at the top.
-- Click on the __Password__ section on the left hand side.
-- Set a password on that screen.
-
-Then the login email of the Facebook or Google account, together with that new password, can be used as credentials for the `jncep` tool, either directly or using one of the indirect methods.
 
 ### JNC Nina account credentials
 
