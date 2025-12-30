@@ -1,9 +1,11 @@
 import glob
 import os
+import time
 
 from click.testing import CliRunner
 
-from jncep.cli import epub
+from jncep.cli import epub, get
+from jncep.track import TrackConfigManager
 
 
 def delete_all_files_in_directory(directory_path):
@@ -13,6 +15,7 @@ def delete_all_files_in_directory(directory_path):
 
 
 def test_simple_fetch_epub():
+    time.sleep(1)
     url = (
         "https://j-novel.club/read/long-story-short-i-m-living-in-the-"
         + "mountains-volume-1-part-1"
@@ -45,7 +48,49 @@ def test_simple_fetch_epub():
     assert os.path.getsize(output_file) > 0
 
 
+def test_get_command():
+    time.sleep(1)
+    url = "https://j-novel.club/series/the-faraway-paladin"
+    email = os.getenv("JCNEP_TEST_EMAIL")
+    pwd = os.getenv("JCNEP_TEST_PASSWORD")
+    output_dirpath = "test_output"
+
+    delete_all_files_in_directory(output_dirpath)
+
+    # Remove the series from tracking if it's already there
+    track_manager = TrackConfigManager()
+    tracked_series = track_manager.read_tracked_series()
+    if url in tracked_series:
+        del tracked_series[url]
+        track_manager.write_tracked_series(tracked_series)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        get.get_series,
+        [
+            "--email",
+            email,
+            "--password",
+            pwd,
+            "--output",
+            output_dirpath,
+            url,
+        ],
+    )
+    assert result.exit_code == 0
+
+    # Check that the epub is created
+    epub_files = glob.glob(os.path.join(output_dirpath, "*.epub"))
+    assert len(epub_files) > 0
+    assert os.path.getsize(epub_files[0]) > 0
+
+    # Check that the series is tracked
+    tracked_series = track_manager.read_tracked_series()
+    assert url in tracked_series
+
+
 def test_simple_fetch_epub_jna():
+    time.sleep(1)
     url = "https://jnc-nina.eu/read/brunhild-die-drachenschlaechterin-teil-1"
     email = os.getenv("JCNEP_TEST_EMAIL")
     pwd = os.getenv("JCNEP_TEST_PASSWORD_NINA")
