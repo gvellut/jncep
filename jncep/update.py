@@ -464,7 +464,7 @@ async def _update_new_parts(
         def whole_volume_part_filter(part):
             return (
                 part.volume.volume_id in volumes_id_to_download
-                and core.is_part_available(session.now, core.is_member(session), part)
+                and core.is_part_available(session.now, session.member_status, part)
             )
 
         (
@@ -526,7 +526,7 @@ def _find_available_parts(session, series_details, series, parts, update_options
     available_parts_to_download = [
         part
         for part in relevant_parts
-        if core.is_part_available(session.now, core.is_member(session), part)
+        if core.is_part_available(session.now, session.member_status, part)
     ]
 
     is_all_available = len(available_parts_to_download) == len(relevant_parts)

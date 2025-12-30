@@ -16,7 +16,7 @@ The command above will install the `jncep` Python library and its dependencies. 
 
 ## Alternative with uv
 
-If you don't have Python, it is possible to use [uv](https://docs.astral.sh/uv/) ([installation instructions](https://docs.astral.sh/uv/getting-started/installation/) ; you can also download a simple binary from Github: https://github.com/astral-sh/uv/releases).
+If you don't have Python, it is possible to use [uv](https://docs.astral.sh/uv/) ([installation instructions](https://docs.astral.sh/uv/getting-started/installation/)).
 
 Once `uv` is installed, run the commands like documented on this page by prefixing them with [`uvx`](https://docs.astral.sh/uv/guides/tools/):
 
@@ -54,7 +54,7 @@ The `jncep` tool must be launched on the command-line. It has 5 commands:
 
 ## J-Novel Club account credentials
 
-All the commands need some user credentials (email and password) in order to communicate with the J-Novel Club API. They are the same values as the ones used to log in to the J-Novel Club website with a browser (unless _Sign in with Google_ or _Sign in with Facebook_ is used: In that case, see the section just below).
+All the commands need some user credentials (email and password) in order to communicate with the J-Novel Club API. They are the same values as the ones used to log in to the J-Novel Club website with a browser.
 
 Those credentials can be passed directly on the command line using the `--email` and `--password` arguments to the __command__ (or subcommand for `track`), not the `jncep` tool directly. For example, using the `epub` command:
 
@@ -105,20 +105,6 @@ jncep epub https://j-novel.club/series/tearmoon-empire
 ```
 
 See the [general documentation on environment variables](#environment-variables-1).
-
-### Credentials when signing in at J-Novel Club with Google or Facebook
-
-**To update (still valid?)**
-
-It is not possible to directly use Google credentials (if _Sign in with Google_ is used on the J-Novel Club website) or Facebook credentials (with _Sign in with Facebook_). Instead, a password specific to J-Novel Club must first be created: It is the same process as the one needed to be performed in order to log in to the official J-Novel Club mobile app, in case Google or Facebook was originally used to sign up.
-
-Here is what needs to be done:
-- Log in to the J-Novel Club website with Facebook or Google
-- Go to the __Account__ page from the link at the top.
-- Click on the __Password__ section on the left hand side.
-- Set a password on that screen.
-
-Then the login email of the Facebook or Google account, together with that new password, can be used as credentials for the `jncep` tool, either directly or using one of the indirect methods.
 
 ### JNC Nina account credentials
 
@@ -241,15 +227,24 @@ To solve this issue (without having to mess with fonts), by default, this specif
 
 The default CSS used by the tool and embedded in the generated EPUB files can be found [in the repository](https://raw.githubusercontent.com/gvellut/jncep/master/jncep/res/style.css). It is possible to download it and customize it. Then you can tell the `epub` command to use your own version by passing the `-t/--css` option with the path to your custom CSS as value.
 
-### Naming of the output EPUB
+### Title & naming of the output EPUB
 
-By default, the name is chosen to be something like:
+Depending if there is only a single part or multiple parts in a single volume or multiple volumes, the title will come directly from the J-Novel Club API, or possibly with *Parts ...* or *Volumes ...* appended by `jncep`. For example: 
 
-`Ascendance_of_a_Bookworm_Part_5_Volume_12_Part_1.epub`
+`Long Story Short I'm Living in the Mountains Volume 1 Part 1`
 
-It can be verbose for some J-Novel titles... It is possible to override that using the `namegen` option: `-g` / `--namegen`, config option: `NAMEGEN`
+By default, the EPUB filename is derived from the title in a simple way:
 
-The full documentation for that feature is [on another page](namegen.md) (work in progress).
+`Long_Story_Short_I_m_Living_in_the_Mountains_Volume_1_Part_1.epub`
+
+**Note:** Currently, for JNC Nina, there is no translation for those added texts (but it is planned).
+
+The default generated title and EPUB filename can be verbose for some J-Novel titles... It is possible to override that using the `namegen` option: `-g` / `--namegen`, config option: `NAMEGEN`. There are 2 possibilities for overriding the defaults:
+
+- a mini-language with expressions that can be composed to determine a title, EPUB filename or folder name. The full expression string needs to be passed to the `--namegen` option. This option is deprecated: It is better to use the second option.
+- there is also support for using a Python file (`.py`). You can create a `namegen.py` file with your own `to_title`, `to_filename`, and `to_folder` functions to customize the output. To use that, the path to the `.py` file can be passed to the `--namegen` option.
+
+For detailed instructions on both the mini-language and the new Python-based system, please see the [full documentation here](namegen.md).
 
 ### Configuration file / Environment variables
 
@@ -407,6 +402,7 @@ It has 6 subcommands:
 - `list`: Show available options that can be set
 - `set`: Set the value of an option
 - `unset`: Unset an option
+- `namegen-py`: Generate a template `namegen.py` file for custom EPUB / title / folder naming
 - `init`: Create an empty `config.ini` file (for manual editing)
 - `migrate`: Migrate configuration files to the post-v41 configuration folder
 
@@ -546,6 +542,14 @@ Option 'OUTPUT' unset
 
 This will delete the `OUTPUT` option from the configuration file.
 
+### namegen-py
+
+The `namegen-py` subcommand generates a template `namegen.py` file for custom EPUB / title / folder naming logic. 
+
+The generated file has dummy functions to be filled by the user: Use this to define your own logic for titles, filenames or folder names. See [the documentation](namegen.md#python-based-naming) about this. If one of the functions is missing, the default logic will be used for that specific generation.
+
+The Python file can be generated inside the configuration folder or in any other location as specified with the `--output` option: In the former case, the file will be picked up automatically by `jncep`. In the latter case, you will need to also set the `NAMEGEN` config option to the location of the file.
+
 ### init
 
 The `init` subcommand creates an empty `config.ini` file:
@@ -595,6 +599,4 @@ The source code is formatted and linted using [ruff](https://docs.astral.sh/ruff
 
 # TODO (maybe)
 
-- self-contained executable for macOS and Windows with PyInstaller
-- simple GUI
 - automated testing (tox) with all supported Python versions

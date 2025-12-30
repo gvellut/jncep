@@ -1,8 +1,9 @@
+from pathlib import Path
 import shutil
 
 import click
 
-from .. import config, track, utils
+from .. import config, namegen, track, utils
 from .base import CatchAllExceptionsCommand
 
 console = utils.getConsole()
@@ -38,6 +39,10 @@ def config_list():
                 console.info(f"Found config file: [highlight]{f_.name}[/]")
                 _config_file_summary(f_)
                 continue
+            if f_.name == namegen.NAMEGEN_FILE_NAME:
+                console.info(f"Found namegen file: [highlight]{f_.name}[/]")
+                continue
+
         # ignore everything else
 
 
@@ -155,6 +160,85 @@ def init_config():
     )
 
 
+NAMEGEN_PY_TEMPLATE = """\
+from jncep import namegen_utils as ng
+
+
+def to_title(series: ng.Series, volumes: list[ng.Volume], parts: list[ng.Part], fc: ng.FC) -> str:
+    # Replace with your logic
+    return ng.default_title(series, volumes, parts, fc)
+
+
+def to_filename(
+    title: str, series: ng.Series, volumes: list[ng.Volume], parts: list[ng.Part], fc: ng.FC
+) -> str:
+    # Replace with your logic
+    return ng.default_filename(series, volumes, parts, fc)
+
+
+def to_folder(series: ng.Series, volumes: list[ng.Volume], parts: list[ng.Part], fc: ng.FC) -> str:
+    # Replace with your logic
+    return ng.default_folder(series, volumes, parts, fc)
+
+"""  # noqa: E501
+
+DEFAULT_NAMEGEN_PY_FILENAME = "namegen.py"
+
+
+@config_manage.command(
+    name="namegen-py",
+    help="Generate a template namegen.py file for custom EPUB naming.",
+    cls=CatchAllExceptionsCommand,
+)
+@click.option(
+    "-o",
+    "--output",
+    "output_path",
+    type=click.Path(resolve_path=True),
+    help="Path to generate the file. Can be a directory.",
+)
+@click.option(
+    "-f",
+    "--overwrite",
+    "is_overwrite",
+    is_flag=True,
+    help="Overwrite the file if it already exists.",
+)
+def generate_namegen_py(output_path, is_overwrite):
+    if output_path:
+        path = Path(output_path)
+        if path.is_dir():
+            filepath = path / DEFAULT_NAMEGEN_PY_FILENAME
+        else:
+            if not path.parent.exists():
+                raise Exception(f"Directory not found: {path.parent}")
+                return
+            filepath = path
+    else:
+        config_dir = config.config_dir()
+        config_dir.mkdir(parents=True, exist_ok=True)
+        filepath = config_dir / DEFAULT_NAMEGEN_PY_FILENAME
+
+    if filepath.exists() and not is_overwrite:
+        raise Exception(
+            f"File already exists: '[highlight]{filepath}[/]'. Use --overwrite to "
+            "replace it."
+        )
+        return
+
+    if filepath.exists() and is_overwrite:
+        click.confirm(
+            f"File '{filepath}' already exists. Do you want to overwrite it?",
+            abort=True,
+        )
+
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(NAMEGEN_PY_TEMPLATE)
+
+    console.info(f"Successfully generated '[highlight]{filepath}[/]'", style="success")
+
+
+# FIXME remove ? stopped being useful in 2023
 @config_manage.command(
     name="migrate",
     help=f"Migrate to standard configuration folder [{config.APPDATA_CONFIG_DIR}]",
@@ -181,15 +265,16 @@ def config_migrate():
 
     migrate_config_dir.mkdir(parents=True)
 
-    from_track_filepath = current_config_dir / track.TRACK_FILE_NAME
-    if from_track_filepath.exists():
-        to_track_filepath = migrate_config_dir / track.TRACK_FILE_NAME
-        shutil.copy2(from_track_filepath, to_track_filepath)
-
-    from_config_filepath = current_config_dir / config.CONFIG_FILE_NAME
-    if from_config_filepath.exists():
-        to_config_filepath = migrate_config_dir / config.CONFIG_FILE_NAME
-        shutil.copy2(from_config_filepath, to_config_filepath)
+    files = [
+        track.TRACK_FILE_NAME,
+        config.CONFIG_FILE_NAME,
+        namegen.NAMEGEN_FILE_NAME,
+    ]
+    for f_ in files:
+        from_filepath = current_config_dir / f_
+        if from_filepath.exists():
+            to_filepath = migrate_config_dir / f_
+            shutil.copy2(from_filepath, to_filepath)
 
     console.info(
         "[success]"

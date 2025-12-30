@@ -1,32 +1,112 @@
 # namegen
 
-This functionality allows the renaming of output EPUB file names, as well as the EPUB title (since it appears in the EPUB reader interface) and folder name.
-A list of rules (to choose from a predefined list) are applied to transform the titles.
+This functionality allows the renaming of the EPUB title, the output EPUB filename and folder name.
 
-It is not very well documented or tested so if you need something and you don't see how to do it, you can open an issue and I will try to help (or tell you it is not possible...)
-The version inside the master Github repo is missing some support for JNC Nina (will be added before release).
+There are 2 possibilities for overriding the defaults:
 
-## Note about JNC Nina
+- a mini-language with expressions that can be composed to determine a title, EPUB filename or folder name: A list of rules (to choose from a predefined list) are applied to transform the titles. The current version is missing some support for JNC Nina.
+- there is also support using a Python file (`.py`). You can create a `namegen.py` file with your own `to_title`, `to_filename`, and `to_folder` functions to customize the output. 
+
+The second option may be easier for cutomizing so I would advise to use it instead of the mini-language. Possibly, you should be able to use ChatGPT or something similar to generate what you want.
+
+## Python-based Naming
+
+You can provide a Python file (`.py`) to control the naming of your EPUBs. This offers greater flexibility for complex naming schemes.
+
+### How it Works
+
+You can specify a Python file for name generation in two ways:
+
+1.  **Explicitly via the `--namegen` option:** Pass the absolute path to your `.py` file.
+    ```bash
+    jncep ... --namegen /path/to/your/namegen.py
+    ```
+2.  **Automatically from the config directory:** Place a file named `namegen.py` in your `jncep` config directory. `jncep` will automatically detect and use it. You can find your config directory by running `jncep config show`.
+
+The Python file can contain up to three functions:
+- `to_title(series, volumes, parts, fc)`: Returns the EPUB title (a string).
+- `to_filename(title, series, volumes, parts, fc)`: Returns the EPUB filename without the `.epub` extension (a string).
+- `to_folder(series, volumes, parts, fc)`: Returns the name of the subfolder for the EPUB (a string).
+
+If any of these functions are not defined in your file, `jncep` will fall back to the default naming logic for that specific part.
+
+### Generating a Template
+
+To get started, you can generate a template `namegen.py` file with the following command:
+```bash
+jncep config namegen-py
+```
+This will create a `namegen.py` file in your config directory with function stubs. You can also specify an output path:
+```bash
+jncep config namegen-py --output /path/to/generate/
+```
+
+In the latter case, you will have to later configure the `--namegen` option to point to the path.
+
+### LLM Blurb for `namegen.py`
+
+If you want to use an LLM like ChatGPT or Gemini to help you write a `namegen.py` file, you can use the following blurb as a preface to your request. It provides the necessary context for the LLM to generate a valid and functional script.
+
+---
+
+**LLM Blurb:**
+
+I need you to write a Python script named `namegen.py` for `jncep`, a tool that creates EPUBs from J-Novel Club. This script will be loaded and executed by `jncep` in order to define how the EPUB title, filename, and subfolder name are generated. The script can contain three functions: `to_title`, `to_filename`, and `to_folder`. Any of those can be omitted and the default will be used.
+
+The script must start with: `from jncep import namegen_utils as ng`
+
+Here are the function signatures and the data structures you will work with:
+
+- `to_title(series: ng.Series, volumes: list[ng.Volume], parts: list[ng.Part], fc: ng.FC) -> str`
+- `to_filename(title: str, series: ng.Series, volumes: list[ng.Volume], parts: list[ng.Part], fc: ng.FC) -> str`
+- `to_folder(series: ng.Series, volumes: list[ng.Volume], parts: list[ng.Part], fc: ng.FC) -> str`
+
+The input parameters are:
+- `series`: An object representing the novel series. It has a `raw_data` attribute with a `title` field (e.g., `series.raw_data.title`).
+- `volumes`: A list of volume objects included in the EPUB. Each `volume` has `raw_data` with a `title` (title of the single volume, generally &lt;Series title&gt;, space, `Volume xx`) and a `num` (the volume number).
+- `parts`: A list of part objects. Each `part` has `raw_data` with a `title` (title of the part, generally &lt;Volume title&gt;, space, `Part xx`) and a `num_in_volume`.
+- `fc`: A named tuple with two boolean flags: `fc.final` (is the last item of `parts` the last part of a volume) and `fc.complete` (do the list of `parts` form an entire volume).
+- `title`: A previously generated title (either from the user `to_title` or default generated).
+
+Your script should handle three primary scenarios for EPUB generation:
+
+1.  **Single Part:** `parts` contains one item.
+2.  **Multiple Parts in a Single Volume:** `volumes` contains one item, and `parts` contains multiple items.
+3.  **Multiple Parts across Multiple Volumes:** `volumes` and `parts` both contain multiple items.
+
+All the scenarios involve a single series.
+
+You can use helper functions from `jncep.namegen_utils`, such as `default_title`, `default_folder`, `to_safe_filename` and `to_safe_foldername` to replicate the default behavior.
+
+The following describes the defaults (if a function is missing from `namegen.py`). You should reimplement what is needed to satisfy my request: 
+
+- The default `to_title` simply calls `default_title`: It will use The `part.raw_data.title` when there is a single part, otherwise the function will take the title of the singular parent element (Series or Volume) and append `Volumes xx,yy & zz Parts xx.++ to zz.==` (single series with multiple parts across multiple volumes) or `Parts ++ to ==` (if single volume with multiple parts).
+- The default `to_filename` simply calls `to_safe_filename` on the title passed as argument.
+- The default `to_folder` simply calls `default_folder`: It simply takes the title of the Series and calls `to_safe_foldername` on it. The EPUB file will be placed inside it.
+
+## Mini-language
+
+### Note about JNC Nina
 
 Some functionalities (parsing and title generation) are not yet implemented outside English (ie for the main J-Novel Club website) so it is recommended not to use this functionnality with JNC Nina (or not use the rules that have issues with multilingual support).
 
 Full support will be added for the next version.
 
-## Samples
+### Mini-language Samples
 
 - `t:legacy_t|n:_t>str_filesafe|f:legacy_f`: this is the defaut rule if no namegen argument is defined. It defines rules for the 3 sections: `t:` (EPUB title), `n:` (file name) and `f:` (folder name). The special rule `_t` is used: it takes the output of the `t:` rule. The rules for `t:` and `f:` use the legacy rules. Note that the folder will be generated only if the `--subfolder` argument is passed to the jncep command: Otherwise it has no effect.
 - `t:fc_full>p_title>pn_rm_if_complete>pn_prepend_vn_if_multiple>pn_full>v_title>vn_full>s_title>to_string|f:to_series>fc_rm>pn_rm>vn_rm>s_title>text>filesafe_underscore`: It is the equivalent of the default rule but without using the legacy rules. The `n:` rule is missing so it is taken to be the default `n:` rule (ie `_t>str_filesafe`; see above).
 - `fc_full>p_title`: This doesn't have the `tnf` prefixes. In this case, it assumed to be a `t:` prefix (the other ones being the default).
-- suppress part naming in volumes [Issue 44](https://github.com/gvellut/jncep/issues/44): `n:fc_rm>p_to_volume>pn_rm>v_title>vn_full>s_title>to_string>str_filesafe`. With this the EPUB title will be generated as default, only the file name will be customized. Even if single part : "Demon_Lord_Retry_Volume_9.epub"
+- suppress part naming in volumes [Issue 44](https://github.com/gvellut/jncep/issues/44): `n:fc_rm>p_to_volume>pn_rm>v_title>vn_full>s_title>to_string>str_filesafe`. With this the EPUB title will be generated as default, only the filename will be customized. Even if single part : "Demon_Lord_Retry_Volume_9.epub"
 - only the Volume is shown and numbered, additionally flags could be set for converting spelled out numbers into decimals and removing underscores + padding [Issue 29](https://github.com/gvellut/jncep/issues/29): `n:fc_rm>p_split_part>v_split_volume>pn_0pad>vn_number>vn_0pad>vn_merge>pn_rm_if_complete>pn_prepend_vn>pn_short>s_title>ss_rm_subtitle>to_string`. Part 2 of Volume 6 Part One of [Rebuild World](https://j-novel.club/series/rebuild-world) will be: "Rebuild World 06.01.02.epub"
 
-## Syntax
+### Syntax
 
-### Sections
+#### Sections
 
 The 3 sections are separated by a `|` and prefixed with a `t:` (EPUB title), `n:` (file name) or `f:` (folder name). In each section, the rules are separated with `>`. The rules are applied in order.
 
-### Initial value
+#### Initial value
 
 The title is initialized as :
 - Part (`p`) if only one part
@@ -35,7 +115,7 @@ The title is initialized as :
 
 Rules should handle the 3 cases. If "By Volume" is always used, only the first 2 cases can be handled.
 
-### Rules
+#### Rules
 
 The rules are as follows (TODO document briefly):
 

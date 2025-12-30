@@ -2,7 +2,7 @@ import logging
 
 import click
 
-from .. import core, jncalts, jncweb, spec, track, utils
+from .. import core, jncalts, jncweb, namegen, spec, track, utils
 from ..trio_utils import coro
 from ..utils import tryint
 from . import options
@@ -52,6 +52,7 @@ async def generate_epub(
     style_css_path,
     namegen_rules,
 ):
+    name_generator = namegen.NameGenerator(namegen_rules)
     # created by group
     epub_generation_options = core.EpubGenerationOptions(
         output_dirpath,
@@ -61,7 +62,7 @@ async def generate_epub(
         is_extract_content,
         is_not_replace_chars,
         style_css_path,
-        namegen_rules,
+        name_generator,
     )
 
     origin = jncalts.find_origin(jnc_url_or_index)
@@ -91,9 +92,13 @@ async def generate_epubs(session, series, part_spec_analyzed, epub_generation_op
 
     has_unavailable_parts = False
 
+    # TODO do not use filter before trying to download : try to download and see if
+    # rejected : print warning or error depending on command and if there can be no
+    # EPUB file generated (no download)
+    # may need to still filter for parts in future
     def part_filter(part):
         if part_spec_analyzed.has_part(part):
-            if core.is_part_available(session.now, core.is_member(session), part):
+            if core.is_part_available(session.now, session.member_status, part):
                 return True
             else:
                 nonlocal has_unavailable_parts
