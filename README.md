@@ -258,7 +258,7 @@ One of the most common ways that people use this tool is to first track a new se
 
 ### Example
 
-The following command will start tracking the 'Tearmoon Empire' series and generate an EPUB file for all its available parts in the current directory:
+The following command will start tracking the 'Tearmoon Empire' series and generate an EPUB file for all its available parts in the configured directory:
 
 ```console
 jncep get https://j-novel.club/series/tearmoon-empire
