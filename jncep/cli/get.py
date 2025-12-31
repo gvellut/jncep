@@ -2,7 +2,7 @@ import logging
 
 import click
 
-from .. import core, jncalts, jncweb, spec, track, utils
+from .. import core, jncalts, jncweb, namegen, spec, track, utils
 from ..trio_utils import coro
 from . import options
 from .base import CatchAllExceptionsCommand
@@ -60,6 +60,7 @@ async def get_series(
         series = await _add_track_series_logic(session, jnc_url, is_beginning=True, is_first_available_volume=False)
 
         # This is from epub generate
+        name_generator = namegen.NameGenerator(namegen_rules)
         epub_generation_options = core.EpubGenerationOptions(
             output_dirpath,
             is_subfolder,
@@ -68,7 +69,7 @@ async def get_series(
             is_extract_content,
             is_not_replace_chars,
             style_css_path,
-            namegen_rules,
+            name_generator,
         )
 
         jnc_resource = jncweb.resource_from_url(jnc_url)
