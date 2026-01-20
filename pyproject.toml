@@ -29,7 +29,7 @@ dependencies = [
     "lark==1.2.2",
     "outcome==1.3.0.post0",
     "python-dateutil==2.9.0.post0",
-    "rich==13.9.4",
+    "rich==14.2.0",
     "trio==0.31.0",
 ]
 
