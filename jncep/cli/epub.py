@@ -65,30 +65,15 @@ async def generate_epub(
         name_generator,
     )
 
-    index = tryint(jnc_url_or_index)
-    if index is not None:
-        track_manager = track.TrackConfigManager()
-        tracked_series = track_manager.read_tracked_series()
-
-        index0 = index - 1
-        if index0 < 0 or index0 >= len(tracked_series):
-            console.warning(f"Index '{index}' is not valid! (Use 'track list')")
-            return
-        series_url_list = list(tracked_series.keys())
-        jnc_url = series_url_list[index0]
-        series_name = tracked_series[jnc_url].name
-        console.info(f"Resolve to series '[highlight]{series_name}'[/]")
-    else:
-        jnc_url = jnc_url_or_index
-
-    origin = jncalts.find_origin(jnc_url)
+    origin = jncalts.find_origin(jnc_url_or_index)
     config = jncalts.get_alt_config_for_origin(origin)
 
     async with core.JNCEPSession(config, credentials) as session:
-        jnc_resource = jncweb.resource_from_url(jnc_url)
-        series_id = await core.resolve_series(session, jnc_resource)
-        series = await core.fetch_meta(session, series_id)
-        core.check_series_is_novel(series)
+        series, jnc_resource = await core.resolve_series_from_url_or_index(
+            session, jnc_url_or_index
+        )
+        if not series:
+            return
 
         if part_spec:
             console.info(f"Use part specification '[highlight]{part_spec}[/]'")
