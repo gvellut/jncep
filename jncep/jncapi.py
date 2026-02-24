@@ -135,6 +135,7 @@ class JNC_API:
             headers=API_COMMON_HEADERS,
             timeout=timeout,
             event_hooks=hooks,
+            follow_redirects=True,  # Enable redirect following for OTP endpoints
         )
 
         # full URL always provided (CDN) so no need for base location parameter
@@ -165,6 +166,136 @@ class JNC_API:
 
         data = r.json()
         self.token = data["id"]
+
+    async def generate_otp(self):
+        """Generate an OTP code for authentication.
+
+        Returns:
+            dict: {"otp": str, "proof": str, "ttl": int}
+
+        Raises:
+            httpx.HTTPStatusError: If request fails (including 429 rate limiting)
+        """
+        # Use the working v2 endpoint with GET method as primary
+        path = f"{self.config.API_PATH_BASE}/auth/otp4app/generate"
+        params = {**API_COMMON_PARAMS}
+
+        # Try GET first (working method), fall back to POST if needed
+        for method in ['get', 'post']:
+            try:
+                logger.debug(f"Attempting {method.upper()} to {path}")
+                if method == 'post':
+                    r = await self.api_session.post(path, params=params)
+                else:
+                    r = await self.api_session.get(path, params=params)
+
+                logger.debug(f"Response status: {r.status_code}")
+                if r.status_code < 400:  # Success or redirect
+                    r.raise_for_status()
+                    data = r.json()
+                    logger.debug("OTP generated successfully")
+                    return {"otp": data["otp"], "proof": data["proof"], "ttl": data["ttl"]}
+
+            except httpx.HTTPStatusError as e:
+                logger.debug(f"{method.upper()} to {path} failed: {e.response.status_code}")
+                if e.response.status_code not in [404, 405]:  # Not method/path not found
+                    raise
+                # Continue to try next method
+            except Exception as e:
+                logger.debug(f"{method.upper()} request failed: {e}")
+                continue
+
+        # If we get here, both methods failed
+        raise Exception("OTP generation failed - both GET and POST methods were unsuccessful")
+
+        # Try POST first (as documented), fall back to GET if needed
+        try:
+            r = await self.api_session.post(path, params=params)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 405:  # Method Not Allowed
+                # Try GET if POST failed
+                logger.debug("POST failed with 405, trying GET")
+                r = await self.api_session.get(path, params=params)
+            else:
+                raise
+        
+        if r.status_code == 429:
+            # Rate limited - raise with user-friendly message
+            raise httpx.HTTPStatusError(
+                "Rate limit exceeded. Please wait a moment and try again.",
+                request=r.request,
+                response=r,
+            )
+        
+        r.raise_for_status()
+        data = r.json()
+        # Security: Never log OTP code or proof token
+        logger.debug("OTP generated successfully")
+        logger.debug(f"OTP TTL: {data.get('ttl', 'unknown')}")
+        return {"otp": data["otp"], "proof": data["proof"], "ttl": data["ttl"]}
+
+    async def check_otp(self, otp, proof):
+        """Check OTP verification status.
+
+        Args:
+            otp: The OTP code (6 characters)
+            proof: The proof token from generate_otp()
+
+        Returns:
+            dict|None: Token dict if verified (200), None if not verified yet (204)
+
+        Raises:
+            httpx.HTTPStatusError: If request fails (including 429 rate limiting)
+        """
+        # OTP check endpoint uses the /app/v2 prefix like the generate endpoint
+        path = f"{self.config.API_PATH_BASE}/auth/otp4app/check/{otp}/{proof}"
+        params = {**API_COMMON_PARAMS}
+
+        r = await self.api_session.get(path, params=params)
+        
+        if r.status_code == 429:
+            # Rate limited - raise so caller can implement exponential backoff
+            raise httpx.HTTPStatusError(
+                "Rate limit exceeded. Please wait a moment and try again.",
+                request=r.request,
+                response=r,
+            )
+        
+        if r.status_code == 204:
+            # OTP exists but not verified yet
+            logger.debug("OTP check: not verified yet")
+            return None
+        
+        r.raise_for_status()
+        
+        if r.status_code == 200:
+            # OTP verified, return token
+            data = r.json()
+            logger.debug("OTP verified successfully")
+            return data
+        
+        # Unexpected status code
+        r.raise_for_status()
+
+    async def delete_otp(self, otp, proof):
+        """Delete/cancel an OTP code (cleanup).
+
+        Args:
+            otp: The OTP code
+            proof: The proof token from generate_otp()
+
+        Note: Errors are silently ignored as per API design.
+        """
+        # OTP delete endpoint uses the /app/v2 prefix like the generate endpoint
+        path = f"{self.config.API_PATH_BASE}/auth/otp4app/check/{otp}/{proof}"
+        params = {**API_COMMON_PARAMS}
+
+        try:
+            r = await self.api_session.delete(path, params=params)
+            logger.debug("OTP cleanup attempted")
+        except Exception:
+            # Silently ignore errors as per API design
+            logger.debug("OTP cleanup failed (silently ignored)")
 
     async def logout(self):
         path = f"{self.config.API_PATH_BASE}/auth/logout"
