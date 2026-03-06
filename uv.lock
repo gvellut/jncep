@@ -85,14 +85,14 @@ wheels = [
 
 [[package]]
 name = "click-option-group"
-version = "0.5.6"
+version = "0.5.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e7/b8/91054601a2e05fd9060cb1baf56be5b24145817b059e078669e1099529c7/click-option-group-0.5.6.tar.gz", hash = "sha256:97d06703873518cc5038509443742b25069a3c7562d1ea72ff08bfadde1ce777", size = 16517, upload-time = "2023-06-09T22:22:36.779Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ef/ff/d291d66595b30b83d1cb9e314b2c9be7cfc7327d4a0d40a15da2416ea97b/click_option_group-0.5.9.tar.gz", hash = "sha256:f94ed2bc4cf69052e0f29592bd1e771a1789bd7bfc482dd0bc482134aff95823", size = 22222, upload-time = "2025-10-09T09:38:01.474Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/af/75/81ea958bc0f7e410257cb2a42531b93a7695a31930cde87192c010a52c50/click_option_group-0.5.6-py3-none-any.whl", hash = "sha256:38a26d963ee3ad93332ddf782f9259c5bdfe405e73408d943ef5e7d0c3767ec7", size = 12467, upload-time = "2023-06-09T22:22:34.978Z" },
+    { url = "https://files.pythonhosted.org/packages/75/45/54bb2d8d4138964a94bef6e9afe48b0be4705ba66ac442ae7d8a8dc4ffef/click_option_group-0.5.9-py3-none-any.whl", hash = "sha256:ad2599248bd373e2e19bec5407967c3eec1d0d4fc4a5e77b08a0481e75991080", size = 11553, upload-time = "2025-10-09T09:38:00.066Z" },
 ]
 
 [[package]]
@@ -240,7 +240,7 @@ requires-dist = [
     { name = "atomicwrites", specifier = "==1.4.1" },
     { name = "attrs", specifier = "==25.4.0" },
     { name = "click", specifier = "==8.1.8" },
-    { name = "click-option-group", specifier = "==0.5.6" },
+    { name = "click-option-group", specifier = "==0.5.9" },
     { name = "ebooklib", specifier = "==0.20" },
     { name = "exceptiongroup", specifier = "==1.3.1" },
     { name = "httpx", specifier = "==0.28.1" },
