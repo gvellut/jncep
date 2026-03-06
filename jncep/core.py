@@ -17,6 +17,7 @@ from typing import NamedTuple
 import dateutil.parser
 from dateutil.relativedelta import relativedelta
 from exceptiongroup import BaseExceptionGroup
+import httpx
 import trio
 
 from . import epub, jncalts, jncapi, jncweb, namegen_utils, spec, utils
@@ -128,7 +129,16 @@ class JNCEPSession:
         self.config = config
 
         self.api = jncapi.JNC_API(config)
-        self.email, self.password = credentials.get_credentials(config.ORIGIN)
+        creds = credentials.get_credentials(config.ORIGIN)
+        self.email = creds[0]
+        if len(creds) == 3 and creds[2] is True:
+            # OTP mode
+            self.password = None
+            self.use_otp = True
+        else:
+            # Password mode
+            self.password = creds[1]
+            self.use_otp = False
 
         self.now = datetime.now(tz=timezone.utc)
         # TODO only the member level is sufficient
@@ -142,7 +152,15 @@ class JNCEPSession:
         if session_dict is None:
             session_dict = {}
         if self.config.ORIGIN not in session_dict:
-            await self.login(self.email, self.password)
+            if self.use_otp:
+                # OTP is only available for JNC Main
+                if self.config.ORIGIN != jncalts.AltOrigin.JNC_MAIN:
+                    raise Exception(
+                        "OTP authentication is only available for JNC Main, not JNC Nina"
+                    )
+                await self.login_with_otp()
+            else:
+                await self.login(self.email, self.password)
             session_dict[self.config.ORIGIN] = self
             _GLOBAL_SESSION_INSTANCE.set(session_dict)
         return session_dict[self.config.ORIGIN]
@@ -195,6 +213,146 @@ class JNCEPSession:
         )
         console.status("...")
         return token
+
+    async def login_with_otp(self):
+        """Login using OTP authentication flow."""
+        import random
+
+        display_email = self.email
+        if is_debug():
+            # hide for privacy in case the trace is copied to GH issue tracker
+            display_email = re.sub(
+                r"(?<=.)(.*)(?=@)", lambda x: "*" * len(x.group(1)), self.email
+            )
+            display_email = re.sub(
+                r"(?<=@.)(.*)(?=\.)", lambda x: "*" * len(x.group(1)), display_email
+            )
+
+        # Generate OTP
+        try:
+            console.status("Generating OTP code...")
+            otp_data = await self.api.generate_otp()
+            otp_code = otp_data["otp"]
+            proof = otp_data["proof"]
+            ttl = otp_data["ttl"]
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429:
+                console.error("Rate limit exceeded. Please wait a moment and try again.")
+            else:
+                console.error(f"Failed to generate OTP code: {e}")
+            raise
+        except Exception as e:
+            console.error(f"Failed to generate OTP code: {e}")
+            raise
+
+        # Display OTP code to user
+        console.info("")
+        console.info(
+            f"Visit [highlight]https://j-novel.club/user/otp[/] and enter the code:"
+        )
+        console.info(f"[highlight]{otp_code}[/]")
+        console.info("")
+
+        # Poll for verification
+        start_time = time.time()
+        poll_interval = 4.0  # seconds
+        backoff_count = 0
+        max_backoff = 16.0
+        otp_cleaned_up = False
+
+        try:
+            while True:
+                elapsed = time.time() - start_time
+                remaining = max(0, ttl - elapsed)
+
+                if remaining <= 0:
+                    console.error("OTP code expired. Please generate a new code.")
+                    break
+
+                # Update status message
+                status_msg = f"Waiting for verification... ({int(remaining)} seconds remaining)"
+                console.status(status_msg)
+
+                try:
+                    # Check OTP status
+                    token_data = await self.api.check_otp(otp_code, proof)
+
+                    if token_data is not None:
+                        # OTP verified!
+                        self.api.token = token_data["id"]
+
+                        # to be able to check subscription status
+                        self.me = await self.api.me()
+                        self.member_status = member_status(self)
+
+                        emoji = ""
+                        if console.is_advanced():
+                            emoji = "\u26a1 "
+                        console.info(
+                            f"{emoji}Logged in to {self.config.ORIGIN} with email "
+                            + f"'[highlight]{display_email}[/]'"
+                        )
+                        console.status("...")
+
+                        # Optional cleanup
+                        try:
+                            await self.api.delete_otp(otp_code, proof)
+                            otp_cleaned_up = True
+                        except Exception:
+                            pass  # Silently ignore cleanup errors
+
+                        return token_data["id"]
+
+                    # Not verified yet, continue polling
+                    backoff_count = 0  # Reset backoff on successful check
+
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code == 429:
+                        # Rate limited - exponential backoff
+                        backoff_count += 1
+                        if backoff_count == 1:
+                            wait_time = 2.0
+                        elif backoff_count == 2:
+                            wait_time = 4.0
+                        elif backoff_count == 3:
+                            wait_time = 8.0
+                        else:
+                            wait_time = max_backoff
+
+                        console.warning(
+                            f"Rate limit exceeded. Waiting {int(wait_time)} seconds..."
+                        )
+                        await trio.sleep(wait_time)
+                        continue
+                    else:
+                        # Other HTTP error
+                        console.error(f"Verification failed: {e}")
+                        raise
+
+                # Add small jitter to avoid synchronized polling
+                jitter = random.uniform(-0.5, 0.5)
+                await trio.sleep(poll_interval + jitter)
+
+        except KeyboardInterrupt:
+            # User cancelled - attempt cleanup
+            console.info("\nCancelling...")
+            if not otp_cleaned_up:
+                try:
+                    await self.api.delete_otp(otp_code, proof)
+                except Exception:
+                    pass  # Silently ignore cleanup errors
+            raise
+
+        finally:
+            # Cleanup on timeout
+            if not otp_cleaned_up:
+                try:
+                    await self.api.delete_otp(otp_code, proof)
+                except Exception:
+                    pass  # Silently ignore cleanup errors
+
+        # If we get here, timeout occurred
+        raise Exception("OTP verification timed out")
 
     async def logout(self):
         if self.api.is_logged_in:
