@@ -40,6 +40,34 @@ def track_series():
     pass
 
 
+async def _add_track_series_logic(session, jnc_url, is_beginning, is_first_available_volume):
+    track_manager = track.TrackConfigManager()
+    tracked_series = track_manager.read_tracked_series()
+
+    console.status("Check tracking status...")
+
+    series, _ = await core.resolve_series_from_url_or_index(session, jnc_url)
+    if not series:
+        return
+
+    series_url = jncweb.url_from_series_slug(session.origin, series.raw_data.slug)
+    if series_url in tracked_series:
+        console.warning(
+            f"The series '[highlight]{series.raw_data.title}[/]' is "
+            "already tracked!"
+        )
+        return series
+
+    await track.track_series(
+        session, tracked_series, series, is_beginning, is_first_available_volume
+    )
+
+    # TOO async write
+    track_manager.write_tracked_series(tracked_series)
+    console.info(f"Series '[highlight]{series.raw_data.title}[/]' is now tracked.")
+    return series
+
+
 @track_series.command(
     name="add", help="Add a new series for tracking", cls=CatchAllExceptionsCommand
 )
@@ -58,31 +86,7 @@ async def add_track_series(
     config = jncalts.get_alt_config_for_origin(origin)
 
     async with core.JNCEPSession(config, credentials) as session:
-        # TODO async read
-        track_manager = track.TrackConfigManager()
-        tracked_series = track_manager.read_tracked_series()
-
-        console.status("Check tracking status...")
-
-        jnc_resource = jncweb.resource_from_url(jnc_url)
-        series_id = await core.resolve_series(session, jnc_resource)
-        series = await core.fetch_meta(session, series_id)
-        core.check_series_is_novel(series)
-
-        series_url = jncweb.url_from_series_slug(session.origin, series.raw_data.slug)
-        if series_url in tracked_series:
-            console.warning(
-                f"The series '[highlight]{series.raw_data.title}[/]' is "
-                "already tracked!"
-            )
-            return
-
-        await track.track_series(
-            session, tracked_series, series, is_beginning, is_first_available_volume
-        )
-
-        # TOO async write
-        track_manager.write_tracked_series(tracked_series)
+        await _add_track_series_logic(session, jnc_url, is_beginning, is_first_available_volume)
 
 
 @track_series.command(
@@ -192,33 +196,24 @@ async def rm_track_series(jnc_url_or_index, credentials: jncalts.AltCredentials)
     track_manager = track.TrackConfigManager()
     tracked_series = track_manager.read_tracked_series()
 
-    index = tryint(jnc_url_or_index)
-    if index is not None:
-        index0 = index - 1
-        if index0 < 0 or index0 >= len(tracked_series):
-            console.warning(f"Index '{index}' is not valid! (Use 'track list')")
+    origin = jncalts.find_origin(jnc_url_or_index)
+    config = jncalts.get_alt_config_for_origin(origin)
+
+    async with core.JNCEPSession(config, credentials) as session:
+        series, _ = await core.resolve_series_from_url_or_index(
+            session, jnc_url_or_index
+        )
+        if not series:
             return
-        series_url_list = list(tracked_series.keys())
-        series_url = series_url_list[index0]
-    else:
-        origin = jncalts.find_origin(jnc_url_or_index)
-        config = jncalts.get_alt_config_for_origin(origin)
 
-        async with core.JNCEPSession(config, credentials) as session:
-            console.status("Check tracking status...")
-            jnc_resource = jncweb.resource_from_url(jnc_url_or_index)
-            series_id = await core.resolve_series(session, jnc_resource)
-            series = await core.fetch_meta(session, series_id)
-            series_url = jncweb.url_from_series_slug(
-                session.origin, series.raw_data.slug
+        series_url = jncweb.url_from_series_slug(session.origin, series.raw_data.slug)
+
+        if series_url not in tracked_series:
+            console.warning(
+                f"The series '[highlight]{series.raw_data.title}[/]' is not "
+                "tracked! (Use 'track list --details')"
             )
-
-            if series_url not in tracked_series:
-                console.warning(
-                    f"The series '[highlight]{series.raw_data.title}[/]' is not "
-                    "tracked! (Use 'track list --details')"
-                )
-                return
+            return
 
     series_name = tracked_series[series_url].name
 
