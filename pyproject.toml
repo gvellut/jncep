@@ -4,7 +4,7 @@ dynamic = ["version"]
 description = "Command-line tool to generate EPUB files for J-Novel Club and JNC Nina pre-pub novels"
 license = "GPL-3.0-or-later"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 authors = [{ name = "Guilhem Vellut", email = "guilhem.vellut@gmail.com" }]
 keywords = ["epub", "jnc", "jnovel"]
 classifiers = [
@@ -34,7 +34,7 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["coloredlogs>=15.0.1", "pytest~=8.0", "pytest-env~=1.1.0"]
+dev = ["coloredlogs>=15.0.1", "pytest~=9.0", "pytest-env~=1.1.0"]
 
 [project.urls]
 Homepage = "https://github.com/gvellut/jncep"

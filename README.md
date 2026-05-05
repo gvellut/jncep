@@ -4,7 +4,7 @@ Command-line tool to generate EPUB files for [J-Novel Club](https://j-novel.club
 
 # Install
 
-The tool requires Python 3.9+
+The tool requires Python 3.10+
 
 To install, launch :
 
