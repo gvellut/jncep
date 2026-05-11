@@ -34,7 +34,7 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["coloredlogs>=15.0.1", "pytest~=9.0", "pytest-env~=1.1.0"]
+dev = ["coloredlogs>=15.0.1", "pytest~=9.0", "pytest-env>=1.1,<1.7"]
 
 [project.urls]
 Homepage = "https://github.com/gvellut/jncep"
