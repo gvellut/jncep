@@ -21,7 +21,7 @@ dependencies = [
     "addict==2.4.0",
     "atomicwrites==1.4.1",
     "attrs==26.1.0",
-    "click==8.1.8",
+    "click==8.3.3",
     "click-option-group==0.5.9",
     "ebooklib==0.20",
     "exceptiongroup==1.3.1",
