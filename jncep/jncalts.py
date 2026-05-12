@@ -26,6 +26,7 @@ class AltConfig:
     CDN_IMG_URL_BASE = attr.ib()
 
     WEB_URL_BASE = attr.ib()
+    OTP_API_URL_BASE = attr.ib(default=None)
 
 
 JNC_MAIN_CONFIG = AltConfig(
@@ -40,6 +41,7 @@ JNC_MAIN_CONFIG = AltConfig(
         "https://d2dq7ifhe7bu0f.cloudfront.net",
     ],
     WEB_URL_BASE="https://j-novel.club",
+    OTP_API_URL_BASE="https://labs.j-novel.club",
 )
 
 # after main Labs API v2 update October 2024 => properties very similar to Nina API
@@ -51,6 +53,7 @@ JNC_NINA_CONFIG = AltConfig(
     EMBED_PATH_BASE="/embed/v2",
     CDN_IMG_URL_BASE="https://cdn.jnc-nina.eu",
     WEB_URL_BASE="https://jnc-nina.eu",
+    OTP_API_URL_BASE="https://labs.j-novel.club",  # OTP endpoints might use main API even for Nina
 )
 
 
@@ -66,15 +69,26 @@ class AltOriginError(Exception):
 
 @attr.s
 class AltCredentials:
-    # contains mapping : origin => tuple (email, pw)
+    # contains mapping : origin => tuple (email, pw) or (email, None, use_otp=True)
+    # For password: (email, password)
+    # For OTP: (email, None, True) or similar structure
     credential_mapping: dict = attr.ib()
 
     def get_credentials(self, origin: AltOrigin):
-        # just the login, pw tuple
+        # returns tuple: (email, password) for password auth
+        # or (email, None, True) for OTP auth
         if credentials := self.credential_mapping.get(origin):
             return credentials
 
         raise AltOriginError(f"No credential for: {origin}")
+    
+    def uses_otp(self, origin: AltOrigin):
+        """Check if credentials for this origin use OTP authentication."""
+        if credentials := self.credential_mapping.get(origin):
+            # If tuple has 3 elements and third is True, it's OTP
+            # Otherwise it's password auth
+            return len(credentials) == 3 and credentials[2] is True
+        return False
 
     def origins_with_credentials(self):
         return list(self.credential_mapping.keys())

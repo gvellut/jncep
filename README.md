@@ -53,12 +53,20 @@ The `jncep` tool must be launched on the command-line. It has 4 commands:
 
 ## J-Novel Club account credentials
 
-All the commands need some user credentials (email and password) in order to communicate with the J-Novel Club API. They are the same values as the ones used to log in to the J-Novel Club website with a browser.
+All the commands need some user credentials in order to communicate with the J-Novel Club API. You can authenticate using either:
+- **Password authentication**: Email and password (same values as used to log in to the J-Novel Club website)
+- **OTP authentication**: Email and OTP code (One-Time Password, JNC Main only)
 
-Those credentials can be passed directly on the command line using the `--email` and `--password` arguments to the __command__ (or subcommand for `track`), not the `jncep` tool directly. For example, using the `epub` command:
+Those credentials can be passed directly on the command line using the `--email` and `--password` arguments (or `--otp` for OTP) to the __command__ (or subcommand for `track`), not the `jncep` tool directly. For example, using the `epub` command with password:
 
 ```console
 jncep epub --email user@example.com --password "foo%bar666!" https://j-novel.club/series/tearmoon-empire
+```
+
+Or with OTP:
+
+```console
+jncep epub --email user@example.com --otp https://j-novel.club/series/tearmoon-empire
 ```
 
 ### Passing the credentials indirectly
@@ -97,6 +105,13 @@ export JNCEP_EMAIL=user@example.com
 export JNCEP_PASSWORD="foo%bar666!"
 ```
 
+Or to use OTP authentication:
+
+```console
+export JNCEP_EMAIL=user@example.com
+export JNCEP_USE_OTP=true
+```
+
 Then, the same command as above can be simply launched as follows:
 
 ```console
@@ -104,6 +119,27 @@ jncep epub https://j-novel.club/series/tearmoon-empire
 ```
 
 See the [general documentation on environment variables](#environment-variables-1).
+
+### OTP (One-Time Password) authentication
+
+OTP authentication is available as an alternative to password authentication for JNC Main (not available for JNC Nina). When using OTP:
+
+1. Use the `--otp` flag instead of `--password`
+2. The tool will generate an OTP code and display it
+3. Visit https://j-novel.club/user/otp in your browser and enter the displayed code
+4. The CLI will automatically detect when you've verified the code and complete the login
+
+**Note:** OTP authentication requires interactive use - the CLI will wait (block) until you complete verification on the website. This is not suitable for fully automated scripts. For automation, use password authentication instead.
+
+**Example:**
+
+```console
+jncep epub --email user@example.com --otp https://j-novel.club/series/tearmoon-empire
+```
+
+The OTP code will be displayed, and you'll need to enter it on the website. The CLI will poll for verification automatically.
+
+You can also set `USE_OTP = true` in the configuration file or use the `JNCEP_USE_OTP` environment variable to enable OTP mode by default.
 
 ### JNC Nina account credentials
 
@@ -115,6 +151,8 @@ Starting with version 50, some support for [JNC Nina](https://jnc-nina.eu/) (J-N
 - JNC Nina password:  `-pn` / `--password-nina`, config option: `PASSWORD_NINA`
 
 If the JNC Nina email is the same as the J-Novel Club email, it is possible to only use the main `--email` option (so no need to repeat). The JNC Nina password is not optional though.
+
+**Note:** OTP authentication is not available for JNC Nina - only password authentication is supported.
 
 One of the 2 options (for the main J-Novel Club website or for the JNC Nina website) must be present. For the `epub` or `update` commands, the choice of which credential to use is made depending on the series URL. When using `track sync`, the presence of credentials is used to decide on querying either website.
 
@@ -468,6 +506,8 @@ CONTENT        Flag to indicate that the raw content of
                output folder
 CSS            Path to custom CSS file for the EPUBs   
 EMAIL          Login email for J-Novel Club account
+USE_OTP        Flag to use OTP authentication instead
+               of password (JNC Main only)
 ...
 ```
 
