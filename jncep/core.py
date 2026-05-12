@@ -717,6 +717,33 @@ async def fetch_meta(session: JNCEPSession, series_id_or_slug):
     return series
 
 
+async def resolve_series_from_url_or_index(session, jnc_url_or_index):
+    from . import track
+    from .utils import tryint
+
+    index = tryint(jnc_url_or_index)
+    if index is not None:
+        track_manager = track.TrackConfigManager()
+        tracked_series = track_manager.read_tracked_series()
+
+        index0 = index - 1
+        if index0 < 0 or index0 >= len(tracked_series):
+            console.warning(f"Index '{index}' is not valid! (Use 'track list')")
+            return None, None
+        series_url_list = list(tracked_series.keys())
+        jnc_url = series_url_list[index0]
+        series_name = tracked_series[jnc_url].name
+        console.info(f"Resolve to series '[highlight]{series_name}'[/]")
+    else:
+        jnc_url = jnc_url_or_index
+
+    jnc_resource = jncweb.resource_from_url(jnc_url)
+    series_id = await resolve_series(session, jnc_resource)
+    series = await fetch_meta(session, series_id)
+    check_series_is_novel(series)
+    return series, jnc_resource
+
+
 async def fetch_content(session, parts):
     tasks = []
     for part in parts:

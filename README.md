@@ -44,8 +44,9 @@ https://pypi.org/project/jncep/
 
 # Usage
 
-The `jncep` tool must be launched on the command-line. It has 4 commands:
+The `jncep` tool must be launched on the command-line. It has 5 commands:
 
+- [`get`](#get): To track and generate an EPUB for a new series
 - [`epub`](#epub): To simply generate an EPUB file
 - [`track`](#track): To tell the tool that a series is of interest
 - [`update`](#update): To generate EPUB files for newly updated series of interest
@@ -250,6 +251,20 @@ For detailed instructions on both the mini-language and the new Python-based sys
 Just like the login and password, other options can be set in a configuration file. 
 
 [See the paragraph about managing the configuration](#config) further in this page for more details.
+
+## get
+
+One of the most common ways that people use this tool is to first track a new series and then immediately download all its available parts. To make this workflow more convenient, the `get` command was added. It is a shortcut that combines the `track add` and `epub` commands into a single step.
+
+### Example
+
+The following command will start tracking the 'Tearmoon Empire' series and generate an EPUB file for all its available parts in the configured directory:
+
+```console
+jncep get https://j-novel.club/series/tearmoon-empire
+```
+
+This command accepts the same options as the `epub` command.
 
 ## track
 

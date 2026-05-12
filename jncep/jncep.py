@@ -5,6 +5,7 @@ import click
 from . import __version__ as JNCEP_VERSION
 from .cli.config import config_manage
 from .cli.epub import generate_epub
+from .cli.get import get_series
 from .cli.track import track_series
 from .cli.update import update_tracked
 from .config import DEFAULT_CONFIG_FILEPATH, apply_options_from_config
@@ -42,6 +43,7 @@ main.add_command(generate_epub)
 main.add_command(track_series)
 main.add_command(update_tracked)
 main.add_command(config_manage)
+main.add_command(get_series)
 
 if __name__ == "__main__":
     main()
