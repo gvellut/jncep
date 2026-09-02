@@ -21,3 +21,4 @@ pytest.ini
 /test_output
 /test_input
 /output_*
+/ai_output
