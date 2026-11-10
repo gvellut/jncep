@@ -1,9 +1,7 @@
 from configparser import ConfigParser
 from io import StringIO
-import json
 import os
 from pathlib import Path
-from datetime import datetime, timezone
 
 from click import Context, get_app_dir
 
@@ -162,5 +160,3 @@ class JNCEPConfigParser(ConfigParser):
         super().__init__(default_section=TOP_SECTION, interpolation=None)
         # keys in upper case when reading (instead of default lower)
         self.optionxform = lambda x: x.upper()
-
-

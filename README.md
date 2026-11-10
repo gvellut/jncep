@@ -56,7 +56,7 @@ The `jncep` tool must be launched on the command-line. It has 5 commands:
 
 All the commands need some user credentials in order to communicate with the J-Novel Club API. You can authenticate using either:
 - **Password authentication**: Email and password (same values as used to log in to the J-Novel Club website)
-- **OTP authentication**: Email and OTP code (One-Time Password, JNC Main only)
+- **OTP authentication**: One-time code approved in your browser (JNC Main only)
 
 Those credentials can be passed directly on the command line using the `--email` and `--password` arguments (or `--otp` for OTP) to the __command__ (or subcommand for `track`), not the `jncep` tool directly. For example, using the `epub` command with password:
 
@@ -67,7 +67,7 @@ jncep epub --email user@example.com --password "foo%bar666!" https://j-novel.clu
 Or with OTP:
 
 ```console
-jncep epub --email user@example.com --otp https://j-novel.club/series/tearmoon-empire
+jncep epub --otp https://j-novel.club/series/tearmoon-empire
 ```
 
 ### Passing the credentials indirectly
@@ -109,7 +109,6 @@ export JNCEP_PASSWORD="foo%bar666!"
 Or to use OTP authentication:
 
 ```console
-export JNCEP_EMAIL=user@example.com
 export JNCEP_USE_OTP=true
 ```
 
@@ -125,7 +124,7 @@ See the [general documentation on environment variables](#environment-variables-
 
 OTP authentication is available as an alternative to password authentication for JNC Main (not available for JNC Nina). When using OTP:
 
-1. Use the `--otp` flag instead of `--password`
+1. Use the `--otp` flag by itself for JNC Main authentication
 2. The tool will generate an OTP code and display it
 3. Visit https://j-novel.club/user/otp in your browser and enter the displayed code
 4. The CLI will automatically detect when you've verified the code and complete the login
@@ -135,7 +134,7 @@ OTP authentication is available as an alternative to password authentication for
 **Example:**
 
 ```console
-jncep epub --email user@example.com --otp https://j-novel.club/series/tearmoon-empire
+jncep epub --otp https://j-novel.club/series/tearmoon-empire
 ```
 
 The OTP code will be displayed, and you'll need to enter it on the website. The CLI will poll for verification automatically.

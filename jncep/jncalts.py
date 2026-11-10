@@ -53,7 +53,8 @@ JNC_NINA_CONFIG = AltConfig(
     EMBED_PATH_BASE="/embed/v2",
     CDN_IMG_URL_BASE="https://cdn.jnc-nina.eu",
     WEB_URL_BASE="https://jnc-nina.eu",
-    OTP_API_URL_BASE="https://labs.j-novel.club",  # OTP endpoints might use main API even for Nina
+    # OTP endpoints might use main API even for Nina
+    OTP_API_URL_BASE="https://labs.j-novel.club",
 )
 
 
@@ -69,32 +70,31 @@ class AltOriginError(Exception):
 
 @attr.s
 class AltCredentials:
-    # contains mapping : origin => tuple (email, pw) or (email, None, use_otp=True)
-    # For password: (email, password)
-    # For OTP: (email, None, True) or similar structure
+    # Maps each origin to a tuple of credentials for its authentication mode.
+    # For password: (email, password, False)
+    # For OTP: (None, None, True)
     credential_mapping: dict = attr.ib()
 
     def get_credentials(self, origin: AltOrigin):
-        # returns tuple: (email, password) for password auth
-        # or (email, None, True) for OTP auth
+        # returns tuple: (email, password, False) for password auth
+        # or (None, None, True) for OTP auth
         if credentials := self.credential_mapping.get(origin):
             return credentials
 
         raise AltOriginError(f"No credential for: {origin}")
-    
+
     def uses_otp(self, origin: AltOrigin):
         """Check if credentials for this origin use OTP authentication."""
         if credentials := self.credential_mapping.get(origin):
-            # If tuple has 3 elements and third is True, it's OTP
-            # Otherwise it's password auth
-            return len(credentials) == 3 and credentials[2] is True
+            # The third field is True for OTP and False for password authentication.
+            return credentials[2]
         return False
 
     def origins_with_credentials(self):
         return list(self.credential_mapping.keys())
 
     def extract_for_origin(self, origin):
-        # as if only the login, pw for the orign had been passed
+        # Keep only the credentials for the requested origin.
         mapping = {origin: self.get_credentials(origin)}
         credentials = AltCredentials(mapping)
         return credentials

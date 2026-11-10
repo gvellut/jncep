@@ -123,22 +123,25 @@ class SeriesNotANovelError(Exception):
 _GLOBAL_SESSION_INSTANCE = ContextVar("session", default=None)
 
 
+def _display_login_email(email):
+    if not email or not is_debug():
+        return email
+
+    # Hide the address in case the debug trace is shared.
+    email = re.sub(r"(?<=.)(.*)(?=@)", lambda x: "*" * len(x.group(1)), email)
+    return re.sub(r"(?<=@.)(.*)(?=\.)", lambda x: "*" * len(x.group(1)), email)
+
+
 class JNCEPSession:
     # TODO change name : config => alt_config so no confusion with the JNCEP user config
     def __init__(self, config: jncalts.AltConfig, credentials):
         self.config = config
 
         self.api = jncapi.JNC_API(config)
-        creds = credentials.get_credentials(config.ORIGIN)
-        self.email = creds[0]
-        if len(creds) == 3 and creds[2] is True:
-            # OTP mode
-            self.password = None
-            self.use_otp = True
-        else:
-            # Password mode
-            self.password = creds[1]
-            self.use_otp = False
+        # The third field selects password or OTP login.
+        self.email, self.password, self.use_otp = credentials.get_credentials(
+            config.ORIGIN
+        )
 
         self.now = datetime.now(tz=timezone.utc)
         # TODO only the member level is sufficient
@@ -156,7 +159,8 @@ class JNCEPSession:
                 # OTP is only available for JNC Main
                 if self.config.ORIGIN != jncalts.AltOrigin.JNC_MAIN:
                     raise Exception(
-                        "OTP authentication is only available for JNC Main, not JNC Nina"
+                        "OTP authentication is only available for JNC Main, "
+                        "not JNC Nina"
                     )
                 await self.login_with_otp()
             else:
@@ -184,15 +188,7 @@ class JNCEPSession:
         return False
 
     async def login(self, email, password):
-        display_email = email
-        if is_debug():
-            # hide for privacy in case the trace is copied to GH issue tracker
-            display_email = re.sub(
-                r"(?<=.)(.*)(?=@)", lambda x: "*" * len(x.group(1)), email
-            )
-            display_email = re.sub(
-                r"(?<=@.)(.*)(?=\.)", lambda x: "*" * len(x.group(1)), display_email
-            )
+        display_email = _display_login_email(email)
         msg = (
             f"Login to {self.config.ORIGIN} with email "
             + f"'[highlight]{display_email}[/]'..."
@@ -218,16 +214,6 @@ class JNCEPSession:
         """Login using OTP authentication flow."""
         import random
 
-        display_email = self.email
-        if is_debug():
-            # hide for privacy in case the trace is copied to GH issue tracker
-            display_email = re.sub(
-                r"(?<=.)(.*)(?=@)", lambda x: "*" * len(x.group(1)), self.email
-            )
-            display_email = re.sub(
-                r"(?<=@.)(.*)(?=\.)", lambda x: "*" * len(x.group(1)), display_email
-            )
-
         # Generate OTP
         try:
             console.status("Generating OTP code...")
@@ -237,21 +223,21 @@ class JNCEPSession:
             ttl = otp_data["ttl"]
         except httpx2.HTTPStatusError as e:
             if e.response.status_code == 429:
-                console.error("Rate limit exceeded. Please wait a moment and try again.")
-            else:
-                console.error(f"Failed to generate OTP code: {e}")
-            raise
-        except Exception as e:
-            console.error(f"Failed to generate OTP code: {e}")
-            raise
+                raise RuntimeError(
+                    "Rate limit exceeded. Please wait a moment and try again."
+                ) from None
+            raise RuntimeError(
+                f"Failed to generate OTP code (HTTP {e.response.status_code})"
+            ) from None
+        except Exception:
+            raise RuntimeError("Failed to generate OTP code") from None
 
-        # Display OTP code to user
-        console.info("")
-        console.info(
-            f"Visit [highlight]https://j-novel.club/user/otp[/] and enter the code:"
+        # Send the interactive prompt to stderr separately from debug logging.
+        print(
+            f"\nVisit https://j-novel.club/user/otp and enter the code:\n{otp_code}\n",
+            file=sys.stderr,
+            flush=True,
         )
-        console.info(f"[highlight]{otp_code}[/]")
-        console.info("")
 
         # Poll for verification
         start_time = time.time()
@@ -270,7 +256,9 @@ class JNCEPSession:
                     break
 
                 # Update status message
-                status_msg = f"Waiting for verification... ({int(remaining)} seconds remaining)"
+                status_msg = (
+                    f"Waiting for verification... ({int(remaining)} seconds remaining)"
+                )
                 console.status(status_msg)
 
                 try:
@@ -281,17 +269,18 @@ class JNCEPSession:
                         # OTP verified!
                         self.api.token = token_data["id"]
 
-                        # to be able to check subscription status
+                        # Read the account email and subscription status from /me.
                         self.me = await self.api.me()
                         self.member_status = member_status(self)
+                        display_email = _display_login_email(self.me.get("email"))
 
                         emoji = ""
                         if console.is_advanced():
                             emoji = "\u26a1 "
-                        console.info(
-                            f"{emoji}Logged in to {self.config.ORIGIN} with email "
-                            + f"'[highlight]{display_email}[/]'"
-                        )
+                        message = f"{emoji}Logged in to {self.config.ORIGIN}"
+                        if display_email:
+                            message += f" with email '[highlight]{display_email}[/]'"
+                        console.info(message)
                         console.status("...")
 
                         # Optional cleanup
@@ -324,10 +313,13 @@ class JNCEPSession:
                         )
                         await trio.sleep(wait_time)
                         continue
-                    else:
-                        # Other HTTP error
-                        console.error(f"Verification failed: {e}")
-                        raise
+                    # HTTP errors can include the verification URL or a redirect target.
+                    raise RuntimeError(
+                        f"OTP verification failed (HTTP {e.response.status_code})"
+                    ) from None
+                except Exception:
+                    # Transport errors may also contain the verification URL.
+                    raise RuntimeError("OTP verification failed") from None
 
                 # Add small jitter to avoid synchronized polling
                 jitter = random.uniform(-0.5, 0.5)
@@ -1065,7 +1057,7 @@ async def fetch_covers(session, volumes):
     # odd
     hires_covers = covers[1::2]
 
-    candidate_covers = zip(hires_covers, lowres_covers)
+    candidate_covers = zip(hires_covers, lowres_covers, strict=False)
     volumes_cover = {}
     for i, candidate_cover in enumerate(candidate_covers):
         volume = volumes[i]

@@ -46,7 +46,9 @@ otp_option = credentials_group.option(
     "use_otp",
     is_flag=True,
     envvar=f"{ENVVAR_PREFIX}USE_OTP",
-    help="Use OTP (One-Time Password) authentication instead of password (JNC Main only)",
+    help=(
+        "Use OTP (One-Time Password) authentication instead of password (JNC Main only)"
+    ),
 )
 
 
@@ -83,35 +85,22 @@ def process_credentials_options(f):
             if not email_nina and password_nina:
                 email_nina = email
 
-            j_novel_credentials = email and (password or use_otp)
             nina_credentials = email_nina and password_nina
 
-            if nina_credentials and email and not password and not use_otp:
+            if nina_credentials and not password:
                 # assume the email only applies to nina
                 email = None
 
-            if not j_novel_credentials and not nina_credentials:
-                raise click.UsageError(
-                    "You must pass either J-Novel Club or JNC Nina credentials"
-                )
-
             # Validate JNC Main credentials
-            if email:
-                if use_otp and password:
-                    raise click.UsageError(
-                        "Cannot use both password and OTP authentication. Use either --password or --otp."
-                    )
-                if not use_otp and not password:
-                    raise click.UsageError(
-                        "You must pass either password (--password) or use OTP (--otp) for J-Novel Club account"
-                    )
-                if use_otp:
-                    # OTP mode: only email needed (OTP is JNC Main only, not Nina)
-                    j_novel_credentials = True
-                elif not password:
-                    raise click.UsageError(
-                        "You must pass both email and password for J-Novel Club account"
-                    )
+            if use_otp and password:
+                raise click.UsageError(
+                    "Cannot use both password and OTP authentication. "
+                    "Use either --password or --otp."
+                )
+            if not use_otp and bool(email) != bool(password):
+                raise click.UsageError(
+                    "You must pass both email and password for J-Novel Club account"
+                )
 
             if bool(email_nina) != bool(password_nina):
                 raise click.UsageError(
@@ -119,15 +108,23 @@ def process_credentials_options(f):
                 )
 
             credential_mapping = {}
-            if j_novel_credentials:
-                if use_otp:
-                    # OTP mode: (email, None, True)
-                    credential_mapping[AltOrigin.JNC_MAIN] = (email, None, True)
-                else:
-                    # Password mode: (email, password)
-                    credential_mapping[AltOrigin.JNC_MAIN] = (email, password)
+            if use_otp:
+                # OTP mode uses the account that approves the code in the browser
+                credential_mapping[AltOrigin.JNC_MAIN] = (None, None, True)
+            elif email and password:
+                # Password mode uses the supplied email and password
+                credential_mapping[AltOrigin.JNC_MAIN] = (email, password, False)
             if nina_credentials:
-                credential_mapping[AltOrigin.JNC_NINA] = (email_nina, password_nina)
+                credential_mapping[AltOrigin.JNC_NINA] = (
+                    email_nina,
+                    password_nina,
+                    False,
+                )
+
+            if not credential_mapping:
+                raise click.UsageError(
+                    "You must pass either J-Novel Club or JNC Nina credentials"
+                )
 
             kwargs["credentials"] = AltCredentials(credential_mapping)
 

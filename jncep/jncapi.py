@@ -108,15 +108,20 @@ class JNC_API:
 
         hooks = None
         if logging.getLogger("jncep").level == logging.DEBUG:
+            otp_check_prefix = f"{config.API_PATH_BASE}/auth/otp4app/check/"
 
             async def log_request(request):
+                # OTP verification and cleanup carry the code and proof in the URL.
+                url = request.url
+                if url.path.startswith(otp_check_prefix):
+                    url = f"{otp_check_prefix}[redacted]"
                 logger.debug(
                     "HTTP Request: %s %s",
                     request.method,
-                    request.url,
+                    url,
                 )
-                logger.debug(f"HTTP Request Headers: {request.headers}")
 
+            # Headers can carry session tokens and redirects containing credentials.
             async def log_response(response):
                 logger.debug(
                     "HTTP Response: %s %d %s",
@@ -124,7 +129,6 @@ class JNC_API:
                     response.status_code,
                     response.reason_phrase,
                 )
-                logger.debug(f"HTTP Response Headers: {response.headers}")
 
             hooks = {"request": [log_request], "response": [log_response]}
 
@@ -135,7 +139,6 @@ class JNC_API:
             headers=API_COMMON_HEADERS,
             timeout=timeout,
             event_hooks=hooks,
-            follow_redirects=True,  # Enable redirect following for OTP endpoints
         )
 
         # full URL always provided (CDN) so no need for base location parameter
@@ -181,10 +184,10 @@ class JNC_API:
         params = {**API_COMMON_PARAMS}
 
         # Try GET first (working method), fall back to POST if needed
-        for method in ['get', 'post']:
+        for method in ["get", "post"]:
             try:
                 logger.debug(f"Attempting {method.upper()} to {path}")
-                if method == 'post':
+                if method == "post":
                     r = await self.api_session.post(path, params=params)
                 else:
                     r = await self.api_session.get(path, params=params)
@@ -194,19 +197,30 @@ class JNC_API:
                     r.raise_for_status()
                     data = r.json()
                     logger.debug("OTP generated successfully")
-                    return {"otp": data["otp"], "proof": data["proof"], "ttl": data["ttl"]}
+                    return {
+                        "otp": data["otp"],
+                        "proof": data["proof"],
+                        "ttl": data["ttl"],
+                    }
 
             except httpx2.HTTPStatusError as e:
-                logger.debug(f"{method.upper()} to {path} failed: {e.response.status_code}")
-                if e.response.status_code not in [404, 405]:  # Not method/path not found
+                logger.debug(
+                    f"{method.upper()} to {path} failed: {e.response.status_code}"
+                )
+                if e.response.status_code not in [
+                    404,
+                    405,
+                ]:  # Not method/path not found
                     raise
                 # Continue to try next method
             except Exception as e:
-                logger.debug(f"{method.upper()} request failed: {e}")
+                logger.debug("%s request failed: %s", method.upper(), type(e).__name__)
                 continue
 
         # If we get here, both methods failed
-        raise Exception("OTP generation failed - both GET and POST methods were unsuccessful")
+        raise Exception(
+            "OTP generation failed - both GET and POST methods were unsuccessful"
+        )
 
         # Try POST first (as documented), fall back to GET if needed
         try:
@@ -218,7 +232,7 @@ class JNC_API:
                 r = await self.api_session.get(path, params=params)
             else:
                 raise
-        
+
         if r.status_code == 429:
             # Rate limited - raise with user-friendly message
             raise httpx2.HTTPStatusError(
@@ -226,7 +240,7 @@ class JNC_API:
                 request=r.request,
                 response=r,
             )
-        
+
         r.raise_for_status()
         data = r.json()
         # Security: Never log OTP code or proof token
@@ -252,7 +266,7 @@ class JNC_API:
         params = {**API_COMMON_PARAMS}
 
         r = await self.api_session.get(path, params=params)
-        
+
         if r.status_code == 429:
             # Rate limited - raise so caller can implement exponential backoff
             raise httpx2.HTTPStatusError(
@@ -260,20 +274,20 @@ class JNC_API:
                 request=r.request,
                 response=r,
             )
-        
+
         if r.status_code == 204:
             # OTP exists but not verified yet
             logger.debug("OTP check: not verified yet")
             return None
-        
+
         r.raise_for_status()
-        
+
         if r.status_code == 200:
             # OTP verified, return token
             data = r.json()
             logger.debug("OTP verified successfully")
             return data
-        
+
         # Unexpected status code
         r.raise_for_status()
 
@@ -291,7 +305,7 @@ class JNC_API:
         params = {**API_COMMON_PARAMS}
 
         try:
-            r = await self.api_session.delete(path, params=params)
+            await self.api_session.delete(path, params=params)
             logger.debug("OTP cleanup attempted")
         except Exception:
             # Silently ignore errors as per API design
