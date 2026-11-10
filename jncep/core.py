@@ -257,7 +257,8 @@ class JNCEPSession:
 
                 # Update status message
                 status_msg = (
-                    f"Waiting for verification... ({int(remaining)} seconds remaining)"
+                    f"Waiting for OTP verification... ({int(remaining)} "
+                    "seconds remaining)"
                 )
                 console.status(status_msg)
 
