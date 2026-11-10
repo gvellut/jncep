@@ -233,8 +233,9 @@ class JNCEPSession:
             raise RuntimeError("Failed to generate OTP code") from None
 
         # Send the interactive prompt to stderr separately from debug logging.
+        verification_url = f"{self.config.WEB_URL_BASE}/user/otp"
         print(
-            f"\nVisit https://j-novel.club/user/otp and enter the code:\n{otp_code}\n",
+            f"\nVisit {verification_url} and enter the code:\n{otp_code}\n",
             file=sys.stderr,
             flush=True,
         )
