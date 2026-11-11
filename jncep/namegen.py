@@ -56,7 +56,7 @@ class NameGenerator:
             if namegen_option.endswith(".py"):
                 # use that simple criteria to distinguish between modes
                 path = Path(namegen_option)
-                if not path.exists():
+                if not path.is_file():
                     raise InvalidNamegenPyError(f"File not found: {namegen_option}")
                 namegen_py_path = path
                 self._mode = NamegenMode.PY
