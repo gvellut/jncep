@@ -17,6 +17,7 @@ from typing import NamedTuple
 import dateutil.parser
 from dateutil.relativedelta import relativedelta
 from exceptiongroup import BaseExceptionGroup
+import httpx2
 import trio
 
 from . import epub, jncalts, jncapi, jncweb, namegen_utils, spec, utils
@@ -122,13 +123,25 @@ class SeriesNotANovelError(Exception):
 _GLOBAL_SESSION_INSTANCE = ContextVar("session", default=None)
 
 
+def _display_login_email(email):
+    if not email or not is_debug():
+        return email
+
+    # Hide the address in case the debug trace is shared.
+    email = re.sub(r"(?<=.)(.*)(?=@)", lambda x: "*" * len(x.group(1)), email)
+    return re.sub(r"(?<=@.)(.*)(?=\.)", lambda x: "*" * len(x.group(1)), email)
+
+
 class JNCEPSession:
     # TODO change name : config => alt_config so no confusion with the JNCEP user config
     def __init__(self, config: jncalts.AltConfig, credentials):
         self.config = config
 
         self.api = jncapi.JNC_API(config)
-        self.email, self.password = credentials.get_credentials(config.ORIGIN)
+        # The third field selects password or OTP login.
+        self.email, self.password, self.use_otp = credentials.get_credentials(
+            config.ORIGIN
+        )
 
         self.now = datetime.now(tz=timezone.utc)
         # TODO only the member level is sufficient
@@ -142,7 +155,16 @@ class JNCEPSession:
         if session_dict is None:
             session_dict = {}
         if self.config.ORIGIN not in session_dict:
-            await self.login(self.email, self.password)
+            if self.use_otp:
+                # OTP is only available for JNC Main
+                if self.config.ORIGIN != jncalts.AltOrigin.JNC_MAIN:
+                    raise Exception(
+                        "OTP authentication is only available for JNC Main, "
+                        "not JNC Nina"
+                    )
+                await self.login_with_otp()
+            else:
+                await self.login(self.email, self.password)
             session_dict[self.config.ORIGIN] = self
             _GLOBAL_SESSION_INSTANCE.set(session_dict)
         return session_dict[self.config.ORIGIN]
@@ -166,15 +188,7 @@ class JNCEPSession:
         return False
 
     async def login(self, email, password):
-        display_email = email
-        if is_debug():
-            # hide for privacy in case the trace is copied to GH issue tracker
-            display_email = re.sub(
-                r"(?<=.)(.*)(?=@)", lambda x: "*" * len(x.group(1)), email
-            )
-            display_email = re.sub(
-                r"(?<=@.)(.*)(?=\.)", lambda x: "*" * len(x.group(1)), display_email
-            )
+        display_email = _display_login_email(email)
         msg = (
             f"Login to {self.config.ORIGIN} with email "
             + f"'[highlight]{display_email}[/]'..."
@@ -195,6 +209,144 @@ class JNCEPSession:
         )
         console.status("...")
         return token
+
+    async def login_with_otp(self):
+        """Login using OTP authentication flow."""
+        import random
+
+        # Generate OTP
+        try:
+            console.status("Generating OTP code...")
+            otp_data = await self.api.generate_otp()
+            otp_code = otp_data["otp"]
+            proof = otp_data["proof"]
+            ttl = otp_data["ttl"]
+        except httpx2.HTTPStatusError as e:
+            if e.response.status_code == 429:
+                raise RuntimeError(
+                    "Rate limit exceeded. Please wait a moment and try again."
+                ) from None
+            raise RuntimeError(
+                f"Failed to generate OTP code (HTTP {e.response.status_code})"
+            ) from None
+        except Exception:
+            raise RuntimeError("Failed to generate OTP code") from None
+
+        # Send the interactive prompt to stderr separately from debug logging.
+        verification_url = f"{self.config.WEB_URL_BASE}/user/otp"
+        print(
+            f"\nVisit {verification_url} and enter the code:\n{otp_code}\n",
+            file=sys.stderr,
+            flush=True,
+        )
+
+        # Poll for verification
+        start_time = time.time()
+        poll_interval = 4.0  # seconds
+        backoff_count = 0
+        max_backoff = 16.0
+        otp_cleaned_up = False
+
+        try:
+            while True:
+                elapsed = time.time() - start_time
+                remaining = max(0, ttl - elapsed)
+
+                if remaining <= 0:
+                    console.error("OTP code expired. Please generate a new code.")
+                    break
+
+                # Update status message
+                status_msg = (
+                    f"Waiting for OTP verification... ({int(remaining)} "
+                    "seconds remaining)"
+                )
+                console.status(status_msg)
+
+                try:
+                    # Check OTP status
+                    token_data = await self.api.check_otp(otp_code, proof)
+
+                    if token_data is not None:
+                        # OTP verified!
+                        self.api.token = token_data["id"]
+
+                        # Read the account email and subscription status from /me.
+                        self.me = await self.api.me()
+                        self.member_status = member_status(self)
+                        display_email = _display_login_email(self.me.get("email"))
+
+                        emoji = ""
+                        if console.is_advanced():
+                            emoji = "\u26a1 "
+                        message = f"{emoji}Logged in to {self.config.ORIGIN}"
+                        if display_email:
+                            message += f" with email '[highlight]{display_email}[/]'"
+                        console.info(message)
+                        console.status("...")
+
+                        # Optional cleanup
+                        try:
+                            await self.api.delete_otp(otp_code, proof)
+                            otp_cleaned_up = True
+                        except Exception:
+                            pass  # Silently ignore cleanup errors
+
+                        return token_data["id"]
+
+                    # Not verified yet, continue polling
+                    backoff_count = 0  # Reset backoff on successful check
+
+                except httpx2.HTTPStatusError as e:
+                    if e.response.status_code == 429:
+                        # Rate limited - exponential backoff
+                        backoff_count += 1
+                        if backoff_count == 1:
+                            wait_time = 2.0
+                        elif backoff_count == 2:
+                            wait_time = 4.0
+                        elif backoff_count == 3:
+                            wait_time = 8.0
+                        else:
+                            wait_time = max_backoff
+
+                        console.warning(
+                            f"Rate limit exceeded. Waiting {int(wait_time)} seconds..."
+                        )
+                        await trio.sleep(wait_time)
+                        continue
+                    # HTTP errors can include the verification URL or a redirect target.
+                    raise RuntimeError(
+                        f"OTP verification failed (HTTP {e.response.status_code})"
+                    ) from None
+                except Exception:
+                    # Transport errors may also contain the verification URL.
+                    raise RuntimeError("OTP verification failed") from None
+
+                # Add small jitter to avoid synchronized polling
+                jitter = random.uniform(-0.5, 0.5)
+                await trio.sleep(poll_interval + jitter)
+
+        except KeyboardInterrupt:
+            # User cancelled - attempt cleanup
+            console.info("\nCancelling...")
+            if not otp_cleaned_up:
+                try:
+                    await self.api.delete_otp(otp_code, proof)
+                except Exception:
+                    pass  # Silently ignore cleanup errors
+            raise
+
+        finally:
+            # Cleanup on timeout
+            if not otp_cleaned_up:
+                try:
+                    await self.api.delete_otp(otp_code, proof)
+                except Exception:
+                    pass  # Silently ignore cleanup errors
+
+        # If we get here, timeout occurred
+        raise Exception("OTP verification timed out")
 
     async def logout(self):
         if self.api.is_logged_in:
@@ -907,7 +1059,7 @@ async def fetch_covers(session, volumes):
     # odd
     hires_covers = covers[1::2]
 
-    candidate_covers = zip(hires_covers, lowres_covers)
+    candidate_covers = zip(hires_covers, lowres_covers, strict=False)
     volumes_cover = {}
     for i, candidate_cover in enumerate(candidate_covers):
         volume = volumes[i]

@@ -54,8 +54,7 @@ async def _add_track_series_logic(
     series_url = jncweb.url_from_series_slug(session.origin, series.raw_data.slug)
     if series_url in tracked_series:
         console.warning(
-            f"The series '[highlight]{series.raw_data.title}[/]' is "
-            "already tracked!"
+            f"The series '[highlight]{series.raw_data.title}[/]' is already tracked!"
         )
         return series, jnc_resource
 

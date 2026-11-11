@@ -3,7 +3,7 @@ import json
 import logging
 
 from addict import Dict as Addict
-import httpx
+import httpx2
 import trio
 
 from . import utils
@@ -18,7 +18,7 @@ API_COMMON_HEADERS = {
     "content-type": "application/json",
 }
 
-logging.getLogger("httpx").disabled = True
+logging.getLogger("httpx2").disabled = True
 
 
 class InvalidCDNRequestException(Exception):
@@ -108,15 +108,20 @@ class JNC_API:
 
         hooks = None
         if logging.getLogger("jncep").level == logging.DEBUG:
+            otp_check_prefix = f"{config.API_PATH_BASE}/auth/otp4app/check/"
 
             async def log_request(request):
+                # OTP verification and cleanup carry the code and proof in the URL.
+                url = request.url
+                if url.path.startswith(otp_check_prefix):
+                    url = f"{otp_check_prefix}[redacted]"
                 logger.debug(
                     "HTTP Request: %s %s",
                     request.method,
-                    request.url,
+                    url,
                 )
-                logger.debug(f"HTTP Request Headers: {request.headers}")
 
+            # Headers can carry session tokens and redirects containing credentials.
             async def log_response(response):
                 logger.debug(
                     "HTTP Response: %s %d %s",
@@ -124,14 +129,13 @@ class JNC_API:
                     response.status_code,
                     response.reason_phrase,
                 )
-                logger.debug(f"HTTP Response Headers: {response.headers}")
 
             hooks = {"request": [log_request], "response": [log_response]}
 
-        timeout = httpx.Timeout(api_default_timeout, pool=None)
-        self.api_session = httpx.AsyncClient(
+        timeout = httpx2.Timeout(api_default_timeout, pool=None)
+        self.api_session = httpx2.AsyncClient(
             base_url=config.API_URL_BASE,
-            limits=httpx.Limits(max_connections=api_connections),
+            limits=httpx2.Limits(max_connections=api_connections),
             headers=API_COMMON_HEADERS,
             timeout=timeout,
             event_hooks=hooks,
@@ -139,9 +143,9 @@ class JNC_API:
 
         # full URL always provided (CDN) so no need for base location parameter
         # also multiple URL possible
-        timeout = httpx.Timeout(cdn_default_timeout, pool=None)
-        self.cdn_session = httpx.AsyncClient(
-            limits=httpx.Limits(max_connections=cdn_connections),
+        timeout = httpx2.Timeout(cdn_default_timeout, pool=None)
+        self.cdn_session = httpx2.AsyncClient(
+            limits=httpx2.Limits(max_connections=cdn_connections),
             timeout=timeout,
             event_hooks=hooks,
         )
@@ -165,6 +169,147 @@ class JNC_API:
 
         data = r.json()
         self.token = data["id"]
+
+    async def generate_otp(self):
+        """Generate an OTP code for authentication.
+
+        Returns:
+            dict: {"otp": str, "proof": str, "ttl": int}
+
+        Raises:
+            httpx2.HTTPStatusError: If request fails (including 429 rate limiting)
+        """
+        # Use the working v2 endpoint with GET method as primary
+        path = f"{self.config.API_PATH_BASE}/auth/otp4app/generate"
+        params = {**API_COMMON_PARAMS}
+
+        # Try GET first (working method), fall back to POST if needed
+        for method in ["get", "post"]:
+            try:
+                logger.debug(f"Attempting {method.upper()} to {path}")
+                if method == "post":
+                    r = await self.api_session.post(path, params=params)
+                else:
+                    r = await self.api_session.get(path, params=params)
+
+                logger.debug(f"Response status: {r.status_code}")
+                if r.status_code < 400:  # Success or redirect
+                    r.raise_for_status()
+                    data = r.json()
+                    logger.debug("OTP generated successfully")
+                    return {
+                        "otp": data["otp"],
+                        "proof": data["proof"],
+                        "ttl": data["ttl"],
+                    }
+
+            except httpx2.HTTPStatusError as e:
+                logger.debug(
+                    f"{method.upper()} to {path} failed: {e.response.status_code}"
+                )
+                if e.response.status_code not in [
+                    404,
+                    405,
+                ]:  # Not method/path not found
+                    raise
+                # Continue to try next method
+            except Exception as e:
+                logger.debug("%s request failed: %s", method.upper(), type(e).__name__)
+                continue
+
+        # If we get here, both methods failed
+        raise Exception(
+            "OTP generation failed - both GET and POST methods were unsuccessful"
+        )
+
+        # Try POST first (as documented), fall back to GET if needed
+        try:
+            r = await self.api_session.post(path, params=params)
+        except httpx2.HTTPStatusError as e:
+            if e.response.status_code == 405:  # Method Not Allowed
+                # Try GET if POST failed
+                logger.debug("POST failed with 405, trying GET")
+                r = await self.api_session.get(path, params=params)
+            else:
+                raise
+
+        if r.status_code == 429:
+            # Rate limited - raise with user-friendly message
+            raise httpx2.HTTPStatusError(
+                "Rate limit exceeded. Please wait a moment and try again.",
+                request=r.request,
+                response=r,
+            )
+
+        r.raise_for_status()
+        data = r.json()
+        # Security: Never log OTP code or proof token
+        logger.debug("OTP generated successfully")
+        logger.debug(f"OTP TTL: {data.get('ttl', 'unknown')}")
+        return {"otp": data["otp"], "proof": data["proof"], "ttl": data["ttl"]}
+
+    async def check_otp(self, otp, proof):
+        """Check OTP verification status.
+
+        Args:
+            otp: The OTP code (6 characters)
+            proof: The proof token from generate_otp()
+
+        Returns:
+            dict|None: Token dict if verified (200), None if not verified yet (204)
+
+        Raises:
+            httpx2.HTTPStatusError: If request fails (including 429 rate limiting)
+        """
+        # OTP check endpoint uses the /app/v2 prefix like the generate endpoint
+        path = f"{self.config.API_PATH_BASE}/auth/otp4app/check/{otp}/{proof}"
+        params = {**API_COMMON_PARAMS}
+
+        r = await self.api_session.get(path, params=params)
+
+        if r.status_code == 429:
+            # Rate limited - raise so caller can implement exponential backoff
+            raise httpx2.HTTPStatusError(
+                "Rate limit exceeded. Please wait a moment and try again.",
+                request=r.request,
+                response=r,
+            )
+
+        if r.status_code == 204:
+            # OTP exists but not verified yet
+            logger.debug("OTP check: not verified yet")
+            return None
+
+        r.raise_for_status()
+
+        if r.status_code == 200:
+            # OTP verified, return token
+            data = r.json()
+            logger.debug("OTP verified successfully")
+            return data
+
+        # Unexpected status code
+        r.raise_for_status()
+
+    async def delete_otp(self, otp, proof):
+        """Delete/cancel an OTP code (cleanup).
+
+        Args:
+            otp: The OTP code
+            proof: The proof token from generate_otp()
+
+        Note: Errors are silently ignored as per API design.
+        """
+        # OTP delete endpoint uses the /app/v2 prefix like the generate endpoint
+        path = f"{self.config.API_PATH_BASE}/auth/otp4app/check/{otp}/{proof}"
+        params = {**API_COMMON_PARAMS}
+
+        try:
+            await self.api_session.delete(path, params=params)
+            logger.debug("OTP cleanup attempted")
+        except Exception:
+            # Silently ignore errors as per API design
+            logger.debug("OTP cleanup failed (silently ignored)")
 
     async def logout(self):
         path = f"{self.config.API_PATH_BASE}/auth/logout"
