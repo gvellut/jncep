@@ -5,7 +5,7 @@ from addict import Dict as Addict
 import pytest
 
 from jncep.model import Part, Series, Volume
-from jncep.namegen import NameGenerator
+from jncep.namegen import InvalidNamegenPyError, NameGenerator
 from jncep.namegen_minilang import (
     InvalidNamegenRulesError,
     generate_names,
@@ -143,3 +143,10 @@ def test_name_generator_with_mini_language():
     # Check fallback to default legacy_filename and legacy_folder
     assert filename == "My_Series"
     assert folder == "My Series"
+
+
+def test_name_generator_with_directory_as_py_file(tmp_path):
+    rules_dir = tmp_path / "rules.py"
+    rules_dir.mkdir()
+    with pytest.raises(InvalidNamegenPyError):
+        NameGenerator(str(rules_dir))
