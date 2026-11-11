@@ -234,11 +234,13 @@ class JNCEPSession:
 
         # Send the interactive prompt to stderr separately from debug logging.
         verification_url = f"{self.config.WEB_URL_BASE}/user/otp"
-        print(
-            f"\nVisit {verification_url} and enter the code:\n{otp_code}\n",
-            file=sys.stderr,
-            flush=True,
+        console.info("")
+        console.info(
+            f"Visit [highlight][link={verification_url}]{verification_url}"
+            "[/link][/highlight] and enter the code:"
         )
+        console.warning(otp_code)
+        console.info("")
 
         # Poll for verification
         start_time = time.time()
